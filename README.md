@@ -1,295 +1,277 @@
-# Helios MCP 🌞
+# ☀️ Helios MCP
 
-**The AI Behavior Configuration System** - Give your AI agents persistent personalities, learned behaviors, and evolving capabilities through a git-versioned behavioral management system.
+**Give your AI persistent personality through mathematical inheritance**
 
-> Built with FastMCP 2.2.6+ and UV 0.8.15+ for the MCP Protocol 2025-06-18 specification (September 2025)
+[![PyPI](https://img.shields.io/pypi/v/helios-mcp)](https://pypi.org/project/helios-mcp/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MCP 2025](https://img.shields.io/badge/MCP-2025--06--18-purple)](https://modelcontextprotocol.io/)
 
-## ⚠️ UV-EXCLUSIVE PROJECT
+## The Problem
 
-**This project uses ONLY Astral's UV package manager (0.8.15+). Do NOT use pip, poetry, conda, or any other Python package manager.**
+### ❌ Without Helios
+- 🔄 **Stateless AI** - Every conversation starts from zero
+- 📝 **Manual prompts** - Repeat preferences in every session  
+- 🎭 **No specialization** - Same personality for coding and writing
+- 💾 **No memory** - Learned patterns disappear
 
-## Prerequisites
+### ✅ With Helios
+- 🧬 **Evolving personality** - AI remembers and adapts
+- ⚖️ **Mathematical inheritance** - Precise control over specialization
+- 🎯 **Domain personas** - Different personalities for different tasks
+- 📊 **Git-versioned evolution** - Track behavioral changes over time
 
-### System Requirements
-- Python 3.13 (recommended) or 3.12 (minimum)
-- UV 0.8.15 or higher (September 2025)
-- Git 2.40+
-- macOS, Linux, or Windows 10/11
+## The Magic: Weighted Behavioral Inheritance
 
-### Install UV
-```bash
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
+```python
+# Not configuration merging. Mathematical personality inheritance.
+inheritance_weight = base_importance / (specialization_level ** 2)
+merged_behavior = base * inheritance_weight + persona * (1 - inheritance_weight)
+```
 
-# Windows
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# Verify installation
-uv --version  # Should show 0.8.15 or higher
+**Real example:**
+```yaml
+base_importance: 0.7      # Strong foundation
+specialization_level: 2    # Moderate specialization
+→ inheritance: 17.5% base, 82.5% persona
 ```
 
 ## Installation
 
-### As a UV Tool (Recommended)
+### Via UV (Recommended)
 ```bash
-# Install Python 3.13 if not present
-uv python install 3.13
-
-# Install Helios globally as a UV tool
-uv tool install helios-mcp --python 3.13
-
-# Run from anywhere
-uvx helios init
-uvx helios serve
-
-# Or use the shorthand
-uvx --from helios-mcp helios serve
+uvx helios-mcp
 ```
 
-### For Development
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/helios-mcp.git
-cd helios-mcp
-
-# Ensure Python 3.13
-uv python pin 3.13
-
-# Initialize UV project and sync all dependencies
-uv sync --dev
-
-# Run in development mode
-uv run helios serve
-
-# Run tests with coverage
-uv run pytest --cov=helios
-
-# Format and lint code
-uv run ruff format .
-uv run ruff check . --fix
-
-# Type checking
-uv run mypy src/helios
+### Claude Desktop
+```json
+{
+  "mcpServers": {
+    "helios": {
+      "command": "uvx",
+      "args": ["helios-mcp", "--helios-dir", "~/.helios"]
+    }
+  }
+}
 ```
 
-## The Inheritance Model
+### VS Code / Cursor
+```json
+{
+  "mcp.servers": {
+    "helios": {
+      "command": "uvx",
+      "args": ["helios-mcp"]
+    }
+  }
+}
+```
+
+## Quick Start
+
+```bash
+# Install and run
+uvx helios-mcp
+
+# Custom configuration directory
+uvx helios-mcp --helios-dir ~/my-ai-config
+
+# With verbose logging
+uvx helios-mcp --verbose
+```
+
+## How It Works
+
+### Inheritance in Action
 
 ```yaml
-# Your behavioral configuration hierarchy
-base_config:  # Foundation configuration
-  importance: 1.0
-  behaviors: [identity, values, communication_style]
-
-developer:  # Low specialization - coding persona
-  specialization_level: 1.0
-  inheritance_weight: 0.95  # 95% base influence
-  specializes: [python, architecture, testing]
-
-researcher:  # Higher specialization - knowledge persona
-  specialization_level: 1.5
-  inheritance_weight: 0.80  # 80% base influence
-  specializes: [synthesis, organization, creativity]
+# ~/.helios/base/identity.yaml
+base_importance: 0.7
+behaviors:
+  communication_style: "Direct and technical"
+  problem_solving: "First principles thinking"
+  
+# ~/.helios/personas/coder.yaml  
+specialization_level: 2
+behaviors:
+  communication_style: "Detailed with code examples"
+  problem_solving: "Implementation-focused"
+  preferred_languages: ["Python", "TypeScript"]
 ```
 
-## Usage with UV 0.8.15+
+**Result:** `17.5% base + 82.5% coder = Your specialized coding assistant`
 
-### Starting the MCP Server
-```bash
-# Using uvx (for installed tool)
-uvx helios serve
+### The Inheritance Flow
 
-# With specific Python version
-uvx --python 3.13 helios serve
-
-# Using uv run (for development)
-uv run helios serve
-
-# With environment variables
-uv run --env-file .env helios serve
-
-# With additional dependencies
-uv run --with rich helios serve --verbose
+```
+Base Identity (70% importance)
+    ↓
+Specialization Level² (2² = 4)
+    ↓
+Inheritance Weight (70% / 4 = 17.5%)
+    ↓
+Merged Behavior (17.5% base + 82.5% persona)
+    ↓
+Git Commit (versioned evolution)
 ```
 
-### Configuration Commands
-```bash
-# Initialize with template
-uvx helios init --template researcher
+## Available Tools
 
-# Add a new persona with inheritance settings
-uvx helios add-persona creative --specialization 2.0 --weight 0.6
+Helios provides 7 MCP tools for managing AI behaviors:
 
-# Learn a new pattern with confidence scoring
-uvx helios learn "User prefers bullet points over paragraphs" --confidence 0.95
+| Tool | Description |
+|------|-------------|
+| `get_base_config` | Load foundation behaviors and inheritance settings |
+| `get_active_persona` | Retrieve specialized persona configuration |
+| `merge_behaviors` | Calculate weighted inheritance between base and persona |
+| `list_personas` | Show all available personality configurations |
+| `update_preference` | Modify and persist behavioral preferences |
+| `search_patterns` | Find learned patterns by confidence level |
+| `commit_changes` | Version control behavioral evolution with Git |
 
-# Search patterns with minimum confidence
-uvx helios search "communication style" --min-confidence 0.7
+## Use Cases
 
-# Commit changes to git
-uvx helios commit "Updated preferences"
-
-# Sync with Obsidian vault
-uvx helios sync-vault ~/Documents/ObsidianVault
+### Multi-Domain Assistant
+```yaml
+personas/
+├── researcher.yaml     # Academic writing, citations
+├── developer.yaml      # Code generation, debugging
+└── creative.yaml       # Storytelling, brainstorming
 ```
 
-## Development Workflow
+### Learning System
+```yaml
+learned/
+├── successful_patterns.yaml    # What worked
+├── user_preferences.yaml       # Discovered preferences
+└── domain_expertise.yaml       # Accumulated knowledge
+```
+
+## Architecture
+
+Helios is NOT a RAG system or knowledge base. It's a behavioral inheritance engine:
+
+- **Configuration Management** - YAML-based behavioral definitions
+- **Inheritance Calculator** - Mathematical weighting system
+- **Git Persistence** - Every change is versioned
+- **MCP Integration** - Works with any MCP-compatible AI client
+
+### File Structure
+```
+~/.helios/
+├── base/           # Core identity configuration
+├── personas/       # Specialized personalities
+├── learned/        # Patterns discovered over time
+└── .git/           # Behavioral evolution history
+```
+
+## Advanced Configuration
+
+### Custom Inheritance Models
+
+```python
+# Stronger base influence for conservative evolution
+base_importance: 0.9
+specialization_level: 1
+
+# Highly specialized with minimal base
+base_importance: 0.3
+specialization_level: 5
+```
+
+### Lifecycle Management
+
+Helios includes production-ready lifecycle management:
+
+- **Health monitoring** - Automatic recovery from failures
+- **Graceful shutdown** - Complete operations before exit
+- **Resource cleanup** - Prevent memory leaks
+- **Operation tracking** - Ensure git commits complete
 
 ```bash
-# 1. Clone and enter directory
-git clone <repo-url> && cd helios-mcp
+# With health monitoring (default: 60s)
+uvx helios-mcp --health-check-interval 60
 
-# 2. Setup Python 3.13 environment
-uv python install 3.13
-uv python pin 3.13
+# Custom shutdown timeout
+uvx helios-mcp --shutdown-timeout 30
+```
 
-# 3. Sync dependencies with UV
-uv sync --dev --all-extras
+## Development
 
-# 4. Install pre-commit hooks
-uv run pre-commit install
+```bash
+# Clone repository
+git clone https://github.com/akougkas/helios-mcp
+cd helios-mcp
 
-# 5. Make changes and test
-uv run pytest tests/ -v --cov=helios
+# Install dependencies
+uv sync
 
-# 6. Format, lint, and type check
-uv run ruff format .
-uv run ruff check . --fix
-uv run mypy src/helios
+# Run tests
+uv run pytest
 
-# 7. Build distribution with UV backend
+# Build package
 uv build
-
-# 8. Test locally
-uv tool install --from dist/helios_mcp-*.whl --force --python 3.13
-
-# 9. Publish to PyPI
-uv publish --index pypi
 ```
-
-## Project Structure
-
-```
-helios-mcp/
-├── pyproject.toml      # UV project configuration (uv_build backend)
-├── uv.toml             # UV-specific settings
-├── .python-version     # Python 3.13 pinned
-├── src/
-│   └── helios/
-│       ├── __init__.py
-│       ├── server.py   # FastMCP 2.2.6+ server
-│       ├── cli.py      # Typer CLI interface
-│       ├── inheritance.py # Inheritance calculation engine
-│       ├── tools.py    # MCP tool implementations
-│       ├── resources.py # MCP resource templates
-│       └── prompts.py  # Reusable prompt templates
-├── tests/
-│   ├── test_server.py
-│   ├── test_tools.py
-│   └── conftest.py
-├── templates/          # Starter configurations
-│   ├── researcher/
-│   ├── engineer/
-│   └── creative/
-└── .pre-commit-config.yaml
-```
-
-## UV Scripts & Commands
-
-The project includes several UV scripts and commands:
-
-### Project Scripts (pyproject.toml)
-```bash
-# Defined in [project.scripts]
-uv run helios serve     # Start MCP server
-uv run helios init      # Initialize configuration
-uv run helios status    # Check system status
-uv run helios test      # Run test suite
-```
-
-### UV-Specific Commands
-```bash
-# Package management
-uv add fastmcp          # Add dependency
-uv remove package       # Remove dependency
-uv tree --show-sizes    # Show dependency tree with sizes
-uv pip list            # List installed packages
-
-# Python management
-uv python list         # List available Python versions
-uv python install 3.13 # Install Python 3.13
-uv python pin 3.13     # Pin project to Python 3.13
-
-# Development
-uv sync --dev          # Sync with dev dependencies
-uv run --with ipython python  # Interactive shell
-uv build              # Build distribution
-uv publish            # Publish to PyPI
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. **Use UV 0.8.15+ for all operations** (no pip, poetry, or conda!)
-4. Setup development environment:
-   ```bash
-   uv python pin 3.13
-   uv sync --dev
-   uv run pre-commit install
-   ```
-5. Make your changes and test:
-   ```bash
-   uv run pytest --cov=helios
-   uv run ruff check .
-   uv run mypy src/helios
-   ```
-6. Commit your changes (`git commit -m 'Add amazing feature'`)
-7. Push to the branch (`git push origin feature/amazing-feature`)
-8. Submit a pull request
 
 ## Troubleshooting
 
-### "Command not found: helios"
+### MCP Connection Issues
 ```bash
-uv tool install helios-mcp --python 3.13
-# Or use uvx directly:
-uvx --from helios-mcp helios serve
+# Verify installation
+helios-mcp --version
+
+# Test with verbose logging
+uvx helios-mcp --verbose
+
+# Check configuration directory
+ls -la ~/.helios/
 ```
 
-### "No module named 'fastmcp'"
+### Common Solutions
+
+| Issue | Solution |
+|-------|----------|
+| "Tool not found" | Ensure helios-mcp is in PATH or use full path |
+| "Git error" | Helios auto-initializes git in config directory |
+| "Permission denied" | Check write permissions for `~/.helios/` |
+| "No personas found" | Create at least one `.yaml` file in `~/.helios/personas/` |
+
+## Why Helios?
+
+Unlike traditional configuration management:
+
+1. **Mathematical Precision** - Not JSON merging, but weighted inheritance
+2. **Evolutionary** - Behaviors improve over time through Git versioning
+3. **Domain-Aware** - Different personalities for different contexts
+4. **Privacy-First** - Everything stays local, no cloud dependencies
+5. **MCP Native** - Built specifically for the Model Context Protocol
+
+## Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) first.
+
 ```bash
-uv sync --dev  # Sync all dependencies
-uv pip list    # Verify installation
+# Fork, clone, and create a feature branch
+git checkout -b feature/amazing-feature
+
+# Make changes and test
+uv run pytest
+
+# Commit and push
+git commit -m "Add amazing feature"
+git push origin feature/amazing-feature
 ```
-
-### "Python version error"
-```bash
-uv python install 3.13  # Install Python 3.13
-uv python pin 3.13      # Pin to project
-uv sync --reinstall     # Reinstall dependencies
-```
-
-### "pip: command not found"
-Good! This project doesn't use pip. Use `uv` instead:
-- `uv add package` instead of `pip install`
-- `uv pip list` instead of `pip list`
-- `uv tree` instead of `pip freeze`
-
-## Tech Stack
-
-- **Python 3.13**: Latest stable with JIT compiler and free-threaded mode
-- **UV 0.8.15+**: Ultra-fast Rust-based package manager (10-100x faster than pip)
-- **FastMCP 2.2.6+**: Pythonic MCP server framework with decorators
-- **MCP Protocol 2025-06-18**: Latest spec with OAuth 2.0, elicitation, structured output
-- **Pydantic 2.9+**: Data validation and settings management
-- **Rich 13.8+**: Beautiful terminal output and progress bars
-- **Typer 0.12+**: Modern CLI framework
 
 ## License
 
-MIT
+MIT © 2025 Anthony Kougkas
 
 ---
 
-**Built with [UV 0.8.15+](https://github.com/astral-sh/uv) and [FastMCP 2.2.6+](https://github.com/jlowin/fastmcp) for the [MCP Protocol 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18)**
+**Ready to give your AI a persistent personality?**
+
+```bash
+uvx helios-mcp
+```
+
+Built with ☀️ for the MCP ecosystem

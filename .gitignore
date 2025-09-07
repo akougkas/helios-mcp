@@ -85,7 +85,7 @@ ipython_config.py
 
 # UV
 .uv/
-uv.lock
+# Note: uv.lock should be tracked for reproducible builds
 
 # pdm
 .pdm-python
@@ -165,10 +165,12 @@ __marimo__/
 # Abstra
 .abstra/
 
-# Local
+# Local development files
 *.tmp
 *.debug
 .claude/settings.local.json
+test_*.py
+scratch/
 
 # Helios runtime
 ~/.helios/
