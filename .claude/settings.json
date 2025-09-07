@@ -1,0 +1,35 @@
+{
+  "model": "claude-3-opus-20240229",
+  "preferences": {
+    "pythonPackageManager": "uv",
+    "pythonVersion": "3.13",
+    "incrementalDevelopment": true,
+    "gitWorkflow": "feature-branches"
+  },
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Read", 
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "Glob",
+      "Grep",
+      "Task",
+      "WebFetch",
+      "WebSearch",
+      "mcp__context7"
+    ],
+    "deny": [
+      "Read(.env*)",
+      "Write(.env*)",
+      "Read(**/secrets/**)",
+      "Read(**/.git/config)"
+    ],
+    "ask": [
+      "Bash(rm -rf *)",
+      "Bash(git push*)",
+      "Bash(uv publish*)"
+    ]
+  }
+}
