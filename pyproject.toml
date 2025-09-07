@@ -22,6 +22,7 @@ dependencies = [
     "fastmcp>=2.2.6",
     "pyyaml>=6.0",
     "gitpython>=3.1.0",
+    "click>=8.1.0",
 ]
 
 [project.urls]
@@ -30,7 +31,7 @@ Repository = "https://github.com/akougkas/helios-mcp"
 Issues = "https://github.com/akougkas/helios-mcp/issues"
 
 [project.scripts]
-helios-mcp = "helios_mcp.server:main"
+helios-mcp = "helios_mcp.cli:main"
 
 [dependency-groups]
 dev = [
