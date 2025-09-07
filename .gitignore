@@ -157,14 +157,6 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
-
-# Abstra
-.abstra/
-
 # Local development files
 *.tmp
 *.debug
@@ -172,6 +164,12 @@ __marimo__/
 test_*.py
 scratch/
 
+# Archived documentation
+ai-docs/.archive/
+
 # Helios runtime
 ~/.helios/
 helios.db
+
+# Prompts used
+docs/planning/prompts/

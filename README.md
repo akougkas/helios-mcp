@@ -6,7 +6,7 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP 2025](https://img.shields.io/badge/MCP-2025--06--18-purple)](https://modelcontextprotocol.io/)
-[![Tests](https://img.shields.io/badge/tests-116%20passing-brightgreen)](https://github.com/akougkas/helios-mcp)
+[![Tests](https://img.shields.io/badge/tests-159%20passing-brightgreen)](https://github.com/akougkas/helios-mcp)
 
 ## 🚀 What is Helios?
 
@@ -106,9 +106,9 @@ Built specifically for the Model Context Protocol with 11 powerful tools for AI 
 
 ## 📚 Documentation
 
-- [Architecture](ARCHITECTURE.md) - System design and implementation details
+- [Architecture](docs/ARCHITECTURE.md) - System design and implementation details
 - [Development Log](DEVLOG.md) - Progress tracking and technical decisions
-- [Contributing](CONTRIBUTING.md) - How to contribute to Helios
+- [Configuration Examples](docs/samples/) - Sample base and persona configurations
 
 ---
 

@@ -1,6 +1,6 @@
 [project]
 name = "helios-mcp"
-version = "0.1.0"
+version = "0.3.0"
 description = "Configuration management for AI behaviors with weighted inheritance"
 readme = "README.md"
 authors = [

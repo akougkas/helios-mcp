@@ -117,17 +117,9 @@ def main(
             logger.info(f"Lifecycle: health checks every {health_check_interval}s, shutdown timeout {shutdown_timeout}s")
             
             # Run the server with lifecycle management
-            try:
-                loop = asyncio.get_running_loop()
-                # Already in event loop (uvx/MCP context)
-                loop.create_task(run_server_with_lifecycle(
-                    helios_dir, verbose, health_check_interval, shutdown_timeout, process_lock
-                ))
-            except RuntimeError:
-                # No event loop running, create one
-                asyncio.run(run_server_with_lifecycle(
-                    helios_dir, verbose, health_check_interval, shutdown_timeout, process_lock
-                ))
+            asyncio.run(run_server_with_lifecycle(
+                helios_dir, verbose, health_check_interval, shutdown_timeout, process_lock
+            ))
             
             return 0
             
