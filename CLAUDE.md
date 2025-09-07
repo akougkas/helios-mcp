@@ -4,7 +4,7 @@
 
 You are building Helios - a configuration management system for AI behaviors. Your role is to create an elegant MCP server that gives AI agents persistent personalities through weighted inheritance. Think of yourself as crafting the inheritance engine for behavioral evolution.
 
-**URGENT**: Ship to PyPI today within hours. Build minimally, test thoroughly, publish fast.
+**Status**: Core functionality complete (7 tools, 116 tests passing). Ready for PyPI publication and learning system implementation.
 
 ## Project Vision
 
@@ -52,9 +52,10 @@ NEVER mention AI, Claude, Anthropic, or "Generated with" in:
 
 ### 3. Incremental Development
 **CRITICAL**: Build incrementally, not all at once:
-- Phase 1: ONE persona, full end-to-end, working
-- Phase 2: Add second persona, test inheritance calculations
-- Phase 3: Add learning only after personas work
+- Phase 1: ✅ Core inheritance model with 7 tools (COMPLETE)
+- Phase 2: ✅ Multiple personas with weighted calculations (COMPLETE)
+- Phase 3: 🚧 Learning system implementation (NEXT)
+- Phase 4: 📦 PyPI publication (READY)
 
 NEVER overengineer. Edit minimally. Ship working code.
 
@@ -79,7 +80,7 @@ CONTINUE autonomously for:
 ### Code Principles
 - **Simplicity Over Cleverness**: FastMCP decorators do the heavy lifting - don't overcomplicate
 - **Configuration-First Design**: Use clear inheritance patterns in code structure (`calculate_weight()`, `specialization_level`, `base_importance`)
-- **Progressive Enhancement**: Start with 5 core tools, expand based on actual need
+- **Progressive Enhancement**: Started with 7 core tools, expanding with learning system
 - **Git-Native Memory**: Every behavior change is a commit, every learning is versioned
 
 ### Technical Constraints
@@ -91,16 +92,21 @@ CONTINUE autonomously for:
 
 ## Building Instructions
 
-### Phase 1 Priority (Ship TODAY)
-Build ONE working persona first:
-1. Base configuration loading (`get_base_config`) - 30 mins
-2. Single persona retrieval (`get_active_persona`) - 30 mins
-3. Basic inheritance calc (`merge_behaviors`) - 30 mins
-4. Git persistence (`commit_changes`) - 30 mins
-5. Test end-to-end - 30 mins
-6. Assist User to Publish to PyPI - 30 mins
+### Current Status (v0.3.0)
+Core implementation complete with 11 working tools (7 core + 4 learning):
+1. ✅ `get_base_config` - Foundation configuration loading
+2. ✅ `get_active_persona` - Persona retrieval with specialization
+3. ✅ `merge_behaviors` - Weighted inheritance calculation
+4. ✅ `list_personas` - Available personality discovery
+5. ✅ `update_preference` - Configuration modification
+6. ✅ `search_patterns` - Pattern discovery
+7. ✅ `commit_changes` - Git persistence layer
+8. ✅ `learn_behavior` - Add/update behaviors in personas
+9. ✅ `tune_weight` - Adjust inheritance weights
+10. ✅ `revert_learning` - Undo recent changes via git
+11. ✅ `evolve_behavior` - Promote behaviors between configs
 
-Defer: learning, patterns, multiple personas
+All tests passing (116/116), learning system implemented.
 
 ### Inheritance Model Implementation
 ```python
@@ -138,6 +144,49 @@ merged_behavior = base_behavior * inheritance_weight + persona_behavior * (1 - i
 - Complex authentication - local filesystem is the security boundary
 - Premature optimization - FastMCP is already fast
 
+
+## Learning System Design (Phase 3)
+
+### Core Concept
+**Learning = Direct config editing + Git versioning**. No separate learning infrastructure - just convenient tools to evolve personas through use.
+
+### Implementation Plan
+
+**Simple Learning Tools** (4 new, total 11):
+1. `learn_behavior(persona, key, value)` - Add/update behavior in persona
+2. `tune_weight(target, parameter, value)` - Adjust specialization_level or base_importance
+3. `revert_learning(commits_back)` - Undo recent learning via git
+4. `evolve_behavior(from, to, key)` - Promote behaviors between configs
+
+**How It Works**:
+```bash
+# Learn something new
+/learn developer "package_manager" "uv"
+→ Edits: ~/.helios/personas/developer.yaml
+→ Commit: "Learned: package_manager=uv for developer"
+
+# Tune the inheritance  
+/tune developer specialization_level 3
+→ Edits: ~/.helios/personas/developer.yaml
+→ Commit: "Tuned: specialization_level to 3"
+
+# Promote to base if it's that good
+/evolve developer base "package_manager"
+→ Moves behavior from developer.yaml to base/identity.yaml
+→ Commit: "Evolved: package_manager from developer to base"
+
+# Undo if needed
+/revert 1
+→ Git revert HEAD
+→ Returns to previous state
+```
+
+**Benefits**:
+- No separate learning folders or complex indexing
+- Direct YAML edits with semantic git commits
+- Complete history and rollback via git
+- Natural persona evolution through actual use
+- Simple, transparent, maintainable
 
 ## Remember
 

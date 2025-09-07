@@ -11,6 +11,13 @@ from pydantic import Field
 from .config import HeliosConfig, ConfigLoader
 from .inheritance import create_behavior_merger, InheritanceCalculator
 from .git_store import GitStore
+from .learning import (
+    LearningManager,
+    LearnBehaviorParams,
+    TuneWeightParams,
+    RevertLearningParams,
+    EvolveBehaviorParams
+)
 
 # Configure logging to stderr
 logging.basicConfig(
@@ -42,6 +49,7 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
     )
     loader = ConfigLoader(config)
     git_store = GitStore(helios_dir)
+    learning_manager = LearningManager(helios_dir)
     
     # Ensure configuration directories exist
     config.ensure_directories()
@@ -484,6 +492,117 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
                 "message": str(e),
                 "query": query
             }
+
+    # Learning System Tools - Direct configuration evolution
+    @mcp.tool(
+        description="Learn a new behavior by directly editing persona configuration",
+        tags={"learning", "evolution"}
+    )
+    async def learn_behavior(
+        persona: str = Field(description="Name of persona to learn in"),
+        key: str = Field(description="Dot-notation key (e.g., 'behaviors.tools.package_manager')"),
+        value: Any = Field(description="Value to set (can be string, list, dict, etc.)"),
+        ctx: Context = None
+    ) -> Dict[str, Any]:
+        """Learn a new behavior - adds mass to the gravitational system.
+        
+        New behaviors don't erase existing ones but shift the dynamics
+        through the inheritance model's weighted calculations.
+        
+        Args:
+            params: Learning parameters with persona, key, and value
+            
+        Returns:
+            Learning result with old and new values
+        """
+        if ctx:
+            await ctx.info(f"Learning behavior: {key} for {persona}")
+        
+        params = LearnBehaviorParams(persona=persona, key=key, value=value)
+        return await learning_manager.learn_behavior(params)
+    
+    @mcp.tool(
+        description="Adjust inheritance weights to shift gravitational dynamics",
+        tags={"learning", "tuning"}
+    )
+    async def tune_weight(
+        target: str = Field(description="Target config: 'base' or persona name"),
+        parameter: str = Field(description="Parameter to tune: 'base_importance' or 'specialization_level'"),
+        value: float = Field(description="New value (0.0-1.0 for base_importance, >=1 for specialization_level)"),
+        ctx: Context = None
+    ) -> Dict[str, Any]:
+        """Tune inheritance weights - adjust the gravitational pull.
+        
+        Like adjusting the mass of celestial bodies, changing weights
+        shifts how strongly base influences personas.
+        
+        Args:
+            target: Target configuration name
+            parameter: Parameter to tune
+            value: New value for the parameter
+            
+        Returns:
+            Tuning result with old and new values
+        """
+        if ctx:
+            await ctx.info(f"Tuning {parameter} for {target}")
+        
+        params = TuneWeightParams(target=target, parameter=parameter, value=value)
+        return await learning_manager.tune_weight(params)
+    
+    @mcp.tool(
+        description="Undo recent learning by reverting git commits",
+        tags={"learning", "revert"}
+    )
+    async def revert_learning(
+        commits_back: int = Field(default=1, ge=1, le=10, description="Number of commits to revert (1-10)"),
+        ctx: Context = None
+    ) -> Dict[str, Any]:
+        """Revert recent learning - rewind the gravitational timeline.
+        
+        Uses git to undo recent behavioral changes, returning the system
+        to a previous configuration state.
+        
+        Args:
+            commits_back: Number of commits to undo
+            
+        Returns:
+            Revert result with affected commits
+        """
+        if ctx:
+            await ctx.info(f"Reverting {commits_back} commits")
+        
+        params = RevertLearningParams(commits_back=commits_back)
+        return await learning_manager.revert_learning(params)
+    
+    @mcp.tool(
+        description="Move behaviors between configurations (promotion/demotion)",
+        tags={"learning", "evolution"}
+    )
+    async def evolve_behavior(
+        from_config: str = Field(description="Source config: 'base' or persona name"),
+        to_config: str = Field(description="Target config: 'base' or persona name"),
+        key: str = Field(description="Dot-notation key to move (e.g., 'behaviors.package_manager')"),
+        ctx: Context = None
+    ) -> Dict[str, Any]:
+        """Evolve behavior between configurations - orbital transfer.
+        
+        Like a moon moving between planets, behaviors can migrate from
+        personas to base or vice versa, changing both gravitational systems.
+        
+        Args:
+            from_config: Source configuration
+            to_config: Target configuration
+            key: Key to move between configs
+            
+        Returns:
+            Evolution result with migration details
+        """
+        if ctx:
+            await ctx.info(f"Evolving {key} from {from_config} to {to_config}")
+        
+        params = EvolveBehaviorParams(from_config=from_config, to_config=to_config, key=key)
+        return await learning_manager.evolve_behavior(params)
 
     logger.info(f"Helios MCP Server created with config at {helios_dir}")
     return mcp

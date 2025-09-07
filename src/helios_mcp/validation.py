@@ -145,7 +145,7 @@ class ConfigValidator:
             return False, f"Error reading file: {e}"
     
     def recover_from_corruption(self, file_path: Path) -> bool:
-        """Attempt to recover corrupted configuration from git.
+        """Attempt to recover corrupted configuration from git or create defaults.
         
         Args:
             file_path: Path to corrupted configuration file
@@ -158,32 +158,45 @@ class ConfigValidator:
             
             # Check if we're in a git repository
             git_dir = self.helios_dir / ".git"
-            if not git_dir.exists():
-                logger.warning("No git repository found, cannot recover from git")
-                return False
+            git_recovery_successful = False
             
-            # Get relative path from helios directory
-            try:
-                rel_path = file_path.relative_to(self.helios_dir)
-            except ValueError:
-                logger.error(f"File {file_path} is not within Helios directory")
-                return False
-            
-            # Try to restore from git HEAD
-            result = subprocess.run([
-                "git", "-C", str(self.helios_dir),
-                "checkout", "HEAD", "--", str(rel_path)
-            ], capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                logger.info(f"Successfully recovered {file_path} from git")
-                return True
+            if git_dir.exists():
+                # Get relative path from helios directory
+                try:
+                    rel_path = file_path.relative_to(self.helios_dir)
+                except ValueError:
+                    logger.error(f"File {file_path} is not within Helios directory")
+                    return False
+                
+                # Try to restore from git HEAD
+                result = subprocess.run([
+                    "git", "-C", str(self.helios_dir),
+                    "checkout", "HEAD", "--", str(rel_path)
+                ], capture_output=True, text=True)
+                
+                if result.returncode == 0:
+                    logger.info(f"Successfully recovered {file_path} from git")
+                    return True
+                else:
+                    logger.warning(f"Git recovery failed: {result.stderr}")
             else:
-                logger.warning(f"Git recovery failed: {result.stderr}")
+                logger.warning("No git repository found, cannot recover from git")
+            
+            # If git recovery failed or not available, try to create defaults
+            logger.info(f"Attempting to create default configuration for {file_path}")
+            
+            # Determine if this is a base or persona config based on path
+            if "base" in file_path.parts and file_path.name == "identity.yaml":
+                return self.create_default_base_config(file_path)
+            elif "personas" in file_path.parts and file_path.suffix == ".yaml":
+                persona_name = file_path.stem
+                return self.create_default_persona_config(file_path, persona_name)
+            else:
+                logger.error(f"Cannot create default for unknown config type: {file_path}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Error during git recovery: {e}")
+            logger.error(f"Error during recovery: {e}")
             return False
     
     def create_default_base_config(self, file_path: Path) -> bool:

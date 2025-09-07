@@ -2,6 +2,7 @@
 
 import pytest
 import tempfile
+import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch
 import yaml
@@ -85,7 +86,7 @@ class TestConfigValidator:
         yaml_file = temp_dir / "test.yaml"
         yaml_file.write_text(yaml.dump({"key": "value"}))
         
-        valid, error = validator.validate_yaml_file(yaml_file)
+        valid, error = validator.validate_yaml_syntax(yaml_file)
         assert valid is True
         assert error is None
     
@@ -94,7 +95,7 @@ class TestConfigValidator:
         yaml_file = temp_dir / "test.yaml"
         yaml_file.write_text("invalid: yaml: syntax:")
         
-        valid, error = validator.validate_yaml_file(yaml_file)
+        valid, error = validator.validate_yaml_syntax(yaml_file)
         assert valid is False
         assert "YAML" in error
     
@@ -102,27 +103,32 @@ class TestConfigValidator:
         """Test missing file handling."""
         yaml_file = temp_dir / "missing.yaml"
         
-        valid, error = validator.validate_yaml_file(yaml_file)
+        valid, error = validator.validate_yaml_syntax(yaml_file)
         assert valid is False
-        assert "not found" in error
+        assert "does not exist" in error
     
-    @patch('helios_mcp.validation.GitStore')
-    def test_recover_from_corruption_git(self, mock_git_store, validator, temp_dir):
+    @patch('subprocess.run')
+    def test_recover_from_corruption_git(self, mock_run, validator, temp_dir):
         """Test recovery from corruption using git."""
+        # Setup git directory
+        git_dir = temp_dir / ".git"
+        git_dir.mkdir()
+        
         corrupted_file = temp_dir / "base" / "identity.yaml"
         corrupted_file.parent.mkdir(parents=True)
         corrupted_file.write_text("corrupted")
         
-        # Mock git recovery
-        mock_store = Mock()
-        mock_store.get_file_at_commit.return_value = yaml.dump({
-            "base_importance": 0.7,
-            "behaviors": {}
-        })
-        mock_git_store.return_value = mock_store
+        # Mock successful git checkout
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+        
+        # Create a validator with the temp_dir as helios_dir
+        validator = ConfigValidator(temp_dir)
         
         assert validator.recover_from_corruption(corrupted_file) is True
-        assert corrupted_file.exists()
+        mock_run.assert_called_once()
     
     def test_recover_from_corruption_defaults(self, validator, temp_dir):
         """Test recovery by creating defaults."""

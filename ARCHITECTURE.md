@@ -276,12 +276,79 @@ def recover_custom(self, path: Path) -> bool:
 - Git failure → Use defaults
 - Lock conflict → Clear message to user
 
-## Future Architecture Considerations
+## Learning System Architecture (v0.3.0)
 
-### Learning Engine (v0.3.0)
-- Pattern detection from usage
-- Behavioral reinforcement
-- Drift monitoring
+### Design Philosophy
+**Learning = Direct configuration editing + Git versioning**
+
+No separate learning infrastructure. Learning tools are just convenient ways to edit persona/base configurations, with git providing complete history and revert capability.
+
+### Learning Tools (4 new, total 11)
+
+```python
+@mcp.tool
+async def learn_behavior(persona: str, key: str, value: Any) -> dict:
+    """Add or update a behavior in a persona configuration."""
+    # Directly edits ~/.helios/personas/{persona}.yaml
+    # Git commit: "Learned: {key} for {persona}"
+
+@mcp.tool
+async def tune_weight(target: str, parameter: str, value: float) -> dict:
+    """Adjust inheritance weights (base_importance, specialization_level)."""
+    # Edits base/identity.yaml or personas/{name}.yaml
+    # Git commit: "Tuned: {parameter} to {value}"
+
+@mcp.tool
+async def revert_learning(commits_back: int = 1) -> dict:
+    """Undo recent learning by reverting git commits."""
+    # Git revert HEAD~{commits_back}
+    # Returns what was reverted
+
+@mcp.tool
+async def evolve_behavior(from_config: str, to_config: str, key: str) -> dict:
+    """Move a learned behavior between configurations."""
+    # Promotes behaviors from persona→base or base→persona
+    # Git commit: "Evolved: {key} from {from_config} to {to_config}"
+```
+
+### How Learning Works
+
+1. **Direct Editing**: All learning directly modifies YAML files
+2. **Git Tracking**: Every learn operation creates a semantic commit
+3. **Natural Evolution**: Personas evolve through actual usage
+4. **Simple Reversion**: Undo any learning with git revert
+
+### Example Learning Flow
+
+```yaml
+# Initial: ~/.helios/personas/developer.yaml
+specialization_level: 2
+behaviors:
+  tools: ["pytest", "pip"]
+
+# After: /learn developer tools.package_manager "uv"
+specialization_level: 2
+behaviors:
+  tools: ["pytest", "pip"]
+  package_manager: "uv"  # Added by learning
+
+# Git log shows:
+commit abc123: "Learned: package_manager=uv for developer"
+
+# Can revert with: /revert 1
+# Returns to original state via git
+```
+
+### Benefits of This Approach
+
+- **Simplicity**: No separate learning system to maintain
+- **Transparency**: Git diff shows exactly what was learned
+- **Flexibility**: Can edit any part of any configuration
+- **History**: Complete learning history in git log
+- **Rollback**: Revert any learning, anytime
+- **No overhead**: Reuses existing config and git infrastructure
+
+## Future Architecture Considerations
 
 ### Distributed Personas (v0.4.0)
 - Shared persona repositories
