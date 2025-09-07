@@ -6,42 +6,37 @@ Helios MCP is a behavioral configuration server for AI agents using weighted inh
 
 **Key Design Principle**: Work WITH the ephemeral nature of MCP STDIO servers, not against it. Each connection spawns a new process - this is a feature, not a bug.
 
-## Production Hardening Status (v0.2.0)
+## Core Architectural Decisions
 
-### ✅ Implemented Features
+### Ephemeral Process Model
+**Decision**: Embrace MCP's ephemeral subprocess architecture rather than fighting it.
+**Rationale**: MCP STDIO servers spawn per connection and die on disconnect. This is intentional for isolation and clean state.
+**Implementation**: All persistent state lives in `~/.helios/` with git versioning, not in process memory.
 
-1. **Atomic File Operations** (`atomic_ops.py`)
-   - Temp file + atomic rename pattern
-   - Cross-platform compatibility
-   - Automatic cleanup on errors
+### Atomic Operations Pattern
+**Decision**: All file writes use temp-file + atomic-rename pattern.
+**Rationale**: Prevents corruption during crashes, power loss, or forced termination.
+**Implementation**: 
+```python
+# Pattern used throughout codebase
+temp_file.write(data)
+temp_file.replace(target)  # Atomic on POSIX
+```
 
-2. **Installation Detection** (`bootstrap.py`)
-   - First-install detection via `.helios_version`
-   - Auto-bootstrap with defaults
-   - Welcome persona creation
+### Single-Instance Enforcement
+**Decision**: Use OS-level exclusive file creation (O_EXCL) for process locking.
+**Rationale**: Prevents race conditions at the kernel level, more reliable than PID checks.
+**Implementation**: Lock file with JSON metadata, automatic stale lock cleanup after 5 minutes.
 
-3. **Process Locking** (`locking.py`)
-   - Single-instance enforcement via O_EXCL atomic creation
-   - Stale lock cleanup (>5 minutes)
-   - PID validation with psutil
-   - JSON-based lock data format
+### Configuration Recovery Strategy
+**Decision**: Three-tier recovery: validate → git restore → create defaults.
+**Rationale**: Users should never lose configurations, but system should always start.
+**Implementation**: ConfigValidator attempts recovery before failing, ensuring availability.
 
-4. **Configuration Validation** (`validation.py`)
-   - YAML syntax checking
-   - Schema validation (required fields, value ranges)
-   - Git-based recovery from corruption
-   - Default fallback creation
-
-### 🔧 Critical Fixes Applied
-
-1. **Event Loop Management** - Detects existing asyncio loops for MCP compatibility
-2. **Atomic Lock Creation** - Uses OS-level O_EXCL flag to prevent race conditions
-3. **Test Data Format** - Aligned test fixtures with JSON lock format
-
-### 📊 Current Status
-- **Tests**: 111/116 passing (96% success rate)
-- **Known Issue**: Asyncio threading conflict needs resolution
-- **Ready**: Near production-ready pending asyncio fix
+### Event Loop Compatibility
+**Decision**: Detect and reuse existing asyncio event loops.
+**Rationale**: MCP/uvx environments provide their own event loop; creating new ones causes conflicts.
+**Implementation**: Try `get_running_loop()` first, only create new loop if none exists.
 
 ## Lifecycle Architecture
 
