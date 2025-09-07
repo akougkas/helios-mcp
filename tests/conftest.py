@@ -12,31 +12,59 @@ from helios_mcp.config import HeliosConfig, ConfigLoader
 from helios_mcp.inheritance import InheritanceCalculator, BehaviorMerger
 from helios_mcp.git_store import GitStore
 
+# Option 1: Use FastMCP Client (Recommended)
+from fastmcp import Client
 
-class MockTestClient:
-    """Mock test client for MCP server testing."""
+class ProperTestClient:
+    """Proper test client using FastMCP's built-in Client."""
     
     def __init__(self, server):
         self.server = server
         
     async def call_tool(self, tool_name, **kwargs):
-        """Call a tool function directly."""
-        if hasattr(self.server, '_tools') and tool_name in self.server._tools:
-            tool = self.server._tools[tool_name]
-            func = tool.func if hasattr(tool, 'func') else tool
-            return await func(**kwargs)
-        else:
-            # Fallback to getting tools from the server's module
-            import helios_mcp.server as server_module
+        """Call tool using FastMCP Client protocol."""
+        async with Client(self.server) as client:
+            result = await client.call_tool(tool_name, kwargs)
+            # Handle version differences in result format
+            try:
+                return result.content[0].text if result.content else result
+            except AttributeError:
+                return result[0].text if result else result
+
+
+# Option 2: Direct tool access (for unit testing)
+class DirectTestClient:
+    """Direct tool access for fast unit testing."""
+    
+    def __init__(self, server):
+        self.server = server
+        
+    async def call_tool(self, tool_name, **kwargs):
+        """Call tool function directly."""
+        try:
+            # Use FastMCP's get_tool method (it's async)
+            tool = await self.server.get_tool(tool_name)
+            if not tool:
+                raise ValueError(f"Tool {tool_name} not found in server")
             
-            # Get the actual functions from the decorated tools
-            if hasattr(server_module, 'mcp') and hasattr(server_module.mcp, '_tools'):
-                tools = server_module.mcp._tools
-                if tool_name in tools:
-                    func = tools[tool_name].func
-                    return await func(**kwargs)
-                    
-            raise ValueError(f"Tool {tool_name} not found")
+            # Access the actual function from FunctionTool
+            # FastMCP's FunctionTool has the function as 'fn' attribute
+            if hasattr(tool, 'fn'):
+                func = tool.fn
+            elif hasattr(tool, 'func'):
+                func = tool.func
+            elif callable(tool):
+                func = tool
+            else:
+                raise ValueError(f"Cannot access callable from tool {tool_name}, tool type: {type(tool)}")
+            
+            # Call the function
+            return await func(**kwargs)
+            
+        except Exception as e:
+            if "Error calling tool" in str(e):
+                raise
+            raise ValueError(f"Error calling tool {tool_name}: {str(e)}")
 
 
 @pytest.fixture
@@ -120,9 +148,11 @@ def mock_git_repo():
     mock_repo = Mock()
     mock_repo.is_dirty.return_value = False
     mock_repo.untracked_files = []
-    mock_repo.heads = True
+    mock_repo.heads = [Mock()]  # Make it a non-empty list so it evaluates to True
     mock_repo.git.add = Mock()
     mock_repo.index.commit = Mock()
+    # Set up index.diff to return empty lists
+    mock_repo.index.diff = Mock(return_value=[])
     return mock_repo
 
 
@@ -154,7 +184,7 @@ async def test_server(temp_helios_dir, sample_base_config):
 @pytest.fixture
 def test_client(test_server):
     """Create test client for MCP server."""
-    return MockTestClient(test_server)
+    return DirectTestClient(test_server)
 
 
 @pytest.fixture 

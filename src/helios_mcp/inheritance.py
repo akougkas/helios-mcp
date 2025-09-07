@@ -22,7 +22,7 @@ class InheritanceConfig:
     base_importance: float  # How important the base configuration is (0.0-1.0)
     specialization_level: int  # How specialized this persona is (1+ integers)
     min_weight: float = 0.01  # Minimum inheritance weight to prevent complete override
-    max_weight: float = 0.99  # Maximum inheritance weight to allow some specialization
+    max_weight: float = 1.0  # Maximum inheritance weight (1.0 allows full base inheritance)
 
 
 class InheritanceCalculator:
@@ -61,8 +61,8 @@ class InheritanceCalculator:
             >>> calc.calculate_weight(base_importance=0.7, specialization_level=2)
             0.175
         """
-        importance = base_importance or self.config.base_importance
-        level = specialization_level or self.config.specialization_level
+        importance = base_importance if base_importance is not None else self.config.base_importance
+        level = specialization_level if specialization_level is not None else self.config.specialization_level
         
         # Validate inputs
         if not 0.0 <= importance <= 1.0:
@@ -282,7 +282,7 @@ def create_inheritance_calculator(
     base_importance: float = 0.7,
     specialization_level: int = 2,
     min_weight: float = 0.01,
-    max_weight: float = 0.99
+    max_weight: float = 1.0
 ) -> InheritanceCalculator:
     """Factory function to create inheritance calculator with custom config.
     

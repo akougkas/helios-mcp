@@ -179,22 +179,25 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             if ctx:
                 await ctx.info(f"Calculating inheritance for persona '{persona_name}'...")
             
-            # Load base and persona configs
-            base_result = await get_base_config(ctx)
-            persona_result = await get_active_persona(persona_name, ctx)
+            # Load base and persona configs directly using loader
+            # Don't call other tools from within tools - use the underlying functions
+            base_config = await loader.load_base_config()
+            if base_config is None:
+                base_config = await loader.create_default_base_config()
             
-            if base_result["status"] != "success":
-                return {"status": "error", "message": "Failed to load base config"}
-            
-            base_config = base_result["config"]
-            
-            # Handle persona not found case
-            if persona_result["status"] == "not_found":
-                persona_config = persona_result["persona"]
-            elif persona_result["status"] != "success":
-                return {"status": "error", "message": "Failed to load persona config"}
-            else:
-                persona_config = persona_result["persona"]
+            persona_config = await loader.load_persona_config(persona_name)
+            if persona_config is None:
+                # Use sample persona for testing
+                persona_config = {
+                    "behaviors": {
+                        "communication_style": "technical",
+                        "response_length": "detailed",
+                        "domain_focus": "software_development"
+                    },
+                    "specialization_level": 2,
+                    "learning_rate": 0.1,
+                    "version": "1.0"
+                }
             
             # Calculate inheritance weight using the real InheritanceCalculator
             base_importance = base_config.get("base_importance", 0.7)
@@ -203,11 +206,21 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             # Create behavior merger with the inheritance parameters
             merger = create_behavior_merger(base_importance, specialization_level)
             
+            # Calculate the inheritance weight
+            inheritance_weight = merger.calculator.calculate_weight(
+                base_importance=base_importance,
+                specialization_level=specialization_level
+            )
+            
             if ctx:
-                await ctx.info(f"Calculated inheritance weight: {merger.inheritance_weight:.3f}")
+                await ctx.info(f"Calculated inheritance weight: {inheritance_weight:.3f}")
             
             # Merge behaviors using the real BehaviorMerger
-            merged_behaviors = merger.merge_behaviors(base_config, persona_config)
+            merged_behaviors = merger.merge_behaviors(
+                base_config, 
+                persona_config,
+                inheritance_weight=inheritance_weight
+            )
             
             return {
                 "status": "success",
@@ -215,8 +228,8 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
                 "calculation": {
                     "base_importance": base_importance,
                     "specialization_level": specialization_level,
-                    "inheritance_weight": merger.inheritance_weight,
-                    "persona_weight": 1 - merger.inheritance_weight
+                    "inheritance_weight": inheritance_weight,
+                    "persona_weight": 1 - inheritance_weight
                 },
                 "persona_name": persona_name
             }
