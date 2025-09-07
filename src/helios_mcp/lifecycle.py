@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 
 from .git_store import GitStore
 from .config import HeliosConfig
+from .validation import ConfigValidator
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,8 @@ class LifecycleManager:
         self,
         helios_dir: Path,
         health_check_interval: float = 60.0,
-        shutdown_timeout: float = 30.0
+        shutdown_timeout: float = 30.0,
+        process_lock = None
     ):
         """
         Args:
@@ -68,6 +70,10 @@ class LifecycleManager:
         
         # Signal handlers registered flag
         self._signal_handlers_registered = False
+        
+        # Process lock and validator
+        self.process_lock = process_lock
+        self.validator = ConfigValidator(helios_dir)
     
     def register_signal_handlers(self) -> None:
         """Register signal handlers for graceful shutdown."""
@@ -150,6 +156,10 @@ class LifecycleManager:
             # Run cleanup callbacks
             await self.cleanup_resources()
             
+            # Release process lock if we have one
+            if self.process_lock:
+                self.process_lock.release()
+            
             self.is_running = False
             logger.info("Graceful shutdown completed")
             
@@ -190,6 +200,11 @@ class LifecycleManager:
                     issues.append(f"Missing {dir_name} directory: {dir_path}")
                 elif not os.access(dir_path, os.R_OK | os.W_OK):
                     issues.append(f"No access to {dir_name} directory: {dir_path}")
+            
+            # Validate configurations
+            config_errors = self.validator.validate_all_configs(self.helios_dir)
+            if config_errors:
+                issues.extend([f"Config validation: {error}" for error in config_errors[:3]])  # Limit to first 3 errors
             
             return {
                 "healthy": len(issues) == 0,
@@ -313,6 +328,10 @@ class LifecycleManager:
     def register_cleanup_callback(self, callback: Callable[[], None]) -> None:
         """Register a cleanup callback to run on shutdown."""
         self.cleanup_callbacks.append(callback)
+        
+        # Register process lock cleanup if we have one
+        if self.process_lock and self.process_lock.release not in [cb.__func__ if hasattr(cb, '__func__') else cb for cb in self.cleanup_callbacks]:
+            self.cleanup_callbacks.append(self.process_lock.release)
     
     async def _health_monitor(self) -> None:
         """Background task for periodic health monitoring."""
@@ -371,7 +390,8 @@ class LifecycleManager:
 async def managed_lifecycle(
     helios_dir: Path,
     health_check_interval: float = 60.0,
-    shutdown_timeout: float = 30.0
+    shutdown_timeout: float = 30.0,
+    process_lock = None
 ):
     """Context manager for Helios lifecycle management.
     
@@ -380,7 +400,7 @@ async def managed_lifecycle(
             # Your server code here
             await server.run()
     """
-    manager = LifecycleManager(helios_dir, health_check_interval, shutdown_timeout)
+    manager = LifecycleManager(helios_dir, health_check_interval, shutdown_timeout, process_lock)
     
     try:
         await manager.start()

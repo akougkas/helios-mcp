@@ -15,6 +15,8 @@ except ImportError:
 from .server import create_server
 from .lifecycle import managed_lifecycle
 from .bootstrap import BootstrapManager
+from .locking import ProcessLock
+from .validation import ConfigValidator
 
 # Configure logging to stderr only (stdio reserved for MCP protocol)
 logging.basicConfig(
@@ -70,8 +72,15 @@ def main(
             logging.getLogger().setLevel(logging.DEBUG)
             logger.debug(f"Starting Helios MCP server with config directory: {helios_dir}")
         
-        # Bootstrap installation if needed
-        bootstrap = BootstrapManager(helios_dir)
+        # Acquire process lock to prevent multiple instances
+        process_lock = ProcessLock(helios_dir)
+        if not process_lock.acquire():
+            logger.error("Another Helios instance is already running")
+            return 1
+        
+        try:
+            # Bootstrap installation if needed
+            bootstrap = BootstrapManager(helios_dir)
         
         if bootstrap.is_first_install():
             logger.info("First installation detected - bootstrapping Helios")
@@ -84,6 +93,19 @@ def main(
                 install_info = bootstrap.get_installation_info()
                 logger.debug(f"Helios installation info: {install_info}")
         
+            # Validate all configurations after bootstrap
+            validator = ConfigValidator(helios_dir)
+            validation_errors = validator.validate_all_configs(helios_dir)
+            
+            if validation_errors:
+                logger.warning(f"Configuration validation issues found:")
+                for error in validation_errors:
+                    logger.warning(f"  - {error}")
+                # Continue anyway - validator will have attempted recovery
+            else:
+                if verbose:
+                    logger.debug("All configurations validated successfully")
+        
         # Ensure the helios directory exists (redundant after bootstrap but safe)
         helios_dir.mkdir(parents=True, exist_ok=True)
         
@@ -94,12 +116,16 @@ def main(
         logger.info(f"Starting Helios MCP server with configuration at {helios_dir}")
         logger.info(f"Lifecycle: health checks every {health_check_interval}s, shutdown timeout {shutdown_timeout}s")
         
-        # Run the server with lifecycle management
-        asyncio.run(run_server_with_lifecycle(
-            helios_dir, verbose, health_check_interval, shutdown_timeout
-        ))
+            # Run the server with lifecycle management
+            asyncio.run(run_server_with_lifecycle(
+                helios_dir, verbose, health_check_interval, shutdown_timeout, process_lock
+            ))
         
-        return 0
+            return 0
+        
+        finally:
+            # Always release the process lock
+            process_lock.release()
         
     except KeyboardInterrupt:
         logger.info("Server shutdown requested")
@@ -115,7 +141,8 @@ async def run_server_with_lifecycle(
     helios_dir: Path, 
     verbose: bool, 
     health_check_interval: float, 
-    shutdown_timeout: float
+    shutdown_timeout: float,
+    process_lock: ProcessLock
 ) -> None:
     """Run the Helios MCP server with lifecycle management.
     
@@ -132,7 +159,8 @@ async def run_server_with_lifecycle(
         async with managed_lifecycle(
             helios_dir=helios_dir,
             health_check_interval=health_check_interval,
-            shutdown_timeout=shutdown_timeout
+            shutdown_timeout=shutdown_timeout,
+            process_lock=process_lock
         ) as lifecycle_manager:
             
             logger.info("Lifecycle manager started successfully")

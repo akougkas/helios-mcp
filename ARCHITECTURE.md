@@ -6,6 +6,31 @@ Helios MCP is a behavioral configuration server for AI agents using weighted inh
 
 **Key Design Principle**: Work WITH the ephemeral nature of MCP STDIO servers, not against it. Each connection spawns a new process - this is a feature, not a bug.
 
+## Production Hardening Status (v0.2.0)
+
+### ✅ Implemented Features
+
+1. **Atomic File Operations** (`atomic_ops.py`)
+   - Temp file + atomic rename pattern
+   - Cross-platform compatibility
+   - Automatic cleanup on errors
+
+2. **Installation Detection** (`bootstrap.py`)
+   - First-install detection via `.helios_version`
+   - Auto-bootstrap with defaults
+   - Welcome persona creation
+
+3. **Process Locking** (`locking.py`)
+   - Single-instance enforcement
+   - Stale lock cleanup (>5 minutes)
+   - PID validation with psutil
+
+4. **Configuration Validation** (`validation.py`)
+   - YAML syntax checking
+   - Schema validation (required fields, value ranges)
+   - Git-based recovery from corruption
+   - Default fallback creation
+
 ## Lifecycle Architecture
 
 ### Process Lifecycle Model
