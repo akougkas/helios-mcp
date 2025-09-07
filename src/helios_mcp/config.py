@@ -7,6 +7,8 @@ import logging
 import datetime
 from dataclasses import dataclass
 
+from .atomic_ops import atomic_write_yaml
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,17 +71,17 @@ class ConfigLoader:
             raise
     
     async def save_yaml(self, file_path: Path, data: Dict[str, Any]) -> None:
-        """Save data to YAML file asynchronously.
+        """Save data to YAML file atomically.
+        
+        Uses atomic write operations to prevent corruption on crash.
         
         Args:
             file_path: Path to save YAML file
             data: Data to save
         """
         try:
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            with file_path.open('w', encoding='utf-8') as f:
-                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
-            logger.debug(f"Saved YAML to {file_path}")
+            atomic_write_yaml(file_path, data)
+            logger.debug(f"Atomically saved YAML to {file_path}")
         except Exception as e:
             logger.error(f"Failed to save YAML file {file_path}: {e}")
             raise
@@ -165,8 +167,8 @@ class ConfigLoader:
                 "created": datetime.datetime.now().strftime("%Y-%m-%d"),
                 "description": "Base identity providing fundamental behaviors for all specialized personas"
             }
-            # Save default identity config for future use
-            await self.save_yaml(identity_file, default_config)
+            # Save default identity config for future use using atomic operations
+            atomic_write_yaml(identity_file, default_config)
             return default_config
     
     async def load_persona_config(self, persona_name: str) -> Optional[Dict[str, Any]]:

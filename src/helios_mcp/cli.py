@@ -14,6 +14,7 @@ except ImportError:
 
 from .server import create_server
 from .lifecycle import managed_lifecycle
+from .bootstrap import BootstrapManager
 
 # Configure logging to stderr only (stdio reserved for MCP protocol)
 logging.basicConfig(
@@ -69,11 +70,25 @@ def main(
             logging.getLogger().setLevel(logging.DEBUG)
             logger.debug(f"Starting Helios MCP server with config directory: {helios_dir}")
         
-        # Ensure the helios directory exists
+        # Bootstrap installation if needed
+        bootstrap = BootstrapManager(helios_dir)
+        
+        if bootstrap.is_first_install():
+            logger.info("First installation detected - bootstrapping Helios")
+            bootstrap.bootstrap_installation()
+            logger.info("Bootstrap complete - Helios is ready to use")
+        else:
+            # Update last boot timestamp
+            bootstrap.update_last_boot()
+            if verbose:
+                install_info = bootstrap.get_installation_info()
+                logger.debug(f"Helios installation info: {install_info}")
+        
+        # Ensure the helios directory exists (redundant after bootstrap but safe)
         helios_dir.mkdir(parents=True, exist_ok=True)
         
         if verbose:
-            logger.debug(f"Configuration directory created/verified: {helios_dir}")
+            logger.debug(f"Configuration directory verified: {helios_dir}")
         
         # Create and run the server with lifecycle management
         logger.info(f"Starting Helios MCP server with configuration at {helios_dir}")
