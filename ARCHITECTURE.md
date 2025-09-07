@@ -21,15 +21,27 @@ Helios MCP is a behavioral configuration server for AI agents using weighted inh
    - Welcome persona creation
 
 3. **Process Locking** (`locking.py`)
-   - Single-instance enforcement
+   - Single-instance enforcement via O_EXCL atomic creation
    - Stale lock cleanup (>5 minutes)
    - PID validation with psutil
+   - JSON-based lock data format
 
 4. **Configuration Validation** (`validation.py`)
    - YAML syntax checking
    - Schema validation (required fields, value ranges)
    - Git-based recovery from corruption
    - Default fallback creation
+
+### 🔧 Critical Fixes Applied
+
+1. **Event Loop Management** - Detects existing asyncio loops for MCP compatibility
+2. **Atomic Lock Creation** - Uses OS-level O_EXCL flag to prevent race conditions
+3. **Test Data Format** - Aligned test fixtures with JSON lock format
+
+### 📊 Current Status
+- **Tests**: 111/116 passing (96% success rate)
+- **Known Issue**: Asyncio threading conflict needs resolution
+- **Ready**: Near production-ready pending asyncio fix
 
 ## Lifecycle Architecture
 

@@ -3,6 +3,8 @@
 import pytest
 import os
 import tempfile
+import json
+import time
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timedelta
@@ -61,8 +63,8 @@ class TestProcessLock:
         lock_file = temp_dir / ".helios.lock"
         
         # Create stale lock (old timestamp, dead process)
-        old_time = (datetime.now() - timedelta(minutes=10)).isoformat()
-        lock_file.write_text(f"99999\n{old_time}")
+        lock_data = {"pid": 99999, "timestamp": time.time() - 600}  # 10 mins ago
+        lock_file.write_text(json.dumps(lock_data))
         mock_pid_exists.return_value = False
         
         # Should clean up stale lock and acquire
@@ -77,8 +79,8 @@ class TestProcessLock:
         
         # Create recent lock with different PID (not our process)
         different_pid = 99999
-        current_time = datetime.now().isoformat()
-        lock_file.write_text(f"{different_pid}\n{current_time}")
+        lock_data = {"pid": different_pid, "timestamp": time.time()}
+        lock_file.write_text(json.dumps(lock_data))
         mock_pid_exists.return_value = True
         
         # Should not clean active lock
@@ -110,8 +112,8 @@ class TestProcessLock:
         lock_file = temp_dir / ".helios.lock"
         
         # Create stale lock
-        old_time = (datetime.now() - timedelta(minutes=10)).isoformat()
-        lock_file.write_text(f"99999\n{old_time}")
+        lock_data = {"pid": 99999, "timestamp": time.time() - 600}  # 10 mins ago
+        lock_file.write_text(json.dumps(lock_data))
         
         lock.cleanup_stale()
         assert not lock_file.exists()

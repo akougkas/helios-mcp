@@ -1,5 +1,24 @@
 # Helios MCP Development Log
 
+## Test: Final bug hunt - 2025-09-07
+- Server startup: ✅ Bootstraps correctly, ❌ Crashes with asyncio error
+- Import chain: ✅ All imports work
+- Test suite: 96% passing (111/116), 5 validation tests failing
+- Lock mechanism: ❌ Not working due to server crashes
+- **Status**: Critical asyncio bug blocks all functionality, see FIXES.md
+
+## Fix: Critical issues - asyncio, lock race, tests - 2025-09-07
+
+### Fixes Applied
+- **Asyncio Thread Error**: CLI now detects existing event loops (uvx/MCP context) 
+- **Process Lock Race**: Atomic file creation with O_EXCL flag prevents race conditions
+- **Test Fixtures**: Updated to JSON format for compatibility with new lock format
+
+### Technical Details
+- CLI uses event loop detection pattern for uvx compatibility
+- Process locking uses O_CREAT|O_EXCL for atomic lock file creation
+- All test fixtures updated from text format to JSON lock data format
+
 ## Session: Production Hardening Complete - 2025-09-07
 
 ### Accomplished

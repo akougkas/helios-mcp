@@ -81,18 +81,18 @@ def main(
         try:
             # Bootstrap installation if needed
             bootstrap = BootstrapManager(helios_dir)
-        
-        if bootstrap.is_first_install():
-            logger.info("First installation detected - bootstrapping Helios")
-            bootstrap.bootstrap_installation()
-            logger.info("Bootstrap complete - Helios is ready to use")
-        else:
-            # Update last boot timestamp
-            bootstrap.update_last_boot()
-            if verbose:
-                install_info = bootstrap.get_installation_info()
-                logger.debug(f"Helios installation info: {install_info}")
-        
+            
+            if bootstrap.is_first_install():
+                logger.info("First installation detected - bootstrapping Helios")
+                bootstrap.bootstrap_installation()
+                logger.info("Bootstrap complete - Helios is ready to use")
+            else:
+                # Update last boot timestamp
+                bootstrap.update_last_boot()
+                if verbose:
+                    install_info = bootstrap.get_installation_info()
+                    logger.debug(f"Helios installation info: {install_info}")
+            
             # Validate all configurations after bootstrap
             validator = ConfigValidator(helios_dir)
             validation_errors = validator.validate_all_configs(helios_dir)
@@ -105,24 +105,32 @@ def main(
             else:
                 if verbose:
                     logger.debug("All configurations validated successfully")
-        
-        # Ensure the helios directory exists (redundant after bootstrap but safe)
-        helios_dir.mkdir(parents=True, exist_ok=True)
-        
-        if verbose:
-            logger.debug(f"Configuration directory verified: {helios_dir}")
-        
-        # Create and run the server with lifecycle management
-        logger.info(f"Starting Helios MCP server with configuration at {helios_dir}")
-        logger.info(f"Lifecycle: health checks every {health_check_interval}s, shutdown timeout {shutdown_timeout}s")
-        
+            
+            # Ensure the helios directory exists (redundant after bootstrap but safe)
+            helios_dir.mkdir(parents=True, exist_ok=True)
+            
+            if verbose:
+                logger.debug(f"Configuration directory verified: {helios_dir}")
+            
+            # Create and run the server with lifecycle management
+            logger.info(f"Starting Helios MCP server with configuration at {helios_dir}")
+            logger.info(f"Lifecycle: health checks every {health_check_interval}s, shutdown timeout {shutdown_timeout}s")
+            
             # Run the server with lifecycle management
-            asyncio.run(run_server_with_lifecycle(
-                helios_dir, verbose, health_check_interval, shutdown_timeout, process_lock
-            ))
-        
+            try:
+                loop = asyncio.get_running_loop()
+                # Already in event loop (uvx/MCP context)
+                loop.create_task(run_server_with_lifecycle(
+                    helios_dir, verbose, health_check_interval, shutdown_timeout, process_lock
+                ))
+            except RuntimeError:
+                # No event loop running, create one
+                asyncio.run(run_server_with_lifecycle(
+                    helios_dir, verbose, health_check_interval, shutdown_timeout, process_lock
+                ))
+            
             return 0
-        
+            
         finally:
             # Always release the process lock
             process_lock.release()

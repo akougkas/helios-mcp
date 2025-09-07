@@ -71,15 +71,16 @@ class ProcessLock:
                 "start_time": time.time()
             }
             
-            # Use atomic write to prevent race conditions
-            temp_file = self.lock_file.with_suffix(".lock.tmp")
-            with temp_file.open('w', encoding='utf-8') as f:
-                json.dump(lock_data, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())  # Ensure data is written to disk
-            
-            # Atomic rename to final lock file
-            temp_file.rename(self.lock_file)
+            # Use exclusive file creation with O_EXCL flag (atomic operation)
+            try:
+                # O_CREAT | O_EXCL fails if file exists (atomic operation)
+                fd = os.open(str(self.lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(lock_data, f, indent=2)
+            except FileExistsError:
+                # Another process won the race
+                logger.info(f"Another process acquired lock first")
+                return False
             
             self.acquired = True
             logger.info(f"Process lock acquired (PID: {self.current_pid})")
