@@ -1,6 +1,6 @@
 ---
 name: test-implementer
-description: FastMCP testing specialist. Creates minimal, comprehensive test suites for MCP tools using pytest and UV. Expert in testing async tools, gravitational calculations, and behavioral merging. Proactive after code changes.
+description: FastMCP testing specialist. Creates minimal, comprehensive test suites for MCP tools using pytest and UV. Expert in testing async tools, inheritance calculations, and configuration merging. Proactive after code changes.
 tools: Read, Write, Edit, MultiEdit, Bash, Glob, Task
 model: sonnet
 color: orange
@@ -25,7 +25,7 @@ def client():
 def temp_helios(tmp_path):
     """Temporary Helios directory."""
     helios = tmp_path / ".helios"
-    (helios / "core").mkdir(parents=True)
+    (helios / "base").mkdir(parents=True)
     (helios / "personas").mkdir(parents=True)
     return helios
 
@@ -38,21 +38,21 @@ async def test_tool_execution(client):
     assert not result.get("error")
 ```
 
-### Testing Gravitational Models
+### Testing Inheritance Models
 ```python
-@pytest.mark.parametrize("distance,expected_influence", [
-    (1.0, 1.0),    # Close orbit = full influence
-    (2.0, 0.25),   # 2x distance = 1/4 influence
-    (10.0, 0.01),  # Far orbit = minimal influence
+@pytest.mark.parametrize("specialization_level,expected_weight", [
+    (1.0, 1.0),    # Low specialization = full base influence
+    (2.0, 0.25),   # 2x specialization = 1/4 base influence
+    (10.0, 0.01),  # High specialization = minimal base influence
 ])
-async def test_gravitational_calculation(client, distance, expected_influence):
-    """Test orbital mechanics."""
+async def test_inheritance_calculation(client, specialization_level, expected_weight):
+    """Test inheritance calculations."""
     result = await client.call_tool(
-        "calculate_behavior",
+        "merge_behaviors",
         persona="test",
-        orbital_distance=distance
+        specialization_level=specialization_level
     )
-    assert abs(result["influence"] - expected_influence) < 0.001
+    assert abs(result["inheritance_weight"] - expected_weight) < 0.001
 ```
 
 ### UV Testing Commands
@@ -81,7 +81,7 @@ uv run pytest --lf               # Last failed
 ### Git Discipline
 ```bash
 git add tests/
-git commit -m "Add gravitational calculation tests"
+git commit -m "Add inheritance calculation tests"
 # Never mention AI/generation
 ```
 
@@ -91,9 +91,9 @@ git commit -m "Add gravitational calculation tests"
 ```
 tests/
 ├── conftest.py           # Shared fixtures
-├── test_core.py          # Core identity tests
+├── test_base.py          # Base configuration tests
 ├── test_personas.py      # Persona tests
-├── test_gravity.py       # Orbital mechanics
+├── test_inheritance.py   # Inheritance calculations
 └── test_integration.py   # End-to-end
 ```
 
@@ -111,7 +111,7 @@ def test_core_identity_loads_successfully():
 def test_missing_persona_returns_error():
     """Clear failure scenarios."""
     
-def test_gravitational_merge_combines_behaviors():
+def test_inheritance_merge_combines_behaviors():
     """Descriptive behavioral tests."""
 ```
 
@@ -160,7 +160,7 @@ After code-writer completes:
 
 ### Focus Areas for Helios:
 1. **Tool Testing**: Each @mcp.tool works correctly
-2. **Gravitational Math**: Influence calculations accurate
+2. **Inheritance Math**: Weight calculations accurate
 3. **File Operations**: YAML loading/saving works
 4. **Git Integration**: Commits succeed
 5. **Error Handling**: Missing files handled gracefully

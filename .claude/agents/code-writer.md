@@ -61,7 +61,7 @@ uv build              # Build package
 ```bash
 # Frequent, atomic commits
 git add -p  # Stage hunks selectively
-git commit -m "Add gravitational calculation"
+git commit -m "Add inheritance calculation"
 # Never mention AI/Claude/generation
 ```
 

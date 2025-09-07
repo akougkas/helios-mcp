@@ -1,6 +1,6 @@
 # Helios MCP 🌞
 
-**The AI Behavior Solar System** - Give your AI agents persistent personalities, learned behaviors, and evolving capabilities through a git-versioned behavioral management system.
+**The AI Behavior Configuration System** - Give your AI agents persistent personalities, learned behaviors, and evolving capabilities through a git-versioned behavioral management system.
 
 > Built with FastMCP 2.2.6+ and UV 0.8.15+ for the MCP Protocol 2025-06-18 specification (September 2025)
 
@@ -73,22 +73,22 @@ uv run ruff check . --fix
 uv run mypy src/helios
 ```
 
-## The Solar System Model
+## The Inheritance Model
 
 ```yaml
-# Your behavioral solar system
-helios_core:  # ☀️ The Sun
-  mass: 1.0
+# Your behavioral configuration hierarchy
+base_config:  # Foundation configuration
+  importance: 1.0
   behaviors: [identity, values, communication_style]
 
-hercules:  # 🌍 Close orbit - coding persona
-  orbital_distance: 1.0
-  inherits: 0.95  # 95% core influence
+developer:  # Low specialization - coding persona
+  specialization_level: 1.0
+  inheritance_weight: 0.95  # 95% base influence
   specializes: [python, architecture, testing]
 
-homer:  # 🔴 Further orbit - knowledge persona  
-  orbital_distance: 1.5
-  inherits: 0.80  # 80% core influence
+researcher:  # Higher specialization - knowledge persona
+  specialization_level: 1.5
+  inheritance_weight: 0.80  # 80% base influence
   specializes: [synthesis, organization, creativity]
 ```
 
@@ -117,8 +117,8 @@ uv run --with rich helios serve --verbose
 # Initialize with template
 uvx helios init --template researcher
 
-# Add a new persona with orbital mechanics
-uvx helios add-persona creative --distance 2.0 --inherits 0.6
+# Add a new persona with inheritance settings
+uvx helios add-persona creative --specialization 2.0 --weight 0.6
 
 # Learn a new pattern with confidence scoring
 uvx helios learn "User prefers bullet points over paragraphs" --confidence 0.95
@@ -179,7 +179,7 @@ helios-mcp/
 │       ├── __init__.py
 │       ├── server.py   # FastMCP 2.2.6+ server
 │       ├── cli.py      # Typer CLI interface
-│       ├── solar.py    # Orbital mechanics engine
+│       ├── inheritance.py # Inheritance calculation engine
 │       ├── tools.py    # MCP tool implementations
 │       ├── resources.py # MCP resource templates
 │       └── prompts.py  # Reusable prompt templates

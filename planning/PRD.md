@@ -2,31 +2,31 @@
 
 ## Vision
 
-Helios transforms AI agents from stateless tools into evolving personalities with persistent memory, learned behaviors, and user-specific adaptations. Like a solar system where planets orbit a central star, AI behaviors orbit around a core identity, with each specialized persona maintaining its own trajectory while remaining gravitationally bound to fundamental principles.
+Helios transforms AI agents from stateless tools into evolving personalities with persistent memory, learned behaviors, and user-specific adaptations. Like a hierarchical configuration system where specialized personas inherit from a base identity, AI behaviors inherit with configurable weights, maintaining their specialization while remaining connected to fundamental principles.
 
 ## Problem Statement
 
 Current AI agents reset with every session, forgetting user preferences, learned patterns, and accumulated wisdom. Users must repeatedly teach the same preferences, explain their context, and rebuild their working relationship. Meanwhile, agents cannot learn from experience or evolve their behaviors based on what works.
 
 Helios solves this by creating a persistent, git-versioned behavioral management system where:
-- Users define their core identity once, and it persists forever
+- Users define their base configuration once, and it persists forever
 - Agents learn from interactions and evolve their behaviors
-- Specialized personas (coding, research, creative) inherit from a central core
+- Specialized personas (coding, research, creative) inherit from a base configuration
 - All learning is version-controlled and portable across machines
 
-## The Solar System Model
+## The Inheritance Model
 
 ### Core Concepts
 
-**Helios Core (The Sun)**: The gravitational center containing fundamental identity, values, and base behaviors that all personas inherit.
+**Base Configuration**: The foundation containing fundamental identity, values, and base behaviors that all personas inherit.
 
-**Personas (Planets)**: Specialized behavioral configurations that orbit the core. Closer orbits mean stronger inheritance from core behaviors; distant orbits allow more specialization.
+**Personas**: Specialized behavioral configurations that inherit from the base. Higher base importance means stronger inheritance from base behaviors; lower importance allows more specialization.
 
-**Behavioral Gravity**: Inheritance strength determined by orbital distance. A coding persona (close orbit) strongly inherits core communication style, while a creative persona (distant orbit) can diverge more.
+**Inheritance Weighting**: Inheritance strength determined by specialization level. A coding persona (low specialization) strongly inherits base communication style, while a creative persona (high specialization) can diverge more.
 
-**Alignments**: When multiple personas work together on complex tasks, they align like planetary conjunctions, combining their capabilities.
+**Combinations**: When multiple personas work together on complex tasks, they combine their capabilities through weighted inheritance.
 
-**Orbital Resonance**: Patterns that repeat successfully achieve "stability" and become permanent parts of the behavioral system.
+**Pattern Stability**: Patterns that repeat successfully achieve "stability" and become permanent parts of the behavioral system.
 
 ## Key Objectives
 
@@ -73,10 +73,10 @@ Helios is implemented as a Python MCP server using FastMCP 2.2.6+, adhering to t
 All behaviors stored as YAML/Markdown files in a git repository:
 ```
 ~/.helios/
-├── core/           # Solar core - fundamental identity
-├── personas/       # Planets - specialized behaviors  
-├── experiences/    # Learned patterns and adaptations
-├── transients/     # Temporary behavioral modifications
+├── base/           # Base configuration - fundamental identity
+├── personas/       # Specialized configurations - weighted inheritance
+├── learned/        # Learned patterns and adaptations
+├── temporary/      # Temporary behavioral modifications
 ├── config/         # System configuration
 ├── resources/      # MCP resource templates
 ├── prompts/        # Reusable prompt templates

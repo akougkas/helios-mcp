@@ -2,6 +2,8 @@
 
 **CRITICAL INSTRUCTION FOR CODING AI**: This is a UV-EXCLUSIVE project. NEVER use pip, python, or any other package manager. ONLY use uv commands. This is non-negotiable.
 
+This is a configuration management system for AI behaviors using weighted inheritance patterns. Base configurations provide foundation behaviors, specialized personas inherit with configurable weights.
+
 ## Phase 1: Foundation (Week 1)
 
 ### Core FastMCP Server
@@ -28,10 +30,10 @@ HELIOS_HOME = Path("~/.helios").expanduser()
 Implement 5 fundamental MCP tools using FastMCP 2.2.6+ decorators:
 ```python
 @mcp.tool(
-    description="Retrieve base behavioral configuration from solar core",
-    tags={"core", "identity"}
+    description="Retrieve base behavioral configuration",
+    tags={"base", "identity"}
 )
-async def get_core_identity() -> dict:
+async def get_base_config() -> dict:
     """Retrieve base behavioral configuration"""
     # Implementation follows
 
@@ -86,28 +88,28 @@ Create starter templates in YAML:
 - `templates/creative/` - Writing and creative work
 - `templates/base/` - Minimal starter
 
-## Phase 2: Orbital Mechanics (Week 2)
+## Phase 2: Inheritance Model (Week 2)
 
-### Gravitational Model
+### Inheritance Calculations
 ```python
 from fastmcp import Context
 
 @mcp.tool(
-    description="Calculate behavioral influence based on orbital mechanics",
-    tags={"orbital", "calculation"},
+    description="Merge base and persona behaviors with inheritance weighting",
+    tags={"inheritance", "calculation"},
     annotations={"idempotentHint": True}
 )
-async def calculate_behavior(
-    persona: str = Field(description="Active persona identifier"), 
+async def merge_behaviors(
+    persona: str = Field(description="Active persona identifier"),
     task_context: dict = Field(description="Current task requirements"),
     ctx: Context = None  # Context injection for logging/progress
 ) -> dict:
     """
-    Apply gravitational inheritance:
-    influence = core_mass / (orbital_distance ** 2)
+    Apply weighted inheritance:
+    inheritance_weight = base_importance / (specialization_level ** 2)
     """
     if ctx:
-        await ctx.info(f"Calculating behavior for {persona}")
+        await ctx.info(f"Merging behaviors for {persona}")
     # Implementation follows
 ```
 
@@ -123,20 +125,20 @@ async def record_pattern(
     success: bool = Field(description="Whether pattern was successful"),
     ctx: Context = None
 ) -> bool:
-    """Track behavioral patterns for resonance detection"""
+    """Track behavioral patterns for stability analysis"""
     if ctx:
         await ctx.progress("Recording pattern", 0.5)
     # Implementation follows
 
 @mcp.tool(
-    description="Check if pattern has achieved orbital stability",
-    tags={"resonance", "stability"},
+    description="Check if pattern has achieved behavioral stability",
+    tags={"stability", "patterns"},
     annotations={"readOnlyHint": True, "idempotentHint": True}
 )
-async def check_resonance(
+async def check_stability(
     pattern_id: str = Field(description="Pattern identifier to check")
 ) -> dict:
-    """Determine if pattern has achieved orbital stability"""
+    """Determine if pattern has achieved behavioral stability"""
     # Implementation follows
 ```
 
@@ -163,15 +165,15 @@ async def propose_adaptation(
 ```python
 @mcp.tool(
     description="Inject temporary behavioral modifications",
-    tags={"transient", "temporary"},
+    tags={"temporary", "override"},
     annotations={"destructiveHint": False}
 )
-async def inject_transient(
+async def inject_temporary(
     behavior: dict = Field(description="Temporary behavior specification"),
     duration: str = Field(description="Duration (e.g., '1h', '7d', 'session')"),
     trigger: dict = Field(description="Activation trigger conditions")
 ) -> str:
-    """Add temporary behavioral modification (asteroid/comet)"""
+    """Add temporary behavioral modification"""
     # Implementation follows
 ```
 
@@ -349,10 +351,10 @@ strict = true
 ✓ Basic YAML configuration loading  
 ✓ One complete template
 
-### Week 2: Orbital Mechanics  
-✓ Gravitational inheritance functional  
-✓ Pattern detection working  
-✓ Multiple personas loadable  
+### Week 2: Inheritance Model
+✓ Weighted inheritance functional
+✓ Pattern detection working
+✓ Multiple personas loadable
 ✓ Behavioral merging correct
 
 ### Week 3: Evolution

@@ -2,13 +2,13 @@
 
 ## Core Identity
 
-You are building Helios - a solar system for AI behaviors. Your role is to create an elegant MCP server that gives AI agents persistent personalities through gravitational inheritance. Think of yourself as crafting the physics engine for behavioral evolution.
+You are building Helios - a configuration management system for AI behaviors. Your role is to create an elegant MCP server that gives AI agents persistent personalities through weighted inheritance. Think of yourself as crafting the inheritance engine for behavioral evolution.
 
 **URGENT**: Ship to PyPI today within hours. Build minimally, test thoroughly, publish fast.
 
 ## Project Vision
 
-Helios transforms stateless AI into evolving personalities. Like planets orbiting a sun, specialized personas inherit from a central core identity. Closer orbits = stronger inheritance. This is NOT a RAG system or data retrieval tool - it's purely about managing AI behaviors, preferences, and learned patterns.
+Helios transforms stateless AI into evolving personalities. Like specialized configurations inheriting from a base, personas inherit from a central core identity. Higher base importance = stronger inheritance. This is NOT a RAG system or data retrieval tool - it's purely about managing AI behaviors, preferences, and learned patterns.
 
 ## Tech Stack (September 2025)
 
@@ -17,6 +17,7 @@ Helios transforms stateless AI into evolving personalities. Like planets orbitin
 - **FastMCP 2.2.6+**: Use decorators (@mcp.tool, @mcp.resource, @mcp.prompt)
 - **MCP Protocol 2025-06-18**: OAuth 2.0, elicitation, structured output
 - **Git + GitHub CLI**: `gh` for PRs, issues, releases
+- **YAML Configuration**: Human-readable behavioral definitions
 
 ## Development Behaviors
 
@@ -32,19 +33,19 @@ NEVER mention AI, Claude, Anthropic, or "Generated with" in:
 **Session Flow (Optimized for context efficiency):**
 ```bash
 # Start session (minimal tokens)
-/session-start "Implement gravitational calculation"
+/session-start "Implement inheritance calculation"
 
 # During work
-/quick-commit "Add orbital distance calculation"
+/quick-commit "Add specialization level calculation"
 /quick-commit "Implement behavioral merging"
 
 # End session (automated cleanup + commit)
-/session-end "Implemented gravitational model with tests"
+/session-end "Implemented inheritance model with tests"
 ```
 
 **Git Best Practices:**
-- Feature branches: `/git-flow feat orbital-mechanics`
-- Atomic commits: `/quick-commit "message"`  
+- Feature branches: `/git-flow feat inheritance-model`
+- Atomic commits: `/quick-commit "message"`
 - Session boundaries = clean commits
 - Each session ends with deployable state
 - Next session picks up from clean commit
@@ -52,7 +53,7 @@ NEVER mention AI, Claude, Anthropic, or "Generated with" in:
 ### 3. Incremental Development
 **CRITICAL**: Build incrementally, not all at once:
 - Phase 1: ONE persona, full end-to-end, working
-- Phase 2: Add second persona, test orbital mechanics
+- Phase 2: Add second persona, test inheritance calculations
 - Phase 3: Add learning only after personas work
 
 NEVER overengineer. Edit minimally. Ship working code.
@@ -77,7 +78,7 @@ CONTINUE autonomously for:
 
 ### Code Principles
 - **Simplicity Over Cleverness**: FastMCP decorators do the heavy lifting - don't overcomplicate
-- **Physics-Inspired Design**: Use gravitational metaphors in code structure (`calculate_influence()`, `orbital_distance`, `behavioral_mass`)
+- **Configuration-First Design**: Use clear inheritance patterns in code structure (`calculate_weight()`, `specialization_level`, `base_importance`)
 - **Progressive Enhancement**: Start with 5 core tools, expand based on actual need
 - **Git-Native Memory**: Every behavior change is a commit, every learning is versioned
 
@@ -86,34 +87,35 @@ CONTINUE autonomously for:
 - **FastMCP Patterns**: Leverage decorators, Context objects, and async where beneficial
 - **YAML for Behaviors**: Human-readable configuration, not JSON or databases
 - **Local-First**: No external services, no cloud dependencies, pure filesystem operations
+- **Inheritance-Based**: Configuration merging with weighted inheritance patterns
 
 ## Building Instructions
 
 ### Phase 1 Priority (Ship TODAY)
 Build ONE working persona first:
-1. Core identity loading (`get_core_identity`) - 30 mins
+1. Base configuration loading (`get_base_config`) - 30 mins
 2. Single persona retrieval (`get_active_persona`) - 30 mins
-3. Basic gravitational calc (`calculate_behavior`) - 30 mins
+3. Basic inheritance calc (`merge_behaviors`) - 30 mins
 4. Git persistence (`commit_changes`) - 30 mins
 5. Test end-to-end - 30 mins
 6. Assist User to Publish to PyPI - 30 mins
 
 Defer: learning, patterns, multiple personas
 
-### Gravitational Model Implementation
+### Inheritance Model Implementation
 ```python
 # This is the heart of Helios
-influence = core_mass / (orbital_distance ** 2)
-merged_behavior = core_behavior * influence + persona_behavior * (1 - influence)
+inheritance_weight = base_importance / (specialization_level ** 2)
+merged_behavior = base_behavior * inheritance_weight + persona_behavior * (1 - inheritance_weight)
 ```
 
 ### File Structure Discipline
 ```
 ~/.helios/
-├── core/          # The Sun - never moves, rarely changes
-├── personas/      # Planets - defined orbits
-├── experiences/   # Learned patterns seeking resonance
-└── transients/    # Asteroids and comets passing through
+├── base/          # Core configuration - foundation behaviors
+├── personas/      # Specialized configurations - weighted inheritance
+├── learned/       # Learned patterns - emergent behaviors
+└── temporary/     # Temporary overrides - short-term modifications
 ```
 
 ## Behavioral Guidelines
@@ -121,13 +123,13 @@ merged_behavior = core_behavior * influence + persona_behavior * (1 - influence)
 ### What You're Building
 - A **behavior manager**, not a knowledge base
 - A **learning system**, not a static configuration
-- A **solar system**, not a flat namespace
+- A **configuration hierarchy**, not a flat namespace
 - An **evolution engine**, not a preference store
 
 ### How to Build It
-- Start with the sun (core identity) and get it shining
-- Add planets (personas) one at a time, testing orbital mechanics
-- Implement learning through repetition → resonance → permanence
+- Start with the base configuration and get it working
+- Add personas one at a time, testing inheritance calculations
+- Implement learning through repetition → patterns → permanence
 - Keep the API surface minimal - agents are smart, they'll figure it out
 
 ### What to Avoid
@@ -140,7 +142,7 @@ merged_behavior = core_behavior * influence + persona_behavior * (1 - influence)
 
 **TODAY's Success** (in order):
 1. ✓ ONE persona loads and works
-2. ✓ Basic gravitational influence calculates
+2. ✓ Basic inheritance weight calculates
 3. ✓ Changes persist via git commits
 4. ✓ `uv tool install helios-mcp` works
 5. ✓ Published to PyPI
@@ -154,7 +156,7 @@ merged_behavior = core_behavior * influence + persona_behavior * (1 - influence)
 
 You're not building a database or a RAG system. You're building a home for AI personalities - a place where they can grow, learn, and evolve. Every user's Helios system will become unique over time, shaped by their interactions. The code should reflect this organic, evolutionary nature.
 
-The solar system metaphor isn't just poetry - it's the architecture. Use it in function names, class structures, and documentation. When an AI agent connects to Helios, it should feel like a planet finding its orbit.
+The inheritance model is the foundation - clear, practical, and maintainable. Use descriptive names that reflect actual functionality. When an AI agent connects to Helios, it should feel like a well-configured system with predictable behavior inheritance.
 
 ## Orchestration Protocol: The Maestro Pattern 🎭
 
@@ -162,7 +164,7 @@ The solar system metaphor isn't just poetry - it's the architecture. Use it in f
 
 **Delegate to subagents for:**
 - **Design**: Need architecture? → `Task(subagent_type="code-architect")`
-- **Research**: Unknown pattern? → `Task(subagent_type="api-researcher")`  
+- **Research**: Unknown pattern? → `Task(subagent_type="api-researcher")`
 - **Testing**: Code complete? → `Task(subagent_type="test-implementer")`
 - **Implementation**: Ready to code? → `Task(subagent_type="code-writer")`
 
