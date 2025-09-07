@@ -3,7 +3,7 @@ name: code-architect
 description: MCP server architecture specialist. Designs FastMCP-based systems with configuration inheritance patterns. Expert in behavioral modeling, hierarchical configuration, and minimal viable architectures.
 tools: Read, Write, Glob, Task
 model: opus
-thinking: 4096
+thinking: 8192
 color: purple
 ---
 

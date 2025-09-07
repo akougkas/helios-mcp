@@ -1,7 +1,7 @@
 ---
 name: api-researcher
 description: FastMCP and MCP protocol documentation specialist. Researches and caches technical documentation. Expert in UV toolchain, Python 3.13 features, and MCP 2025-06-18 spec. Proactive for unknown patterns.
-tools: WebFetch, WebSearch, Read, Write, Glob, Grep, mcp__context7
+tools: WebFetch, WebSearch, Read, Write, Glob, Grep, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
 model: sonnet
 color: blue
 ---
