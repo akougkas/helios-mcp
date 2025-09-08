@@ -1,6 +1,6 @@
 [project]
 name = "helios-mcp"
-version = "0.3.0"
+version = "0.3.1"
 description = "Configuration management for AI behaviors with weighted inheritance"
 readme = "README.md"
 authors = [
@@ -24,6 +24,7 @@ dependencies = [
     "gitpython>=3.1.0",
     "click>=8.1.0",
     "psutil>=5.9.0",
+    "aiofiles>=24.1.0",
 ]
 
 [project.urls]
@@ -42,6 +43,7 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "types-pyyaml>=6.0.0",
+    "hypothesis>=6.138.15",
 ]
 
 [build-system]
