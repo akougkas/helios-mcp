@@ -51,19 +51,10 @@ class ProcessLock:
             return True
             
         try:
-            # Clean up any stale locks first
-            self.cleanup_stale()
+            # Note: We no longer clean up stale locks proactively to avoid TOCTOU.
+            # Cleanup only happens after O_EXCL fails, ensuring atomicity.
             
-            # Check if lock file exists and is valid
-            if self.lock_file.exists():
-                if self._is_lock_valid():
-                    logger.info(f"Another Helios instance is already running (lock at {self.lock_file})")
-                    return False
-                else:
-                    logger.info("Found stale lock file, removing")
-                    self._remove_lock_file()
-            
-            # Create new lock file
+            # Create lock data
             lock_data = {
                 "pid": self.current_pid,
                 "timestamp": time.time(),
@@ -72,15 +63,36 @@ class ProcessLock:
             }
             
             # Use exclusive file creation with O_EXCL flag (atomic operation)
+            # This eliminates the TOCTOU race condition by relying solely on O_EXCL atomicity
             try:
                 # O_CREAT | O_EXCL fails if file exists (atomic operation)
-                fd = os.open(str(self.lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                with os.fdopen(fd, 'w') as f:
-                    json.dump(lock_data, f, indent=2)
+                fd = os.open(str(self.lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                try:
+                    with os.fdopen(fd, 'w') as f:
+                        json.dump(lock_data, f, indent=2)
+                except Exception:
+                    # If we fail to write, close the fd and remove the file
+                    os.close(fd)
+                    self._remove_lock_file()
+                    raise
             except FileExistsError:
-                # Another process won the race
-                logger.info(f"Another process acquired lock first")
-                return False
+                # File exists - check if it's stale and clean up if needed
+                self.cleanup_stale()
+                
+                # Try once more after cleanup
+                try:
+                    fd = os.open(str(self.lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                    try:
+                        with os.fdopen(fd, 'w') as f:
+                            json.dump(lock_data, f, indent=2)
+                    except Exception:
+                        os.close(fd)
+                        self._remove_lock_file()
+                        raise
+                except FileExistsError:
+                    # Another process still holds the lock after cleanup
+                    logger.info(f"Another Helios instance is already running (lock at {self.lock_file})")
+                    return False
             
             self.acquired = True
             logger.info(f"Process lock acquired (PID: {self.current_pid})")
@@ -122,7 +134,11 @@ class ProcessLock:
         return self._is_lock_valid()
     
     def cleanup_stale(self) -> None:
-        """Remove stale lock files."""
+        """Remove stale lock files.
+        
+        This function is called after a FileExistsError to check if the existing
+        lock file is stale and can be safely removed.
+        """
         if not self.lock_file.exists():
             return
             
@@ -132,6 +148,10 @@ class ProcessLock:
                 # Corrupt lock file, remove it
                 logger.warning("Removing corrupt lock file")
                 self._remove_lock_file()
+                return
+            
+            # Don't remove our own lock
+            if lock_data.get("pid") == self.current_pid:
                 return
             
             # Check if lock is stale by age
@@ -214,9 +234,25 @@ class ProcessLock:
                 return False
     
     def _remove_lock_file(self) -> None:
-        """Safely remove lock file."""
+        """Safely remove lock file.
+        
+        Only removes the file if we own it or if it's demonstrably stale.
+        """
         try:
             if self.lock_file.exists():
+                # Extra safety: check if we own this lock before removing
+                try:
+                    lock_data = self._read_lock_data()
+                    if lock_data and lock_data.get("pid") != self.current_pid:
+                        # Not our lock - only remove if process is dead
+                        pid = lock_data.get("pid")
+                        if pid and self._is_process_running(pid):
+                            logger.warning(f"Not removing lock file owned by running process {pid}")
+                            return
+                except Exception:
+                    # If we can't read lock data, it's probably corrupt, safe to remove
+                    pass
+                
                 self.lock_file.unlink()
         except Exception as e:
             logger.error(f"Failed to remove lock file: {e}")

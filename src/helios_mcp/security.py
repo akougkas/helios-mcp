@@ -9,7 +9,7 @@ import shlex
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Union, Set
 import logging
-from pydantic import BaseModel, Field, validator, ValidationError
+from pydantic import BaseModel, Field, validator, ValidationError, ConfigDict
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +74,11 @@ class BaseConfigSchema(BaseModel):
     behaviors: Optional[Dict[str, Any]] = None
     technical: Optional[Dict[str, Any]] = None
     preferences: Optional[Dict[str, Any]] = None
-    version: Optional[str] = Field(pattern=r'^\d+\.\d+\.\d+$')
-    description: Optional[str] = Field(max_length=1000)
+    version: Optional[str] = Field(default=None, pattern=r'^\d+\.\d+\.\d+$')
+    description: Optional[str] = Field(default=None, max_length=1000)
     created: Optional[str] = None
     
-    class Config:
-        extra = "allow"  # Allow additional fields but validate known ones
+    model_config = ConfigDict(extra="allow")  # Allow additional fields but validate known ones
 
 
 class PersonaConfigSchema(BaseModel):
@@ -88,15 +87,14 @@ class PersonaConfigSchema(BaseModel):
         ge=1.0,
         description="Specialization level (must be >= 1.0)"
     )
-    name: Optional[str] = Field(max_length=100, pattern=r'^[a-zA-Z0-9 _-]+$')
-    description: Optional[str] = Field(max_length=1000)
+    name: Optional[str] = Field(default=None, max_length=100, pattern=r'^[a-zA-Z0-9 _-]+$')
+    description: Optional[str] = Field(default=None, max_length=1000)
     behaviors: Optional[Dict[str, Any]] = None
     specializations: Optional[Dict[str, Any]] = None
-    learning_rate: Optional[float] = Field(ge=0.0, le=1.0)
-    version: Optional[str] = Field(pattern=r'^\d+\.\d+\.\d+$')
+    learning_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    version: Optional[str] = Field(default=None, pattern=r'^\d+\.\d+\.\d+$')
     
-    class Config:
-        extra = "allow"  # Allow additional fields but validate known ones
+    model_config = ConfigDict(extra="allow")  # Allow additional fields but validate known ones
 
 
 def validate_persona_name(name: str) -> str:

@@ -6,6 +6,7 @@ import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+from . import __version__
 from .atomic_ops import atomic_write_yaml, validate_yaml_file
 from .config import HeliosConfig
 
@@ -15,13 +16,15 @@ logger = logging.getLogger(__name__)
 class BootstrapManager:
     """Manages first installation and subsequent boots."""
     
-    def __init__(self, helios_dir: Path) -> None:
+    def __init__(self, helios_dir: Path, git_enabled: bool = True) -> None:
         """Initialize bootstrap manager.
         
         Args:
             helios_dir: Path to Helios configuration directory
+            git_enabled: Whether git operations are enabled
         """
         self.helios_dir = helios_dir
+        self.git_enabled = git_enabled
         self.version_file = helios_dir / ".helios_version"
         self.config = HeliosConfig(
             base_path=helios_dir / "base",
@@ -50,8 +53,11 @@ class BootstrapManager:
             # Create directory structure
             self._create_directory_structure()
             
-            # Initialize git repository if needed
-            self._initialize_git_repo()
+            # Initialize git repository if needed and enabled
+            if self.git_enabled:
+                self._initialize_git_repo()
+            else:
+                logger.debug("Git operations disabled - skipping repository initialization")
             
             # Create default base configuration
             self._create_default_base_config()
@@ -110,7 +116,7 @@ class BootstrapManager:
             if info["installed"]:
                 # Preserve existing info, just update last_boot
                 version_data = {
-                    "version": info.get("version", "0.1.0"),
+                    "version": info.get("version", __version__),
                     "install_date": info.get("install_date"),
                     "last_boot": datetime.datetime.now().isoformat()
                 }
@@ -201,6 +207,7 @@ Thumbs.db
             return
         
         default_config = {
+            "schema_version": "1.0.0",
             "base_importance": 0.7,
             "identity": {
                 "role": "Technical research partner and implementation specialist",
@@ -277,6 +284,7 @@ Thumbs.db
             return
         
         welcome_config = {
+            "schema_version": "1.0.0",
             "name": "welcome",
             "base_importance": 0.8,
             "specialization_level": 1,
@@ -303,10 +311,12 @@ Thumbs.db
     def _create_version_file(self) -> None:
         """Create version file marking successful installation."""
         version_data = {
-            "version": "0.1.0",
+            "version": __version__,
             "install_date": datetime.datetime.now().isoformat(),
             "last_boot": datetime.datetime.now().isoformat(),
-            "bootstrap_complete": True
+            "bootstrap_complete": True,
+            "git_enabled": self.git_enabled,
+            "schema_version": "1.0.0"
         }
         
         atomic_write_yaml(self.version_file, version_data)

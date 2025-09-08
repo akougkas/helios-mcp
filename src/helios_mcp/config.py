@@ -1,7 +1,7 @@
 """Configuration management for Helios MCP server."""
 
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import yaml
 import logging
 import datetime
@@ -199,3 +199,60 @@ class ConfigLoader:
         except Exception as e:
             logger.error(f"Failed to list personas: {e}")
             return []
+    
+    async def batch_load_personas(self, persona_names: list[str]) -> Dict[str, Optional[Dict[str, Any]]]:
+        """Load multiple personas concurrently.
+        
+        Args:
+            persona_names: List of persona names to load
+            
+        Returns:
+            Dictionary mapping persona names to their configurations
+        """
+        async def load_single(name: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+            config = await self.load_persona_config(name)
+            return name, config
+        
+        # Load all personas concurrently
+        tasks = [load_single(name) for name in persona_names]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Process results, filtering out exceptions
+        persona_configs = {}
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Failed to load persona in batch: {result}")
+                continue
+            name, config = result
+            persona_configs[name] = config
+        
+        return persona_configs
+    
+    async def preload_common_configs(self) -> None:
+        """Preload commonly used configurations into cache.
+        
+        This method loads the base config and all available personas
+        to warm up the cache for better performance.
+        """
+        try:
+            # Load base config
+            _ = await self.load_base_config()
+            
+            # Get list of personas and load them
+            personas = await self.list_personas()
+            if personas:
+                await self.batch_load_personas(personas)
+            
+            logger.info(f"Preloaded {len(personas)} personas and base config")
+        except Exception as e:
+            logger.warning(f"Failed to preload configs: {e}")
+    
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.cache.start_cleanup_task()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        self._thread_pool.shutdown(wait=True)
+        # Note: Don't shutdown cache here as it may be shared

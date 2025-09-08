@@ -20,6 +20,7 @@ class TestBootstrapManager:
         manager = BootstrapManager(helios_dir)
         
         assert manager.helios_dir == helios_dir
+        assert manager.git_enabled is True  # Default value
         assert manager.version_file == helios_dir / ".helios_version"
         assert isinstance(manager.config, HeliosConfig)
         
@@ -28,6 +29,15 @@ class TestBootstrapManager:
         assert manager.config.personas_path == helios_dir / "personas"
         assert manager.config.learned_path == helios_dir / "learned"
         assert manager.config.temporary_path == helios_dir / "temporary"
+    
+    def test_bootstrap_manager_initialization_git_disabled(self, tmp_path):
+        """Test BootstrapManager initialization with git disabled."""
+        helios_dir = tmp_path / ".helios"
+        manager = BootstrapManager(helios_dir, git_enabled=False)
+        
+        assert manager.helios_dir == helios_dir
+        assert manager.git_enabled is False
+        assert manager.version_file == helios_dir / ".helios_version"
 
 
 class TestFirstInstallDetection:
@@ -98,10 +108,12 @@ class TestBootstrapInstallation:
             config = yaml.safe_load(f)
         
         # Should have expected structure
+        assert "schema_version" in config
         assert "base_importance" in config
         assert "identity" in config
         assert "behaviors" in config
         assert "technical" in config
+        assert config["schema_version"] == "1.0.0"
         assert config["base_importance"] == 0.7
         assert config["version"] == "1.0.0"
     
@@ -123,6 +135,7 @@ class TestBootstrapInstallation:
         with welcome_file.open() as f:
             persona = yaml.safe_load(f)
         
+        assert persona["schema_version"] == "1.0.0"
         assert persona["name"] == "welcome"
         assert persona["base_importance"] == 0.8
         assert persona["specialization_level"] == 1
@@ -199,6 +212,25 @@ class TestBootstrapInstallation:
         # Other files should still be created
         assert manager.version_file.exists()
         assert manager.config.base_path.exists()
+    
+    def test_bootstrap_skips_git_when_disabled(self, tmp_path):
+        """Test that bootstrap skips git when disabled."""
+        helios_dir = tmp_path / ".helios"
+        manager = BootstrapManager(helios_dir, git_enabled=False)
+        
+        with patch('helios_mcp.bootstrap.subprocess.run') as mock_subprocess:
+            manager.bootstrap_installation()
+            
+            # Git commands should not be called
+            assert not mock_subprocess.called
+            
+            # Other files should still be created
+            assert manager.version_file.exists()
+            assert manager.config.base_path.exists()
+            
+            # .gitignore should not be created when git is disabled
+            gitignore_file = helios_dir / ".gitignore"
+            assert not gitignore_file.exists()
     
     def test_bootstrap_skips_existing_configs(self, tmp_path):
         """Test that bootstrap doesn't overwrite existing configurations."""
@@ -410,10 +442,13 @@ class TestPrivateMethods:
         with manager.version_file.open() as f:
             version_data = yaml.safe_load(f)
         
-        assert version_data["version"] == "0.1.0"
+        from helios_mcp import __version__
+        assert version_data["version"] == __version__
         assert version_data["install_date"] == "2025-09-07T10:00:00"
         assert version_data["last_boot"] == "2025-09-07T10:00:00"
         assert version_data["bootstrap_complete"] is True
+        assert version_data["git_enabled"] is True
+        assert version_data["schema_version"] == "1.0.0"
     
     def test_cleanup_failed_bootstrap(self, tmp_path):
         """Test cleanup after failed bootstrap."""
@@ -456,7 +491,8 @@ class TestBootstrapIntegration:
         # Installation info should be correct
         info = manager.get_installation_info()
         assert info["installed"] is True
-        assert info["version"] == "0.1.0"
+        from helios_mcp import __version__
+        assert info["version"] == __version__
         
         # Update boot timestamp should work
         manager.update_last_boot()

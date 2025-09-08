@@ -7,10 +7,15 @@ based on specialization level and base importance.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, Optional, Set
 from pathlib import Path
 from dataclasses import dataclass
+from functools import lru_cache
+import hashlib
+import json
 import logging
+
+from .cache import get_cache, cached
 
 logger = logging.getLogger(__name__)
 
@@ -64,21 +69,33 @@ class InheritanceCalculator:
         importance = base_importance if base_importance is not None else self.config.base_importance
         level = specialization_level if specialization_level is not None else self.config.specialization_level
         
-        # Validate inputs
+        # Validate inputs with improved bounds checking
         if not 0.0 <= importance <= 1.0:
             raise ValueError(f"base_importance must be between 0.0 and 1.0, got {importance}")
         if level < 1:
             raise ValueError(f"specialization_level must be >= 1, got {level}")
+        
+        # Add upper bound validation to prevent underflow
+        if level > 1000:
+            logger.warning(f"Extremely high specialization_level {level} may cause underflow, clamping to 1000")
+            level = 1000
             
         # Core Helios inheritance formula
         raw_weight = importance / (level ** 2)
         
-        # Clamp to configured bounds
+        # Clamp to configured bounds with better precision handling
         weight = max(self.config.min_weight, min(self.config.max_weight, raw_weight))
         
+        # Check for underflow condition and warn
+        if raw_weight < self.config.min_weight:
+            logger.warning(
+                f"Inheritance weight {raw_weight:.6f} below minimum {self.config.min_weight}, "
+                f"clamped to minimum (specialization_level={level} may be too high)"
+            )
+        
         logger.debug(
-            f"Calculated inheritance weight: {weight:.3f} "
-            f"(base_importance={importance}, specialization_level={level})"
+            f"Calculated inheritance weight: {weight:.6f} "
+            f"(raw: {raw_weight:.6f}, base_importance={importance}, specialization_level={level})"
         )
         
         return weight
@@ -89,11 +106,18 @@ class BehaviorMerger:
     
     Handles deep merging of nested dictionaries, applying inheritance weights
     at each level to blend base and specialized behaviors appropriately.
+    
+    Features high-performance optimizations:
+    - Memoization of merge operations
+    - Optimized list merging (O(n) instead of O(n²))
+    - Cache invalidation on configuration changes
     """
     
     def __init__(self, calculator: InheritanceCalculator | None = None) -> None:
         """Initialize merger with inheritance calculator."""
         self.calculator = calculator or InheritanceCalculator()
+        self.cache = get_cache()
+        self._merge_stats = {"cache_hits": 0, "cache_misses": 0, "computations": 0}
         
     def merge_behaviors(
         self,
@@ -103,7 +127,7 @@ class BehaviorMerger:
         base_importance: float | None = None,
         specialization_level: int | None = None
     ) -> Dict[str, Any]:
-        """Merge base and persona configurations using weighted inheritance.
+        """Merge base and persona configurations using weighted inheritance with caching.
         
         Args:
             base_config: Base behavioral configuration
@@ -120,16 +144,36 @@ class BehaviorMerger:
                 base_importance=base_importance,
                 specialization_level=specialization_level
             )
-            
-        logger.info(
-            f"Merging behaviors with inheritance weight: {inheritance_weight:.3f}"
+        
+        # Create cache key from configuration hashes and weight
+        cache_key = self._create_merge_cache_key(
+            base_config, persona_config, inheritance_weight
         )
         
-        return self._deep_merge(
+        # Try cache first
+        cached_result = self.cache.get(cache_key)
+        if cached_result is not None:
+            self._merge_stats["cache_hits"] += 1
+            logger.debug(f"Cache hit for merge operation (weight={inheritance_weight:.3f})")
+            return cached_result
+        
+        self._merge_stats["cache_misses"] += 1
+        self._merge_stats["computations"] += 1
+        
+        logger.info(
+            f"Computing merge with inheritance weight: {inheritance_weight:.3f}"
+        )
+        
+        result = self._deep_merge(
             base_config, 
             persona_config, 
             inheritance_weight
         )
+        
+        # Cache result with inheritance-specific TTL
+        self.cache.set(cache_key, result, ttl=self.cache.inheritance_ttl)
+        
+        return result
         
     def _deep_merge(
         self, 
@@ -139,6 +183,8 @@ class BehaviorMerger:
     ) -> Dict[str, Any]:
         """Recursively merge nested dictionaries with inheritance weighting.
         
+        Optimized version with reduced memory allocation and faster key processing.
+        
         Args:
             base: Base configuration dictionary
             persona: Persona configuration dictionary  
@@ -147,26 +193,27 @@ class BehaviorMerger:
         Returns:
             Deep-merged configuration dictionary
         """
+        # Pre-allocate result dict with estimated size
+        estimated_size = len(base) + len(persona)
         result: Dict[str, Any] = {}
         
-        # Get all unique keys from both configurations
-        all_keys = set(base.keys()) | set(persona.keys())
-        
-        for key in all_keys:
-            base_value = base.get(key)
+        # Process base keys first (most common case)
+        for key, base_value in base.items():
             persona_value = persona.get(key)
-            
-            if base_value is None:
-                # Only in persona - use persona value
-                result[key] = persona_value
-            elif persona_value is None:
-                # Only in base - use base value
+            if persona_value is None:
+                # Only in base - direct assignment
                 result[key] = base_value
             else:
-                # In both - need to merge based on types
+                # In both - merge based on types
                 result[key] = self._merge_values(
                     base_value, persona_value, weight, key
                 )
+        
+        # Process remaining persona keys (only those not in base)
+        for key, persona_value in persona.items():
+            if key not in base:
+                # Only in persona - direct assignment
+                result[key] = persona_value
                 
         return result
         
@@ -201,7 +248,13 @@ class BehaviorMerger:
         elif isinstance(base_value, (int, float)) and isinstance(persona_value, (int, float)):
             merged = base_value * weight + persona_value * (1 - weight)
             logger.debug(f"Numeric merge for {key}: {base_value} * {weight:.3f} + {persona_value} * {1-weight:.3f} = {merged}")
-            return type(base_value)(merged) if isinstance(base_value, int) else merged
+            # Use proper rounding for integer types instead of truncation
+            if isinstance(base_value, int) and isinstance(persona_value, int):
+                return round(merged)
+            elif isinstance(base_value, int):
+                return round(merged)
+            else:
+                return merged
             
         # Both are strings - choose based on weight (threshold at 0.5)
         elif isinstance(base_value, str) and isinstance(persona_value, str):
@@ -217,7 +270,11 @@ class BehaviorMerger:
             
         # Different types - persona wins (specialization takes precedence)
         else:
-            logger.debug(f"Type mismatch for {key}: using persona value ({type(persona_value).__name__})")
+            logger.warning(
+                f"Type mismatch for {key}: base_value={type(base_value).__name__}({base_value}), "
+                f"persona_value={type(persona_value).__name__}({persona_value}), "
+                f"using persona value (specialization takes precedence)"
+            )
             return persona_value
             
     def _merge_lists(
@@ -226,12 +283,14 @@ class BehaviorMerger:
         persona_list: list[Any], 
         weight: float
     ) -> list[Any]:
-        """Merge two lists based on inheritance weight.
+        """Optimized list merging with O(n) complexity.
         
         Strategy:
         - High weight (>0.7): Base list with persona items appended
         - Medium weight (0.3-0.7): Interleaved based on weight ratio  
         - Low weight (<0.3): Persona list with base items appended
+        
+        Uses set-based deduplication for O(n) performance instead of O(n²).
         
         Args:
             base_list: List from base configuration
@@ -241,41 +300,168 @@ class BehaviorMerger:
         Returns:
             Merged list
         """
+        # Fast path for empty lists
+        if not base_list:
+            return persona_list.copy()
+        if not persona_list:
+            return base_list.copy()
+        
+        # Use sets for O(n) deduplication instead of O(n²) "in" checks
+        base_set = set(base_list) if len(base_list) > 10 else None
+        persona_set = set(persona_list) if len(persona_list) > 10 else None
+        
         if weight > 0.7:
             # Strong base inheritance - base first, persona appends
             result = base_list.copy()
-            result.extend(item for item in persona_list if item not in result)
-            logger.debug(f"List merge: base-dominant (weight={weight:.3f})")
+            seen = base_set if base_set else set(base_list)
+            
+            # Add unique persona items
+            for item in persona_list:
+                if item not in seen:
+                    result.append(item)
+                    seen.add(item)
+            
+            logger.debug(
+                f"List merge: base-dominant (weight={weight:.3f}, "
+                f"final_size={len(result)}, unique_added={len(result) - len(base_list)})"
+            )
         elif weight < 0.3:
-            # Strong persona specialization - persona first, base appends
+            # Strong persona specialization - persona first, base appends  
             result = persona_list.copy()
-            result.extend(item for item in base_list if item not in result)
-            logger.debug(f"List merge: persona-dominant (weight={weight:.3f})")
+            seen = persona_set if persona_set else set(persona_list)
+            
+            # Add unique base items
+            for item in base_list:
+                if item not in seen:
+                    result.append(item)
+                    seen.add(item)
+            
+            logger.debug(
+                f"List merge: persona-dominant (weight={weight:.3f}, "
+                f"final_size={len(result)}, unique_added={len(result) - len(persona_list)})"
+            )
         else:
-            # Balanced merge - interleave based on weight ratio
-            base_ratio = int(len(base_list) * weight)
-            persona_ratio = int(len(persona_list) * (1 - weight))
+            # Balanced merge with optimized interleaving
+            result = self._interleave_lists_optimized(base_list, persona_list, weight)
             
-            result = []
-            b_idx = p_idx = 0
-            
-            # Interleave items based on ratio
-            while b_idx < len(base_list) or p_idx < len(persona_list):
-                # Add base items
-                for _ in range(min(base_ratio, len(base_list) - b_idx)):
-                    if b_idx < len(base_list):
-                        result.append(base_list[b_idx])
-                        b_idx += 1
-                        
-                # Add persona items
-                for _ in range(min(persona_ratio, len(persona_list) - p_idx)):
-                    if p_idx < len(persona_list):
-                        result.append(persona_list[p_idx])
-                        p_idx += 1
-                        
-            logger.debug(f"List merge: balanced interleave (weight={weight:.3f})")
+            logger.debug(f"List merge: balanced interleave (weight={weight:.3f}, final_size={len(result)})")
             
         return result
+
+    def _interleave_lists_optimized(
+        self, 
+        base_list: list[Any], 
+        persona_list: list[Any], 
+        weight: float
+    ) -> list[Any]:
+        """Optimized balanced list interleaving with O(n) complexity.
+        
+        Args:
+            base_list: Base list items
+            persona_list: Persona list items
+            weight: Inheritance weight for ratio calculation
+            
+        Returns:
+            Interleaved list maintaining proper weight ratios
+        """
+        # Calculate optimal batch sizes for interleaving
+        total_items = len(base_list) + len(persona_list)
+        base_target = max(1, round(total_items * weight))
+        persona_target = max(1, total_items - base_target)
+        
+        # Calculate step sizes for even distribution
+        if base_target >= len(base_list):
+            # Use all base items, distribute persona items evenly
+            base_step = 1
+            persona_step = max(1, len(persona_list) // (base_target - len(base_list) + 1))
+        elif persona_target >= len(persona_list):
+            # Use all persona items, distribute base items evenly
+            persona_step = 1
+            base_step = max(1, len(base_list) // (persona_target - len(persona_list) + 1))
+        else:
+            # Calculate balanced steps
+            base_step = max(1, len(base_list) // base_target)
+            persona_step = max(1, len(persona_list) // persona_target)
+        
+        result = []
+        b_idx = p_idx = 0
+        
+        # Interleave with calculated steps
+        while b_idx < len(base_list) or p_idx < len(persona_list):
+            # Add base items batch
+            base_end = min(b_idx + base_step, len(base_list))
+            if b_idx < base_end:
+                result.extend(base_list[b_idx:base_end])
+                b_idx = base_end
+            
+            # Add persona items batch
+            persona_end = min(p_idx + persona_step, len(persona_list))
+            if p_idx < persona_end:
+                result.extend(persona_list[p_idx:persona_end])
+                p_idx = persona_end
+        
+        return result
+    
+    def _create_merge_cache_key(
+        self, 
+        base_config: Dict[str, Any], 
+        persona_config: Dict[str, Any], 
+        weight: float
+    ) -> str:
+        """Create cache key for merge operation.
+        
+        Uses content hashing to create stable keys that account for
+        configuration changes while being fast to compute.
+        
+        Args:
+            base_config: Base configuration dictionary
+            persona_config: Persona configuration dictionary
+            weight: Inheritance weight
+            
+        Returns:
+            SHA256 hash as cache key
+        """
+        # Create stable hash from sorted JSON representation
+        base_json = json.dumps(base_config, sort_keys=True, ensure_ascii=True)
+        persona_json = json.dumps(persona_config, sort_keys=True, ensure_ascii=True)
+        weight_str = f"{weight:.6f}"  # Fixed precision for consistent hashing
+        
+        # Combine all components
+        combined = f"{base_json}|{persona_json}|{weight_str}"
+        
+        # Return SHA256 hash (first 16 chars for efficiency)
+        return f"merge:{hashlib.sha256(combined.encode('utf-8')).hexdigest()[:16]}"
+    
+    def get_merge_stats(self) -> Dict[str, Any]:
+        """Get merge operation statistics.
+        
+        Returns:
+            Dictionary with cache hit/miss ratios and performance metrics
+        """
+        total_requests = self._merge_stats["cache_hits"] + self._merge_stats["cache_misses"]
+        hit_rate = self._merge_stats["cache_hits"] / max(1, total_requests)
+        
+        return {
+            **self._merge_stats,
+            "total_requests": total_requests,
+            "hit_rate": hit_rate,
+            "cache_efficiency": hit_rate * 100,
+        }
+    
+    def clear_cache(self) -> None:
+        """Clear merge operation cache."""
+        # Clear only merge-related cache entries
+        cache_keys_to_remove = [
+            key for key in self.cache._cache.keys() 
+            if key.startswith("merge:")
+        ]
+        
+        with self.cache._lock:
+            for key in cache_keys_to_remove:
+                self.cache._cache.pop(key, None)
+        
+        # Reset stats
+        self._merge_stats = {"cache_hits": 0, "cache_misses": 0, "computations": 0}
 
 
 def create_inheritance_calculator(

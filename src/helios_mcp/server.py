@@ -1,9 +1,11 @@
-"""Helios MCP Server - Configuration management for AI behaviors."""
+"""Helios MCP Server - Configuration management for AI behaviors with performance optimizations."""
 
+import asyncio
 import logging
 from typing import Dict, Any, Optional
 from pathlib import Path
 import datetime
+import time
 
 from fastmcp import FastMCP, Context
 from pydantic import Field
@@ -11,6 +13,16 @@ from pydantic import Field
 from .config import HeliosConfig, ConfigLoader
 from .inheritance import create_behavior_merger, InheritanceCalculator
 from .git_store import GitStore
+from .cache import init_cache, shutdown_cache, get_cache
+from .security import (
+    validate_persona_name,
+    validate_config_domain,
+    validate_config_key,
+    sanitize_error_message,
+    SecurityError,
+    PathTraversalError,
+    InvalidInputError
+)
 from .learning import (
     LearningManager,
     LearnBehaviorParams,
@@ -28,15 +40,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
-    """Factory function to create configured MCP server.
+async def create_server(helios_dir: Optional[Path] = None, preload_cache: bool = True) -> FastMCP:
+    """Factory function to create configured MCP server with performance optimizations.
     
     Args:
         helios_dir: Path to Helios configuration directory. Defaults to ~/.helios
+        preload_cache: Whether to preload configurations for better performance
         
     Returns:
         Configured FastMCP server instance
     """
+    start_time = time.time()
+    
     # Initialize configuration with custom directory
     if helios_dir is None:
         helios_dir = Path.home() / ".helios"
@@ -47,12 +62,30 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
         learned_path=helios_dir / "learned",
         temporary_path=helios_dir / "temporary"
     )
+    
+    # Ensure configuration directories exist
+    config.ensure_directories()
+    
+    # Initialize performance cache system
+    await init_cache()
+    
+    # Initialize optimized loader with caching
     loader = ConfigLoader(config)
     git_store = GitStore(helios_dir)
     learning_manager = LearningManager(helios_dir)
     
-    # Ensure configuration directories exist
-    config.ensure_directories()
+    # Preload configurations for better performance
+    if preload_cache:
+        logger.info("Preloading configurations into cache...")
+        preload_start = time.time()
+        
+        try:
+            async with loader:
+                await loader.preload_common_configs()
+                preload_time = time.time() - preload_start
+                logger.info(f"Configuration preload completed in {preload_time:.2f}s")
+        except Exception as e:
+            logger.warning(f"Configuration preload failed: {e}")
     
     # Create MCP instance
     mcp = FastMCP("Helios")
@@ -119,10 +152,21 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             Dictionary containing persona behaviors and specialization level
         """
         try:
-            if ctx:
-                await ctx.info(f"Loading persona '{persona_name}'...")
+            # Validate persona name to prevent path traversal
+            try:
+                validated_name = validate_persona_name(persona_name)
+            except (SecurityError, InvalidInputError) as e:
+                logger.warning(f"Invalid persona name '{persona_name}': {e}")
+                return {
+                    "status": "error",
+                    "message": f"Invalid persona name: {sanitize_error_message(e)}",
+                    "persona_name": "[INVALID]"
+                }
             
-            persona_config = await loader.load_persona_config(persona_name)
+            if ctx:
+                await ctx.info(f"Loading persona '{validated_name}'...")
+            
+            persona_config = await loader.load_persona_config(validated_name)
             
             if persona_config is None:
                 # Return sample persona for testing
@@ -143,24 +187,24 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
                 return {
                     "status": "not_found",
                     "persona": sample_persona,
-                    "message": f"Persona '{persona_name}' not found, showing sample structure"
+                    "message": f"Persona '{validated_name}' not found, showing sample structure"
                 }
             
             if ctx:
-                await ctx.info(f"Successfully loaded persona '{persona_name}'")
+                await ctx.info(f"Successfully loaded persona '{validated_name}'")
             
             return {
                 "status": "success",
                 "persona": persona_config,
-                "path": str(config.personas_path / f"{persona_name}.yaml")
+                "path": str(config.personas_path / f"{validated_name}.yaml")
             }
             
         except Exception as e:
-            logger.error(f"Failed to load persona '{persona_name}': {e}")
+            logger.error(f"Failed to load persona: {e}")
             return {
                 "status": "error",
-                "message": str(e),
-                "persona_name": persona_name
+                "message": sanitize_error_message(e),
+                "persona_name": "[SANITIZED]"
             }
 
     @mcp.tool(
@@ -184,8 +228,19 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             Dictionary containing merged behaviors and inheritance calculations
         """
         try:
+            # Validate persona name to prevent path traversal
+            try:
+                validated_name = validate_persona_name(persona_name)
+            except (SecurityError, InvalidInputError) as e:
+                logger.warning(f"Invalid persona name '{persona_name}': {e}")
+                return {
+                    "status": "error",
+                    "message": f"Invalid persona name: {sanitize_error_message(e)}",
+                    "persona_name": "[INVALID]"
+                }
+            
             if ctx:
-                await ctx.info(f"Calculating inheritance for persona '{persona_name}'...")
+                await ctx.info(f"Calculating inheritance for persona '{validated_name}'...")
             
             # Load base and persona configs directly using loader
             # Don't call other tools from within tools - use the underlying functions
@@ -193,7 +248,7 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             if base_config is None:
                 base_config = await loader.create_default_base_config()
             
-            persona_config = await loader.load_persona_config(persona_name)
+            persona_config = await loader.load_persona_config(validated_name)
             if persona_config is None:
                 # Use sample persona for testing
                 persona_config = {
@@ -239,15 +294,15 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
                     "inheritance_weight": inheritance_weight,
                     "persona_weight": 1 - inheritance_weight
                 },
-                "persona_name": persona_name
+                "persona_name": validated_name
             }
             
         except Exception as e:
-            logger.error(f"Failed to merge behaviors for '{persona_name}': {e}")
+            logger.error(f"Failed to merge behaviors: {e}")
             return {
                 "status": "error",
-                "message": str(e),
-                "persona_name": persona_name
+                "message": sanitize_error_message(e),
+                "persona_name": "[SANITIZED]"
             }
 
     @mcp.tool(
@@ -370,8 +425,27 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             Dictionary with update status and new configuration
         """
         try:
+            # Validate input parameters to prevent injection and invalid data
+            try:
+                validated_domain = validate_config_domain(domain)
+                validated_key = validate_config_key(key)
+                
+                # Validate value length and content
+                if not isinstance(value, str):
+                    raise InvalidInputError("Value must be a string")
+                if len(value) > 1000:
+                    raise InvalidInputError("Value too long (max 1000 characters)")
+                
+            except (SecurityError, InvalidInputError) as e:
+                logger.warning(f"Invalid preference update parameters: {e}")
+                return {
+                    "status": "error",
+                    "message": f"Invalid input: {sanitize_error_message(e)}",
+                    "preference": "[INVALID]"
+                }
+            
             if ctx:
-                await ctx.info(f"Updating preference {domain}.{key} = {value}")
+                await ctx.info(f"Updating preference {validated_domain}.{validated_key} = {value}")
             
             # Load current base config
             identity_file = config.base_path / "identity.yaml"
@@ -382,21 +456,21 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
                 base_config = await loader.load_base_config()
                 config_file = config.base_path / "config.yaml"
             
-            # Update the preference
-            if domain not in base_config:
-                base_config[domain] = {}
+            # Update the preference using validated parameters
+            if validated_domain not in base_config:
+                base_config[validated_domain] = {}
             
             # Handle nested keys (e.g., "communication.tone")
-            if "." in key:
-                keys = key.split(".")
-                current = base_config[domain]
+            if "." in validated_key:
+                keys = validated_key.split(".")
+                current = base_config[validated_domain]
                 for k in keys[:-1]:
                     if k not in current:
                         current[k] = {}
                     current = current[k]
                 current[keys[-1]] = value
             else:
-                base_config[domain][key] = value
+                base_config[validated_domain][validated_key] = value
             
             # Save updated configuration
             await loader.save_yaml(config_file, base_config)
@@ -407,19 +481,19 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             return {
                 "status": "success",
                 "updated": {
-                    "domain": domain,
-                    "key": key,
+                    "domain": validated_domain,
+                    "key": validated_key,
                     "value": value
                 },
                 "config_path": str(config_file)
             }
             
         except Exception as e:
-            logger.error(f"Failed to update preference {domain}.{key}: {e}")
+            logger.error(f"Failed to update preference: {e}")
             return {
                 "status": "error",
-                "message": str(e),
-                "preference": f"{domain}.{key}"
+                "message": sanitize_error_message(e),
+                "preference": "[SANITIZED]"
             }
 
     @mcp.tool(
@@ -604,7 +678,115 @@ def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
         params = EvolveBehaviorParams(from_config=from_config, to_config=to_config, key=key)
         return await learning_manager.evolve_behavior(params)
 
-    logger.info(f"Helios MCP Server created with config at {helios_dir}")
+    # Performance monitoring and diagnostics tool
+    @mcp.tool(
+        description="Get performance statistics and cache metrics for optimization",
+        tags={"performance", "diagnostics"}
+    )
+    async def get_performance_stats(
+        ctx: Context = None
+    ) -> Dict[str, Any]:
+        """Get comprehensive performance statistics and cache metrics.
+        
+        Returns:
+            Dictionary containing cache stats, performance metrics, and system info
+        """
+        try:
+            if ctx:
+                await ctx.info("Gathering performance statistics...")
+            
+            # Get cache statistics
+            cache = get_cache()
+            cache_stats = cache.stats()
+            
+            # Get merge statistics if behavior merger exists
+            merger = create_behavior_merger()
+            merge_stats = merger.get_merge_stats()
+            
+            # System resource info
+            import psutil
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            
+            performance_stats = {
+                "cache": cache_stats,
+                "inheritance": merge_stats,
+                "system": {
+                    "memory_usage_mb": memory_info.rss / 1024 / 1024,
+                    "cpu_percent": process.cpu_percent(),
+                    "open_files": len(process.open_files()),
+                    "threads": process.num_threads(),
+                },
+                "server_info": {
+                    "helios_dir": str(helios_dir),
+                    "uptime_seconds": time.time() - start_time,
+                    "personas_available": len(await loader.list_personas()),
+                },
+                "recommendations": []
+            }
+            
+            # Add performance recommendations
+            if cache_stats["hit_rate"] < 0.5:
+                performance_stats["recommendations"].append(
+                    "Cache hit rate is low (<50%). Consider preloading common configurations or increasing cache TTL."
+                )
+            
+            if performance_stats["system"]["memory_usage_mb"] > 100:
+                performance_stats["recommendations"].append(
+                    f"Memory usage is high ({performance_stats['system']['memory_usage_mb']:.1f}MB). Consider reducing cache size or implementing cleanup."
+                )
+            
+            if merge_stats["cache_efficiency"] < 60:
+                performance_stats["recommendations"].append(
+                    "Inheritance calculation cache efficiency is low. Check for configuration churn or increase cache size."
+                )
+            
+            if ctx:
+                await ctx.info(f"Performance report generated - cache hit rate: {cache_stats['hit_rate']:.1%}")
+            
+            return {
+                "status": "success",
+                "performance": performance_stats,
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get performance stats: {e}")
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+
+    # Add server shutdown handler for cleanup
+    @mcp.resource(
+        uri="helios://shutdown",
+        name="Server Shutdown Handler",
+        description="Clean shutdown with resource cleanup"
+    )
+    async def shutdown_handler():
+        """Handle graceful server shutdown with resource cleanup."""
+        try:
+            logger.info("Initiating graceful server shutdown...")
+            
+            # Clean up cache resources
+            await shutdown_cache()
+            
+            # Clean up atomic operations
+            from .atomic_ops import cleanup_resources
+            cleanup_resources()
+            
+            logger.info("Server shutdown completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Error during server shutdown: {e}")
+
+    # Log final startup time and return server
+    total_startup_time = time.time() - start_time
+    logger.info(
+        f"Helios MCP Server created with config at {helios_dir} "
+        f"(startup time: {total_startup_time:.2f}s)"
+    )
+    
     return mcp
 
 

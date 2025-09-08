@@ -57,7 +57,7 @@ class GitStore:
     
     def auto_commit(self, change_type: str = "config", persona: Optional[str] = None, 
                    file_type: Optional[str] = None) -> bool:
-        """Auto-commit any YAML configuration changes.
+        """Auto-commit any YAML configuration changes with conflict detection.
         
         Args:
             change_type: Type of change (persona_update, base_update, learning, etc.)
@@ -73,16 +73,46 @@ class GitStore:
                 logger.debug("Repository is clean, no changes to commit")
                 return False
             
+            # Check for merge conflicts before committing
+            try:
+                # Look for conflict markers in tracked files
+                conflict_files = []
+                for item in self.repo.index.diff(None):
+                    file_path = self.helios_dir / item.a_path
+                    if file_path.exists() and file_path.is_file():
+                        try:
+                            content = file_path.read_text(encoding='utf-8')
+                            if any(marker in content for marker in ['<<<<<<<', '=======', '>>>>>>>']):
+                                conflict_files.append(str(item.a_path))
+                        except (UnicodeDecodeError, OSError):
+                            # Skip binary files or files we can't read
+                            continue
+                            
+                if conflict_files:
+                    logger.error(f"Conflict markers found in files: {conflict_files}")
+                    return False
+                    
+            except Exception as e:
+                logger.warning(f"Could not check for conflicts: {e}")
+            
             # Add all changed files (including untracked)
             self.repo.git.add(A=True)  # Equivalent to 'git add -A'
             
             # Generate descriptive commit message
             message = self._generate_commit_message(change_type, persona, file_type)
             
-            # Create commit
-            self.repo.index.commit(message)
-            logger.info(f"Committed changes: {message}")
-            return True
+            # Create commit with additional validation
+            try:
+                self.repo.index.commit(message)
+                logger.info(f"Committed changes: {message}")
+                return True
+            except Exception as commit_error:
+                # Check if this is due to empty commit
+                if "nothing to commit" in str(commit_error).lower():
+                    logger.debug("Nothing to commit after staging")
+                    return False
+                else:
+                    raise commit_error
             
         except Exception as e:
             logger.error(f"Failed to commit changes: {e}")

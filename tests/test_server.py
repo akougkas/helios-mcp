@@ -18,7 +18,7 @@ class TestServerCreation:
     @pytest.mark.asyncio
     async def test_create_server_default_dir(self):
         """Test server creation with default directory."""
-        server = create_server()
+        server = await create_server(preload_cache=False)  # Disable cache preloading in tests
         
         assert server is not None
         assert server.name == "Helios"
@@ -34,15 +34,17 @@ class TestServerCreation:
             "commit_changes",
             "list_personas",
             "update_preference",
-            "search_patterns"
+            "search_patterns",
+            "get_performance_stats"  # New performance monitoring tool
         }
         
         for tool_name in expected_tools:
             assert tool_name in tool_names
     
-    def test_create_server_custom_dir(self, temp_helios_dir):
+    @pytest.mark.asyncio
+    async def test_create_server_custom_dir(self, temp_helios_dir):
         """Test server creation with custom directory."""
-        server = create_server(temp_helios_dir)
+        server = await create_server(temp_helios_dir, preload_cache=False)
         
         assert server is not None
         assert server.name == "Helios"
