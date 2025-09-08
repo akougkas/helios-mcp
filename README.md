@@ -1,4 +1,4 @@
-# ☀️ Helios MCP
+# ☀️ Helios MCP ☀️
 
 **Transform stateless AI into evolving personalities with mathematical precision**
 
@@ -7,6 +7,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP 2025](https://img.shields.io/badge/MCP-2025--06--18-purple)](https://modelcontextprotocol.io/)
 [![Tests](https://img.shields.io/badge/tests-159%20passing-brightgreen)](https://github.com/akougkas/helios-mcp)
+[![Built with UV](https://img.shields.io/badge/built%20with-UV-blue?logo=python)](https://github.com/astral-sh/uv)
+
+[![Install with uvx](https://img.shields.io/badge/install-uvx%20helios--mcp-green?style=for-the-badge&logo=python)](https://pypi.org/project/helios-mcp/)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/akougkas?logo=github)](https://github.com/sponsors/akougkas)
+[![Discord](https://img.shields.io/discord/123456789?color=7289da&label=Community&logo=discord&logoColor=white)](https://discord.gg/helios-mcp)
 
 ## 🚀 What is Helios?
 
@@ -26,24 +31,23 @@ Helios provides a mathematical framework for AI personality evolution:
 
 This isn't prompt engineering - it's personality engineering.
 
-## ⚡ Quick Start
+## ⚡ Installation & Setup
 
-### Installation (30 seconds)
+### 🚀 Quick Install (30 seconds)
 
 ```bash
-# Via UV (recommended - already installed on most systems)
+# One command to rule them all
 uvx helios-mcp
-
-# For development/testing
-git clone https://github.com/akougkas/helios-mcp
-cd helios-mcp
-uv sync
-uv run helios-mcp
 ```
 
-### Configuration (2 minutes)
+That's it! Helios is now available as an MCP server.
 
-**Claude Desktop**
+### 📱 IDE Integration
+
+<details>
+<summary><b>✨ Cursor (Recommended)</b></summary>
+
+Add to `~/.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
@@ -54,8 +58,28 @@ uv run helios-mcp
   }
 }
 ```
+</details>
 
-**VS Code / Cursor**
+<details>
+<summary><b>🔵 Claude Desktop</b></summary>
+
+Add to your `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "helios": {
+      "command": "uvx",
+      "args": ["helios-mcp", "--helios-dir", "~/.helios"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>💻 VS Code / Claude Code</b></summary>
+
+Add to your VS Code `settings.json`:
 ```json
 {
   "mcp.servers": {
@@ -66,23 +90,62 @@ uv run helios-mcp
   }
 }
 ```
+</details>
 
-### Your First Persona (1 minute)
+<details>
+<summary><b>🌊 Windsurf</b></summary>
 
+Add to your Windsurf MCP config:
+```json
+{
+  "mcpServers": {
+    "helios": {
+      "command": "uvx",
+      "args": ["helios-mcp", "--helios-dir", "~/.helios"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>🔧 Development Setup</b></summary>
+
+For contributors and local development:
+```bash
+# Clone and setup
+git clone https://github.com/akougkas/helios-mcp
+cd helios-mcp
+uv sync
+
+# Run locally
+uv run helios-mcp --verbose
+```
+</details>
+
+### 🎯 First Time Setup
+
+After installation, create your first persona:
+
+```bash
+# Helios will create ~/.helios/ automatically on first run
+mkdir -p ~/.helios/personas
+```
+
+Create `~/.helios/personas/developer.yaml`:
 ```yaml
-# ~/.helios/personas/developer.yaml
 specialization_level: 2
 behaviors:
   communication_style: "Concise with code examples"
-  problem_solving: "Test-driven, iterative"
+  problem_solving: "Test-driven, iterative" 
   preferred_tools: ["pytest", "uv", "ruff"]
 ```
 
-That's it! Your AI now has a persistent developer personality.
+🎉 **Done!** Your AI now has persistent memory and personality.
 
 ## ✨ Features
 
-### 🧬 Mathematical Inheritance Model
+### 🧬 Weighted Inheritance Model
 ```python
 # The core formula that powers Helios
 inheritance_weight = base_importance / (specialization_level ** 2)
@@ -135,78 +198,8 @@ Helios exposes 11 tools through the Model Context Protocol (7 core + 4 learning)
 | `revert_learning` | `commits_back: int` | `{reverted_commits}` | Undo via git |
 | `evolve_behavior` | `from: str, to: str, key: str` | `{direction, value}` | Migrate behaviors |
 
-### Inheritance Calculation Algorithm
 
-```python
-def calculate_inheritance(base_importance: float, specialization_level: int) -> float:
-    """
-    Calculate how much influence the base configuration has.
-    
-    Higher specialization_level = less base influence
-    Higher base_importance = more base influence
-    
-    Returns: weight between 0.01 and 1.0
-    """
-    weight = base_importance / (specialization_level ** 2)
-    return max(0.01, min(1.0, weight))
-```
-
-### Configuration Schema
-
-**Base Configuration** (`~/.helios/base/identity.yaml`):
-```yaml
-base_importance: 0.7  # float: 0.0-1.0, influence strength
-behaviors:
-  communication_style: str
-  problem_solving: str
-  preferred_frameworks: [str]
-metadata:
-  version: str
-  created: datetime
-```
-
-**Persona Configuration** (`~/.helios/personas/{name}.yaml`):
-```yaml
-specialization_level: 2  # int: >= 1, higher = more specialized
-behaviors:
-  # Overrides or extends base behaviors
-  communication_style: str
-  domain_expertise: str
-metadata:
-  inherits_from: "base"
-  version: str
-```
-
-### Behavioral Merging Rules
-
-1. **Scalar values** (strings, numbers): Weighted selection based on inheritance
-2. **Lists**: Concatenation with deduplication, weighted ordering
-3. **Nested dictionaries**: Recursive merging with same rules
-4. **Missing keys**: Inherited from base if not in persona
-
-### Example Integration
-
-```python
-# AI agent using Helios to load personality
-async def load_personality(mcp_client, context):
-    # Get base configuration
-    base = await mcp_client.call_tool("get_base_config")
-    
-    # Determine appropriate persona from context
-    persona_name = detect_context(context)  # e.g., "developer", "researcher"
-    
-    # Load and merge
-    persona = await mcp_client.call_tool("get_active_persona", {"name": persona_name})
-    merged = await mcp_client.call_tool("merge_behaviors", {
-        "base": base,
-        "persona": persona
-    })
-    
-    # Apply behavioral configuration
-    return merged["merged"]
-```
-
-### Learning System (v0.3.0)
+### Learning System
 
 Learning tools that directly edit configurations:
 - `learn_behavior(persona, key, value)` - Add/update behaviors
@@ -245,7 +238,7 @@ git clone https://github.com/akougkas/helios-mcp
 cd helios-mcp
 uv sync
 
-# Run tests (currently 116 passing)
+# Run tests (159 tests passing)
 uv run pytest
 
 # Run with local changes
@@ -266,23 +259,44 @@ uv run helios-mcp --verbose
 
 | Issue | Solution |
 |-------|----------|
-| "Tool not found" | Run `uvx helios-mcp` or check PATH |
-| "No personas" | Create a `.yaml` file in `~/.helios/personas/` |
-| "Permission denied" | Check write permissions for `~/.helios/` |
-| "Git error" | Helios auto-initializes git, check `.helios/.git/` |
+| `uvx: command not found` | Install UV: `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| `No personas found` | Create `~/.helios/personas/default.yaml` |
+| `Permission denied` | Check write access: `ls -la ~/.helios/` |
+| `Git initialization failed` | Run `git init` in `~/.helios/` |
+| `MCP connection failed` | Restart your IDE after config changes |
+| `Tool not found` | Run `uvx helios-mcp` or check PATH |
 
 **Debug Commands:**
 ```bash
-# Check installation
+# Verify installation
 uvx helios-mcp --version
 
-# Verbose logging
+# Test with verbose logging  
 uvx helios-mcp --verbose
 
-# Verify config directory
-ls -la ~/.helios/
+# Check your personas
+ls -la ~/.helios/personas/
+
+# Validate YAML syntax
+uv run python -c "import yaml; yaml.safe_load(open('~/.helios/base/identity.yaml'))"
 ```
+
+**Still having issues?** 
+- 📖 [Check our Documentation](docs/ARCHITECTURE.md)
+- 🐛 [Report a bug](https://github.com/akougkas/helios-mcp/issues)
+- 💬 [GitHub Discussions](https://github.com/akougkas/helios-mcp/discussions)
+
 </details>
+
+## 🌟 Community & Support
+
+[![GitHub Discussions](https://img.shields.io/github/discussions/akougkas/helios-mcp)](https://github.com/akougkas/helios-mcp/discussions)
+[![GitHub Issues](https://img.shields.io/github/issues/akougkas/helios-mcp)](https://github.com/akougkas/helios-mcp/issues)
+
+- 🗣️ **Discussions**: Feature requests and Q&A  
+- 🐛 **Issues**: Bug reports and fixes
+- 📖 **Documentation**: [Architecture](docs/ARCHITECTURE.md) and guides
+- 🎯 **Examples**: [Sample Configurations](docs/samples/)
 
 ## 🤝 Contributing
 
