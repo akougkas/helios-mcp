@@ -113,17 +113,17 @@ class TestHooksConfig:
     def test_post_tool_use_hook(self, hooks):
         assert "PostToolUse" in hooks["hooks"]
         cmd = hooks["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
-        assert "helios-mcp hook post-tool" in cmd
+        assert "post-tool" in cmd
 
     def test_post_tool_use_failure_hook(self, hooks):
         assert "PostToolUseFailure" in hooks["hooks"]
         cmd = hooks["hooks"]["PostToolUseFailure"][0]["hooks"][0]["command"]
-        assert "helios-mcp hook post-tool-failure" in cmd
+        assert "post-tool-failure" in cmd
 
     def test_user_prompt_submit_hook(self, hooks):
         assert "UserPromptSubmit" in hooks["hooks"]
         cmd = hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
-        assert "helios-mcp hook prompt-submit" in cmd
+        assert "prompt-submit" in cmd
 
     def test_subagent_start_hook(self, hooks):
         assert "SubagentStart" in hooks["hooks"]
@@ -174,6 +174,27 @@ class TestHooksConfig:
                     assert "${CLAUDE_PLUGIN_ROOT}" in hook["command"], (
                         f"{event_type} hook does not use ${{CLAUDE_PLUGIN_ROOT}}"
                     )
+
+    def test_hooks_use_bundled_handler(self, hooks):
+        """Commands should call the bundled hook-handler.py, not traverse paths."""
+        for event_type, entries in hooks["hooks"].items():
+            for entry in entries:
+                for hook in entry["hooks"]:
+                    assert "/../" not in hook["command"], (
+                        f"{event_type} hook uses path traversal"
+                    )
+                    assert "hook-handler.py" in hook["command"], (
+                        f"{event_type} hook does not call bundled handler"
+                    )
+
+    def test_hook_handler_script_exists(self):
+        handler = PLUGIN_DIR / "hooks" / "hook-handler.py"
+        assert handler.is_file()
+
+    def test_hook_handler_is_executable_python(self):
+        handler = PLUGIN_DIR / "hooks" / "hook-handler.py"
+        content = handler.read_text()
+        assert content.startswith("#!/usr/bin/env python3")
 
     def test_tool_event_matchers_are_regex(self, hooks):
         """Tool-related events should use regex matchers, not empty objects."""

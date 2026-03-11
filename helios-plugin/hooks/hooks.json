@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook post-tool",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/hook-handler.py post-tool",
             "async": true
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook post-tool-failure",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/hook-handler.py post-tool-failure",
             "async": true
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook prompt-submit",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/hook-handler.py prompt-submit",
             "async": true
           }
         ]
@@ -41,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook subagent-start",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/hook-handler.py subagent-start",
             "async": true
           }
         ]
@@ -53,7 +53,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook subagent-stop",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/hook-handler.py subagent-stop",
             "async": true
           }
         ]
@@ -65,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook session-start",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/hook-handler.py session-start",
             "async": true
           }
         ]
@@ -77,7 +77,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook session-end",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/hook-handler.py session-end",
             "async": true
           }
         ]
@@ -88,7 +88,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook stop",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/hook-handler.py stop",
             "async": true
           }
         ]
@@ -99,7 +99,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook notification",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/hook-handler.py notification",
             "async": true
           }
         ]
