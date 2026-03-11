@@ -19,6 +19,10 @@ from .lifecycle import managed_lifecycle
 from .bootstrap import BootstrapManager
 from .locking import ProcessLock
 from .validation import ConfigValidator
+from .hierarchy import IdentityHierarchy
+from .observer import BehavioralObserver
+from .drift import DriftDetector
+from .taxonomy import list_dimensions
 
 # Configure logging to stderr only (stdio reserved for MCP protocol)
 # Support HELIOS_LOG_LEVEL environment variable
@@ -33,7 +37,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-@click.command()
+@click.group(invoke_without_command=True)
 @click.option(
     "--helios-dir",
     default=lambda: Path(os.getenv('HELIOS_DIR', Path.home() / ".helios")),
@@ -64,37 +68,50 @@ logger = logging.getLogger(__name__)
     help="Disable git operations (for containerized environments, env: HELIOS_GIT_ENABLED=0)"
 )
 @click.version_option(version=__version__, prog_name="helios-mcp")
+@click.pass_context
 def main(
-    helios_dir: Path, 
-    verbose: bool, 
-    health_check_interval: float, 
+    ctx: click.Context,
+    helios_dir: Path,
+    verbose: bool,
+    health_check_interval: float,
     shutdown_timeout: float,
-    disable_git: bool
+    disable_git: bool,
 ) -> int:
-    """Start Helios MCP server.
-    
+    """Helios MCP server and behavioral management CLI.
+
+    Run without a subcommand to start the MCP server over stdio.
+    Use subcommands (status, negotiate) for behavioral inspection.
+
     Helios is a configuration management system for AI behaviors with
     weighted inheritance. It allows AI agents to have persistent personalities
     that evolve over time.
-    
-    The server communicates via MCP (Model Context Protocol) over stdio.
     """
+    # Store shared options in Click context for subcommands
+    ctx.ensure_object(dict)
+    ctx.obj["helios_dir"] = helios_dir
+    ctx.obj["verbose"] = verbose
+
+    # If a subcommand was invoked, let it handle everything
+    if ctx.invoked_subcommand is not None:
+        return 0
+
+    # Default behaviour: start the MCP server
     try:
         # Configure logging level based on verbose flag
         if verbose:
             logging.getLogger().setLevel(logging.DEBUG)
             logger.debug(f"Starting Helios MCP server with config directory: {helios_dir}")
-        
+
         # Acquire process lock to prevent multiple instances
         process_lock = ProcessLock(helios_dir)
         if not process_lock.acquire():
             logger.error("Another Helios instance is already running")
             return 1
-        
+
         try:
             # Bootstrap installation if needed
             bootstrap = BootstrapManager(helios_dir, git_enabled=not disable_git)
-            
+
             if bootstrap.is_first_install():
                 logger.info("First installation detected - bootstrapping Helios")
                 if disable_git:
@@ -107,51 +124,54 @@ def main(
                 if verbose:
                     install_info = bootstrap.get_installation_info()
                     logger.debug(f"Helios installation info: {install_info}")
-            
+
             # Validate all configurations after bootstrap
             validator = ConfigValidator(helios_dir)
             validation_errors = validator.validate_all_configs(helios_dir)
-            
+
             if validation_errors:
-                logger.warning(f"Configuration validation issues found:")
+                logger.warning("Configuration validation issues found:")
                 for error in validation_errors:
                     logger.warning(f"  - {error}")
                 # Continue anyway - validator will have attempted recovery
             else:
                 if verbose:
                     logger.debug("All configurations validated successfully")
-            
+
             # Perform startup health check
             startup_health = _perform_startup_health_check(helios_dir, verbose)
             if not startup_health['healthy']:
-                logger.warning(f"Startup health check issues detected:")
+                logger.warning("Startup health check issues detected:")
                 for issue in startup_health['issues']:
                     logger.warning(f"  - {issue}")
                 # Continue with warnings but don't fail startup
             elif verbose:
                 logger.debug("Startup health check passed")
-            
+
             # Ensure the helios directory exists (redundant after bootstrap but safe)
             helios_dir.mkdir(parents=True, exist_ok=True)
-            
+
             if verbose:
                 logger.debug(f"Configuration directory verified: {helios_dir}")
-            
+
             # Create and run the server with lifecycle management
             logger.info(f"Starting Helios MCP server with configuration at {helios_dir}")
-            logger.info(f"Lifecycle: health checks every {health_check_interval}s, shutdown timeout {shutdown_timeout}s")
-            
+            logger.info(
+                f"Lifecycle: health checks every {health_check_interval}s, "
+                f"shutdown timeout {shutdown_timeout}s"
+            )
+
             # Run the server with lifecycle management
             asyncio.run(run_server_with_lifecycle(
                 helios_dir, verbose, health_check_interval, shutdown_timeout, process_lock
             ))
-            
+
             return 0
-            
+
         finally:
             # Always release the process lock
             process_lock.release()
-        
+
     except KeyboardInterrupt:
         logger.info("Server shutdown requested")
         return 0
@@ -160,6 +180,142 @@ def main(
         if verbose:
             logger.exception("Full error traceback:")
         return 1
+
+
+@main.command("status")
+@click.option(
+    "--helios-dir",
+    default=lambda: Path(os.getenv('HELIOS_DIR', Path.home() / ".helios")),
+    type=click.Path(path_type=Path),
+    help="Directory for Helios configurations (default: ~/.helios, env: HELIOS_DIR)"
+)
+def status_command(helios_dir: Path) -> None:
+    """Print current behavioral profile state for all personas."""
+    click.echo("Helios v2 Status")
+    click.echo("================")
+    click.echo(f"Helios directory: {helios_dir}")
+
+    personas_dir = helios_dir / "personas"
+    base_dir = helios_dir / "base"
+
+    if not base_dir.exists():
+        click.echo("\nNo profiles found — run 'helios-mcp init' to get started.")
+        return
+
+    # Collect available persona names from YAML files in personas/
+    persona_names: list[str] = []
+    if personas_dir.exists():
+        persona_names = [
+            p.stem for p in sorted(personas_dir.glob("*.yaml"))
+            if not p.stem.endswith("_user")
+        ]
+
+    if persona_names:
+        names_str = ", ".join(persona_names)
+        click.echo(f"Personas: {names_str} ({len(persona_names)} found)")
+    else:
+        click.echo("Personas: none found")
+
+    # Show profile details for each persona
+    hierarchy = IdentityHierarchy(helios_dir)
+
+    def _entropy_label(ne: float) -> str:
+        if ne < 0.3:
+            return "low"
+        if ne <= 0.6:
+            return "moderate"
+        return "high"
+
+    for persona_name in persona_names:
+        try:
+            profile = hierarchy.resolve(persona_name)
+            click.echo(f"\n{persona_name} profile:")
+            for dim, dist in profile.distributions.items():
+                ne = dist.normalized_entropy()
+                dominant = dist.most_likely()
+                prob = dist.probs[dist.states.index(dominant)]
+                entropy_label = _entropy_label(ne)
+                click.echo(
+                    f"  {dim:<28} {dominant} ({prob:.2f}) — entropy: {entropy_label}"
+                )
+        except Exception as exc:
+            click.echo(f"\n{persona_name} profile: error loading ({exc})")
+
+
+@main.command("negotiate")
+@click.argument("persona")
+@click.option(
+    "--helios-dir",
+    default=lambda: Path(os.getenv('HELIOS_DIR', Path.home() / ".helios")),
+    type=click.Path(path_type=Path),
+    help="Directory for Helios configurations (default: ~/.helios, env: HELIOS_DIR)"
+)
+@click.option(
+    "--threshold",
+    default=0.30,
+    type=float,
+    help="Drift threshold for flagging dimensions (default: 0.30)"
+)
+def negotiate_command(persona: str, helios_dir: Path, threshold: float) -> None:
+    """Show drift report for PERSONA and prompt for action."""
+    observer = BehavioralObserver()
+    detector = DriftDetector()
+    hierarchy = IdentityHierarchy(helios_dir)
+
+    obs_count = observer.get_observation_count(persona)
+
+    if obs_count == 0:
+        click.echo(f"No observations recorded yet for '{persona}'.")
+        return
+
+    try:
+        profile = hierarchy.resolve(persona)
+    except Exception as exc:
+        click.echo(f"Failed to load profile for '{persona}': {exc}")
+        return
+
+    observed = observer.get_accumulated_distributions(persona)
+    result = detector.compute_drift(profile.distributions, observed, obs_count)
+
+    # Header
+    click.echo(f"Drift Report for '{persona}'")
+    click.echo("=" * (len(persona) + 20))
+
+    total_flag = " ⚠️ " if result.exceeds_total_threshold else " ✓"
+    click.echo(
+        f"Total drift: {result.total_drift:.2f} (threshold: {threshold}){total_flag}"
+    )
+    click.echo(f"Observations: {obs_count}")
+    click.echo("\nPer-dimension drift:")
+
+    for dim in list_dimensions():
+        kl = result.per_dimension.get(dim, 0.0)
+        flag = "⚠️ " if kl >= detector.PER_DIM_THRESHOLD else "✓"
+        declared_dist = profile.distributions.get(dim)
+        observed_dist = observed.get(dim)
+
+        declared_state = declared_dist.most_likely() if declared_dist else "unknown"
+        observed_state = observed_dist.most_likely() if observed_dist else "unknown"
+
+        click.echo(
+            f"  {dim:<28} {kl:.2f} {flag}  "
+            f"(declared: {declared_state}, observed: {observed_state})"
+        )
+
+    click.echo("")
+    action = click.prompt(
+        "[A]ccept all changes  [R]eject  [Q]uit",
+        default="Q",
+        show_default=False,
+    )
+    action = action.strip().upper()
+
+    if action == "A":
+        click.echo("Changes accepted. Run 'evolve_behavior' to promote to persona config.")
+    elif action == "R":
+        click.echo("Changes rejected. Behavioral profile unchanged.")
+    else:
+        click.echo("No action taken.")
 
 
 async def run_server_with_lifecycle(

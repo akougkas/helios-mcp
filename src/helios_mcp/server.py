@@ -757,6 +757,214 @@ async def create_server(helios_dir: Optional[Path] = None, preload_cache: bool =
                 "message": str(e)
             }
 
+    # -------------------------------------------------------------------------
+    # Helios v2 — Behavioral Science Tools
+    # -------------------------------------------------------------------------
+
+    @mcp.tool(
+        description="Get the full behavioral context for a persona as system prompt text (v2)",
+        tags={"v2", "behavioral", "context"}
+    )
+    async def get_behavioral_context(
+        persona_name: str = Field(description="Persona name (e.g. 'developer', 'researcher')"),
+        ctx: Context = None
+    ) -> Dict[str, Any]:
+        """Resolve the full 4-level behavioral hierarchy and render as system prompt text.
+
+        Returns a string ready to inject into any LLM's system prompt. Reflects
+        the weighted KL-blend of species → domain → user → session levels.
+        """
+        try:
+            from .hierarchy import IdentityHierarchy
+            from .renderer import BehavioralRenderer
+
+            if ctx:
+                await ctx.info(f"Resolving behavioral context for '{persona_name}'...")
+
+            hierarchy = IdentityHierarchy(helios_dir)
+            profile = hierarchy.resolve(persona_name)
+            renderer = BehavioralRenderer()
+            text = renderer.render(profile, persona_name)
+
+            if ctx:
+                await ctx.info("Behavioral context rendered successfully")
+
+            return {
+                "status": "success",
+                "persona": persona_name,
+                "behavioral_context": text,
+                "observation_count": profile.observation_count,
+                "specialization_level": profile.specialization_level,
+            }
+        except Exception as e:
+            logger.error(f"Failed to get behavioral context: {e}")
+            return {"status": "error", "message": str(e)}
+
+    @mcp.tool(
+        description="Observe a conversation and update the behavioral fingerprint for a persona (v2)",
+        tags={"v2", "behavioral", "observation"}
+    )
+    async def observe_interaction(
+        persona_name: str = Field(description="Persona to update observations for"),
+        messages: list[Dict[str, Any]] = Field(description="Conversation messages (role+content dicts)"),
+        ctx: Context = None
+    ) -> Dict[str, Any]:
+        """Feed a conversation into the behavioral observation engine.
+
+        Extracts structural, semantic, decision, and user-signal features from
+        messages and updates the persona's observed behavioral distributions.
+        Returns current observation count and whether drift threshold is near.
+        """
+        try:
+            from .observer import BehavioralObserver
+            from .drift import DriftDetector
+            from .hierarchy import IdentityHierarchy
+
+            if ctx:
+                await ctx.info(f"Observing {len(messages)} messages for '{persona_name}'...")
+
+            # Use a server-scoped observer (keyed by helios_dir path for isolation)
+            observer = BehavioralObserver()
+            observer.observe(persona_name, messages)
+            count = observer.get_observation_count(persona_name)
+
+            # Quick drift check
+            hierarchy = IdentityHierarchy(helios_dir)
+            profile = hierarchy.resolve(persona_name)
+            observed_dists = observer.get_accumulated_distributions(persona_name)
+            detector = DriftDetector()
+            drift_result = detector.compute_drift(profile.distributions, observed_dists, count)
+
+            if ctx:
+                await ctx.info(f"Observation count: {count}, drift: {drift_result.total_drift:.3f}")
+
+            return {
+                "status": "success",
+                "persona": persona_name,
+                "observation_count": count,
+                "current_drift": round(drift_result.total_drift, 4),
+                "drift_threshold": DriftDetector.TOTAL_THRESHOLD,
+                "negotiation_recommended": detector.exceeds_threshold(drift_result),
+            }
+        except Exception as e:
+            logger.error(f"Failed to observe interaction: {e}")
+            return {"status": "error", "message": str(e)}
+
+    @mcp.tool(
+        description="Get a natural language drift report for a persona — call when negotiation_recommended is true (v2)",
+        tags={"v2", "behavioral", "drift"}
+    )
+    async def get_drift_report(
+        persona_name: str = Field(description="Persona to get drift report for"),
+        ctx: Context = None
+    ) -> Dict[str, Any]:
+        """Generate a human-readable behavioral drift summary.
+
+        When observe_interaction returns negotiation_recommended=true, call this
+        tool to get a natural language explanation of what behavioral changes have
+        been observed, with a proposal to update the declared profile.
+        """
+        try:
+            from .observer import BehavioralObserver
+            from .drift import DriftDetector
+            from .negotiation import NegotiationEngine
+            from .hierarchy import IdentityHierarchy
+
+            hierarchy = IdentityHierarchy(helios_dir)
+            profile = hierarchy.resolve(persona_name)
+
+            observer = BehavioralObserver()
+            count = observer.get_observation_count(persona_name)
+            if count == 0:
+                return {
+                    "status": "no_data",
+                    "message": f"No observations recorded yet for '{persona_name}'. "
+                               "Use observe_interaction first to build a behavioral fingerprint.",
+                }
+
+            observed_dists = observer.get_accumulated_distributions(persona_name)
+            detector = DriftDetector()
+            drift_result = detector.compute_drift(profile.distributions, observed_dists, count)
+
+            engine = NegotiationEngine()
+            proposal = engine.generate_summary(persona_name, profile, observed_dists, drift_result)
+
+            if ctx:
+                await ctx.info(f"Drift report: total={drift_result.total_drift:.3f}")
+
+            return {
+                "status": "success",
+                "persona": persona_name,
+                "summary": proposal.summary,
+                "per_dimension": proposal.per_dimension_summary,
+                "total_drift": round(drift_result.total_drift, 4),
+                "exceeds_threshold": drift_result.exceeds_total_threshold,
+                "proposed_at": proposal.proposed_at,
+            }
+        except Exception as e:
+            logger.error(f"Failed to generate drift report: {e}")
+            return {"status": "error", "message": str(e)}
+
+    @mcp.tool(
+        description="Accept or reject a proposed behavioral update for a persona (v2)",
+        tags={"v2", "behavioral", "negotiation"}
+    )
+    async def negotiate_update(
+        persona_name: str = Field(description="Persona to update"),
+        decision: str = Field(description="'accept' or 'reject'"),
+        reason: str = Field(default="", description="Optional reason for rejection"),
+        accepted_dimensions: Optional[list[str]] = Field(
+            default=None,
+            description="Specific dimensions to accept (None = accept all)"
+        ),
+        ctx: Context = None
+    ) -> Dict[str, Any]:
+        """Apply or reject a behavioral evolution proposal.
+
+        After reviewing get_drift_report, call this to either commit the observed
+        behavioral patterns into the declared profile (accept) or discard them (reject).
+        Accepted changes are committed to git — this is a step in the agent's behavioral biography.
+        """
+        try:
+            from .observer import BehavioralObserver
+            from .drift import DriftDetector
+            from .negotiation import NegotiationEngine
+            from .hierarchy import IdentityHierarchy
+
+            engine = NegotiationEngine()
+
+            if decision.lower() == "reject":
+                result = engine.reject_update(persona_name, reason or "user rejected", helios_dir)
+                if ctx:
+                    await ctx.info(f"Behavioral update rejected for '{persona_name}'")
+                return result
+
+            if decision.lower() == "accept":
+                hierarchy = IdentityHierarchy(helios_dir)
+                profile = hierarchy.resolve(persona_name)
+                observer = BehavioralObserver()
+                observed_dists = observer.get_accumulated_distributions(persona_name)
+                count = observer.get_observation_count(persona_name)
+                detector = DriftDetector()
+                drift_result = detector.compute_drift(profile.distributions, observed_dists, count)
+                proposal = engine.generate_summary(
+                    persona_name, profile, observed_dists, drift_result
+                )
+                result = engine.apply_update(
+                    persona_name, proposal, helios_dir, accepted_dimensions
+                )
+                if ctx:
+                    await ctx.info(f"Behavioral update applied for '{persona_name}'")
+                return result
+
+            return {
+                "status": "error",
+                "message": f"Unknown decision '{decision}'. Use 'accept' or 'reject'."
+            }
+        except Exception as e:
+            logger.error(f"Failed to negotiate update: {e}")
+            return {"status": "error", "message": str(e)}
+
     # Add server shutdown handler for cleanup
     @mcp.resource(
         uri="helios://shutdown",

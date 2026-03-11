@@ -1,10 +1,13 @@
 """Bootstrap and installation detection for Helios MCP."""
 
 import logging
+import shutil
 import subprocess
 import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+import yaml
 
 from . import __version__
 from .atomic_ops import atomic_write_yaml, validate_yaml_file
@@ -330,3 +333,40 @@ Thumbs.db
             logger.debug("Cleaned up failed bootstrap")
         except Exception as e:
             logger.warning(f"Failed to clean up bootstrap: {e}")
+
+    def _create_default_v2_profiles(self) -> None:
+        """Copy v2 default behavioral profiles into the Helios directory.
+
+        Copies identity.yaml to ~/.helios/base/ and domain personas to
+        ~/.helios/personas/ if they are absent or have an older schema version.
+        """
+        default_profiles_dir = Path(__file__).parent / "default_profiles"
+
+        # --- species-level base profile ---
+        identity_src = default_profiles_dir / "identity.yaml"
+        identity_dst = self.config.base_path / "identity.yaml"
+
+        needs_write = True
+        if identity_dst.exists():
+            try:
+                with open(identity_dst, "r", encoding="utf-8") as f:
+                    existing = yaml.safe_load(f) or {}
+                if existing.get("schema_version") == "2.0":
+                    needs_write = False
+            except Exception:
+                pass
+
+        if needs_write and identity_src.exists():
+            identity_dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(identity_src, identity_dst)
+            logger.info("Created v2 base identity profile")
+
+        # --- domain personas ---
+        persona_names = ("developer", "researcher", "writer")
+        for name in persona_names:
+            src = default_profiles_dir / f"{name}.yaml"
+            dst = self.config.personas_path / f"{name}.yaml"
+            if not dst.exists() and src.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                logger.info(f"Created v2 domain persona: {name}")

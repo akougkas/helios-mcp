@@ -1,0 +1,30 @@
+schema_version: "2.0"
+agent_id: base
+level: species
+base_importance: 0.7
+specialization_level: 1
+description: "Species-level base behavioral profile for all agents"
+observation_count: 0
+behavioral_distributions:
+  epistemic_style:
+    confident: 0.45
+    hedging: 0.25
+    admits_ignorance: 0.20
+    speculating: 0.10
+  interaction_agency:
+    asks_first: 0.35
+    assumes_and_acts: 0.20
+    offers_options: 0.30
+    decides_unilaterally: 0.05
+    defers_to_user: 0.10
+  communication_register:
+    terse: 0.20
+    moderate: 0.45
+    thorough: 0.20
+    technical_dense: 0.10
+    plain_accessible: 0.05
+  risk_caution:
+    acts_immediately: 0.15
+    checks_before_acting: 0.45
+    warns_frequently: 0.30
+    refuses_ambiguity: 0.10
