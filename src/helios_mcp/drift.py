@@ -53,6 +53,7 @@ class DriftDetector:
     TOTAL_THRESHOLD: float = 0.30
     PER_DIM_THRESHOLD: float = 0.10
     MIN_OBSERVATIONS: int = 20
+    AUTO_ACCEPT_THRESHOLD: float = 0.05
 
     def __init__(self) -> None:
         self._history: dict[str, list[DriftResult]] = {}
@@ -114,6 +115,49 @@ class DriftDetector:
             sufficient_observations=sufficient,
             timestamp=timestamp,
         )
+
+    def should_auto_accept(self, result: DriftResult) -> bool:
+        """Return True if drift is small enough to auto-accept silently.
+
+        Per-dimension KL < AUTO_ACCEPT_THRESHOLD means the observed behavior
+        is close enough to the declared profile that updating it silently
+        is safe. Requires sufficient observations to prevent premature
+        auto-acceptance from sparse data.
+
+        Args:
+            result: A previously computed DriftResult.
+
+        Returns:
+            True if all per-dimension KL values are below the auto-accept
+            threshold and there are sufficient observations.
+        """
+        if not result.sufficient_observations:
+            return False
+        return all(
+            kl < self.AUTO_ACCEPT_THRESHOLD
+            for kl in result.per_dimension.values()
+        )
+
+    def auto_accept_dimensions(self, result: DriftResult) -> list[str]:
+        """Return dimension names where drift is small enough to auto-accept.
+
+        Unlike should_auto_accept() which requires ALL dimensions to be below
+        threshold, this returns the specific dimensions that qualify. Useful
+        for partial auto-accept where some dimensions evolve silently while
+        others require negotiation.
+
+        Args:
+            result: A previously computed DriftResult.
+
+        Returns:
+            List of dimension names with KL < AUTO_ACCEPT_THRESHOLD.
+        """
+        if not result.sufficient_observations:
+            return []
+        return [
+            dim for dim, kl in result.per_dimension.items()
+            if kl < self.AUTO_ACCEPT_THRESHOLD
+        ]
 
     def exceeds_threshold(self, result: DriftResult) -> bool:
         """Return True if drift is actionable.

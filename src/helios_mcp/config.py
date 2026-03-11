@@ -15,12 +15,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class HeliosConfig:
-    """Helios directory layout."""
+    """Helios directory layout and behavioral thresholds."""
 
     base_path: Path
     personas_path: Path
     learned_path: Path
     temporary_path: Path
+    auto_accept_threshold: float = 0.05
 
     @classmethod
     def default(cls) -> "HeliosConfig":
@@ -30,6 +31,7 @@ class HeliosConfig:
             personas_path=base / "personas",
             learned_path=base / "learned",
             temporary_path=base / "temporary",
+            auto_accept_threshold=0.05,
         )
 
     def ensure_directories(self) -> None:

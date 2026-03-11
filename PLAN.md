@@ -53,7 +53,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   Single `observe()` method dispatches to the right extractor based on input type.
   Accumulated distributions merge text-derived and hook-derived signals with configurable weights.
 
-- [ ] **1.6 Auto-accept small drift**
+- [x] **1.6 Auto-accept small drift**
   Add to `drift.py`: if total KL-divergence < 0.05 per dimension, auto-apply the observed distribution as the new declared profile. Silent. No negotiation. Git commit with message: `"Auto-evolved: minor drift in {dimension}"`.
   Add `auto_accept_threshold` to `HeliosConfig` (default: 0.05).
 
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 1.5 Unified observation pipeline
+**Last completed:** 1.6 Auto-accept small drift
 **Current phase:** Phase 1 — Observation Overhaul
 **Tests passing:** 253 (baseline)
