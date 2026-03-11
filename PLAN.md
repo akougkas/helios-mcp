@@ -82,7 +82,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   Parsing strategy: extract personality-relevant text blocks (tone directives, behavioral rules, style instructions) from the markdown.
   Return a structured representation ready for LLM-assisted projection.
 
-- [ ] **2.2 LLM-assisted projection**
+- [x] **2.2 LLM-assisted projection**
   Create `src/helios_mcp/projector.py`.
   `project_to_distributions(text_blocks: list[str], taxonomy: dict) -> dict[str, BehavioralDistribution]`
   Constructs a prompt that asks Claude to map natural language personality descriptions to probability distributions over the 4 behavioral dimensions.
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 2.1 Import module
+**Last completed:** 2.2 LLM-assisted projection
 **Current phase:** Phase 2 — Profile Import/Export Engine
 **Tests passing:** 403 (253 baseline + 150 new)
