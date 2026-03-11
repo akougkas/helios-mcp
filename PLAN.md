@@ -27,7 +27,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   `UserPromptEvent` (length, question_count, timestamp).
   Include a `parse_hook_stdin(raw_json: dict) -> HookEvent` dispatcher.
 
-- [ ] **1.2 Hook signal extractors**
+- [x] **1.2 Hook signal extractors**
   Add to `observer.py` (or a new `hook_observer.py` if observer.py gets too large):
   - `extract_tool_signals(events: list[ToolUseEvent])` → tool selection patterns (Read vs Grep, Edit vs Write), tool diversity, tool ordering sequences
   - `extract_subagent_signals(events: list[SubagentEvent])` → delegation frequency, parallelization ratio, agent types chosen
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 1.1 Hook event data model
+**Last completed:** 1.2 Hook signal extractors
 **Current phase:** Phase 1 — Observation Overhaul
 **Tests passing:** 253 (baseline)

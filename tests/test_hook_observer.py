@@ -1,0 +1,378 @@
+"""Tests for hook signal extraction (Task 1.2).
+
+Covers all four extractor functions and the merge utility.
+"""
+
+import time
+
+import pytest
+
+from helios_mcp.hook_events import (
+    SubagentEvent,
+    SessionEvent,
+    ToolUseEvent,
+    UserPromptEvent,
+)
+from helios_mcp.hook_observer import (
+    SignalResult,
+    extract_prompt_signals,
+    extract_session_signals,
+    extract_subagent_signals,
+    extract_tool_signals,
+    merge_signal_results,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _tool(name: str, keys: tuple[str, ...] = (), success: bool = True,
+          duration_ms: int = 50, phase: str = "post") -> ToolUseEvent:
+    return ToolUseEvent(
+        tool_name=name, tool_input_keys=keys,
+        duration_ms=duration_ms, success=success, phase=phase,
+    )
+
+
+def _subagent(agent_type: str, event_type: str = "start",
+              agent_id: str = "a1") -> SubagentEvent:
+    return SubagentEvent(agent_type=agent_type, event_type=event_type,
+                         agent_id=agent_id)
+
+
+def _session(event_type: str, ts: float | None = None) -> SessionEvent:
+    return SessionEvent(event_type=event_type,
+                        timestamp=ts if ts is not None else time.time())
+
+
+def _prompt(length: int, questions: int = 0) -> UserPromptEvent:
+    return UserPromptEvent(length=length, question_count=questions)
+
+
+def _has_nonzero(result: SignalResult, dim: str, state: str) -> bool:
+    return result.get(dim, {}).get(state, 0.0) > 0.0
+
+
+# ---------------------------------------------------------------------------
+# extract_tool_signals
+# ---------------------------------------------------------------------------
+
+
+class TestExtractToolSignals:
+    def test_empty_returns_empty(self):
+        result = extract_tool_signals([])
+        assert all(len(states) == 0 for states in result.values())
+
+    def test_read_heavy_boosts_confident(self):
+        events = [_tool("Read")] * 6 + [_tool("Edit")]
+        result = extract_tool_signals(events)
+        assert _has_nonzero(result, "epistemic_style", "confident")
+
+    def test_read_heavy_boosts_thorough(self):
+        events = [_tool("Read")] * 6 + [_tool("Edit")]
+        result = extract_tool_signals(events)
+        assert _has_nonzero(result, "communication_register", "thorough")
+
+    def test_read_before_write_boosts_checks(self):
+        events = [_tool("Read"), _tool("Grep"), _tool("Edit")]
+        result = extract_tool_signals(events)
+        assert _has_nonzero(result, "risk_caution", "checks_before_acting")
+
+    def test_agent_tool_boosts_offers_options(self):
+        events = [_tool("Agent")] * 3 + [_tool("Read")] * 5
+        result = extract_tool_signals(events)
+        assert _has_nonzero(result, "interaction_agency", "offers_options")
+
+    def test_bash_heavy_boosts_assumes_and_acts(self):
+        events = [_tool("Bash")] * 5 + [_tool("Read")] * 2
+        result = extract_tool_signals(events)
+        assert _has_nonzero(result, "interaction_agency", "assumes_and_acts")
+
+    def test_high_failure_rate_boosts_acts_immediately(self):
+        events = [_tool("Bash", success=False)] * 4 + [_tool("Read")]
+        result = extract_tool_signals(events)
+        assert _has_nonzero(result, "risk_caution", "acts_immediately")
+
+    def test_no_search_tools_boosts_acts_immediately(self):
+        events = [_tool("Edit")] * 5
+        result = extract_tool_signals(events)
+        assert _has_nonzero(result, "risk_caution", "acts_immediately")
+
+    def test_diverse_tools_boost_speculating(self):
+        events = [
+            _tool("Read"), _tool("Grep"), _tool("Edit"),
+            _tool("Write"), _tool("Bash"), _tool("Agent"),
+            _tool("Glob"), _tool("NotebookEdit"),
+        ]
+        result = extract_tool_signals(events)
+        assert _has_nonzero(result, "epistemic_style", "speculating")
+
+    def test_write_heavy_boosts_terse(self):
+        events = [_tool("Edit")] * 6 + [_tool("Write")] * 4 + [_tool("Read")]
+        result = extract_tool_signals(events)
+        assert _has_nonzero(result, "communication_register", "terse")
+
+    def test_returns_all_four_dimensions(self):
+        events = [_tool("Read"), _tool("Edit")]
+        result = extract_tool_signals(events)
+        assert set(result.keys()) == {
+            "epistemic_style", "interaction_agency",
+            "communication_register", "risk_caution",
+        }
+
+
+# ---------------------------------------------------------------------------
+# extract_subagent_signals
+# ---------------------------------------------------------------------------
+
+
+class TestExtractSubagentSignals:
+    def test_empty_returns_empty(self):
+        result = extract_subagent_signals([])
+        assert all(len(states) == 0 for states in result.values())
+
+    def test_high_delegation_boosts_offers_options(self):
+        events = [_subagent("Explore", "start")] * 5
+        result = extract_subagent_signals(events)
+        assert _has_nonzero(result, "interaction_agency", "offers_options")
+
+    def test_high_delegation_boosts_defers(self):
+        events = [_subagent("Explore", "start")] * 5
+        result = extract_subagent_signals(events)
+        assert _has_nonzero(result, "interaction_agency", "defers_to_user")
+
+    def test_explore_agent_boosts_confident(self):
+        events = [_subagent("Explore", "start")]
+        result = extract_subagent_signals(events)
+        assert _has_nonzero(result, "epistemic_style", "confident")
+
+    def test_plan_agent_boosts_confident(self):
+        events = [_subagent("Plan", "start")]
+        result = extract_subagent_signals(events)
+        assert _has_nonzero(result, "epistemic_style", "confident")
+
+    def test_parallel_delegation_boosts_acts_immediately(self):
+        # Multiple starts before stops suggests parallelization
+        events = [
+            _subagent("Explore", "start", "a1"),
+            _subagent("Plan", "start", "a2"),
+            _subagent("Explore", "start", "a3"),
+            _subagent("Explore", "stop", "a1"),
+            _subagent("Plan", "stop", "a2"),
+            _subagent("Explore", "stop", "a3"),
+        ]
+        result = extract_subagent_signals(events)
+        assert _has_nonzero(result, "risk_caution", "acts_immediately")
+
+    def test_sequential_delegation_boosts_checks(self):
+        events = [
+            _subagent("Explore", "start", "a1"),
+            _subagent("Explore", "stop", "a1"),
+            _subagent("Plan", "start", "a2"),
+            _subagent("Plan", "stop", "a2"),
+        ]
+        result = extract_subagent_signals(events)
+        assert _has_nonzero(result, "risk_caution", "checks_before_acting")
+
+    def test_heavy_delegation_boosts_thorough(self):
+        events = [_subagent("Explore", "start")] * 4
+        result = extract_subagent_signals(events)
+        assert _has_nonzero(result, "communication_register", "thorough")
+
+    def test_no_delegation_boosts_assumes(self):
+        # Only stop events, no starts
+        events = []
+        result = extract_subagent_signals(events)
+        assert all(len(states) == 0 for states in result.values())
+
+
+# ---------------------------------------------------------------------------
+# extract_session_signals
+# ---------------------------------------------------------------------------
+
+
+class TestExtractSessionSignals:
+    def test_empty_returns_empty(self):
+        result = extract_session_signals([])
+        assert all(len(states) == 0 for states in result.values())
+
+    def test_long_session_boosts_thorough(self):
+        now = time.time()
+        events = [
+            _session("start", now),
+            _session("end", now + 3600),  # 60 min session
+        ]
+        result = extract_session_signals(events)
+        assert _has_nonzero(result, "communication_register", "thorough")
+
+    def test_long_session_boosts_confident(self):
+        now = time.time()
+        events = [
+            _session("start", now),
+            _session("end", now + 3600),
+        ]
+        result = extract_session_signals(events)
+        assert _has_nonzero(result, "epistemic_style", "confident")
+
+    def test_short_session_boosts_terse(self):
+        now = time.time()
+        events = [
+            _session("start", now),
+            _session("end", now + 120),  # 2 min session
+        ]
+        result = extract_session_signals(events)
+        assert _has_nonzero(result, "communication_register", "terse")
+
+    def test_short_session_boosts_acts_immediately(self):
+        now = time.time()
+        events = [
+            _session("start", now),
+            _session("end", now + 120),
+        ]
+        result = extract_session_signals(events)
+        assert _has_nonzero(result, "risk_caution", "acts_immediately")
+
+    def test_many_sessions_boosts_checks(self):
+        now = time.time()
+        events = []
+        for i in range(4):
+            events.append(_session("start", now + i * 600))
+            events.append(_session("end", now + i * 600 + 300))
+        result = extract_session_signals(events)
+        assert _has_nonzero(result, "risk_caution", "checks_before_acting")
+
+    def test_unpaired_start_no_crash(self):
+        events = [_session("start")]
+        result = extract_session_signals(events)
+        assert isinstance(result, dict)
+
+    def test_unpaired_end_no_crash(self):
+        events = [_session("end")]
+        result = extract_session_signals(events)
+        assert isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# extract_prompt_signals
+# ---------------------------------------------------------------------------
+
+
+class TestExtractPromptSignals:
+    def test_empty_returns_empty(self):
+        result = extract_prompt_signals([])
+        assert all(len(states) == 0 for states in result.values())
+
+    def test_short_prompts_boost_terse(self):
+        events = [_prompt(20), _prompt(30), _prompt(15)]
+        result = extract_prompt_signals(events)
+        assert _has_nonzero(result, "communication_register", "terse")
+
+    def test_long_prompts_boost_thorough(self):
+        events = [_prompt(250), _prompt(300), _prompt(220)]
+        result = extract_prompt_signals(events)
+        assert _has_nonzero(result, "communication_register", "thorough")
+
+    def test_medium_prompts_boost_moderate(self):
+        events = [_prompt(80), _prompt(100), _prompt(90)]
+        result = extract_prompt_signals(events)
+        assert _has_nonzero(result, "communication_register", "moderate")
+
+    def test_high_question_rate_boosts_hedging(self):
+        events = [_prompt(50, 2), _prompt(60, 3), _prompt(40, 1)]
+        result = extract_prompt_signals(events)
+        assert _has_nonzero(result, "epistemic_style", "hedging")
+
+    def test_low_question_long_boosts_confident(self):
+        events = [_prompt(150, 0), _prompt(200, 0), _prompt(180, 0)]
+        result = extract_prompt_signals(events)
+        assert _has_nonzero(result, "epistemic_style", "confident")
+
+    def test_many_questions_boosts_asks_first(self):
+        events = [_prompt(100, 3), _prompt(80, 2)]
+        result = extract_prompt_signals(events)
+        assert _has_nonzero(result, "interaction_agency", "asks_first")
+
+    def test_short_directive_boosts_assumes(self):
+        events = [_prompt(20, 0), _prompt(15, 0), _prompt(25, 0)]
+        result = extract_prompt_signals(events)
+        assert _has_nonzero(result, "interaction_agency", "assumes_and_acts")
+
+    def test_question_heavy_boosts_checks(self):
+        events = [_prompt(50, 2), _prompt(60, 1), _prompt(40, 3)]
+        result = extract_prompt_signals(events)
+        assert _has_nonzero(result, "risk_caution", "checks_before_acting")
+
+
+# ---------------------------------------------------------------------------
+# merge_signal_results
+# ---------------------------------------------------------------------------
+
+
+class TestMergeSignalResults:
+    def test_merge_empty(self):
+        result = merge_signal_results()
+        assert all(len(states) == 0 for states in result.values())
+
+    def test_merge_single(self):
+        r1: SignalResult = {
+            "epistemic_style": {"confident": 2.0},
+            "interaction_agency": {},
+            "communication_register": {},
+            "risk_caution": {},
+        }
+        result = merge_signal_results(r1)
+        assert result["epistemic_style"]["confident"] == 2.0
+
+    def test_merge_sums_weights(self):
+        r1: SignalResult = {
+            "epistemic_style": {"confident": 2.0, "hedging": 1.0},
+            "interaction_agency": {},
+            "communication_register": {},
+            "risk_caution": {},
+        }
+        r2: SignalResult = {
+            "epistemic_style": {"confident": 1.0},
+            "interaction_agency": {"asks_first": 1.5},
+            "communication_register": {},
+            "risk_caution": {},
+        }
+        result = merge_signal_results(r1, r2)
+        assert result["epistemic_style"]["confident"] == 3.0
+        assert result["epistemic_style"]["hedging"] == 1.0
+        assert result["interaction_agency"]["asks_first"] == 1.5
+
+    def test_merge_three_results(self):
+        r1: SignalResult = {
+            "epistemic_style": {"confident": 1.0},
+            "interaction_agency": {},
+            "communication_register": {},
+            "risk_caution": {"acts_immediately": 1.0},
+        }
+        r2: SignalResult = {
+            "epistemic_style": {"confident": 1.0},
+            "interaction_agency": {},
+            "communication_register": {"terse": 2.0},
+            "risk_caution": {},
+        }
+        r3: SignalResult = {
+            "epistemic_style": {},
+            "interaction_agency": {"assumes_and_acts": 3.0},
+            "communication_register": {"terse": 1.0},
+            "risk_caution": {"acts_immediately": 2.0},
+        }
+        result = merge_signal_results(r1, r2, r3)
+        assert result["epistemic_style"]["confident"] == 2.0
+        assert result["communication_register"]["terse"] == 3.0
+        assert result["risk_caution"]["acts_immediately"] == 3.0
+        assert result["interaction_agency"]["assumes_and_acts"] == 3.0
+
+    def test_merge_preserves_all_dimensions(self):
+        result = merge_signal_results(
+            {"epistemic_style": {}, "interaction_agency": {},
+             "communication_register": {}, "risk_caution": {}},
+        )
+        assert set(result.keys()) == {
+            "epistemic_style", "interaction_agency",
+            "communication_register", "risk_caution",
+        }
