@@ -35,7 +35,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   - `extract_prompt_signals(events: list[UserPromptEvent])` → directness, specificity, question frequency
   Each extractor returns weighted contributions to the 4 behavioral dimensions.
 
-- [ ] **1.3 Signal-to-distribution mapping for hook events**
+- [x] **1.3 Signal-to-distribution mapping for hook events**
   Define the mapping from hook signals to behavioral dimension weights:
   - Tool selection patterns → epistemic_style (Read-heavy = thorough), risk_caution (test-before-commit = cautious)
   - Delegation patterns → interaction_agency (high delegation = offers_options/defers_to_user)
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 1.2 Hook signal extractors
+**Last completed:** 1.3 Signal-to-distribution mapping
 **Current phase:** Phase 1 — Observation Overhaul
 **Tests passing:** 253 (baseline)

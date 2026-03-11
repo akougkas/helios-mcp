@@ -15,12 +15,14 @@ from __future__ import annotations
 import math
 from collections import Counter, defaultdict
 
+from .distribution import BehavioralDistribution
 from .hook_events import (
     SubagentEvent,
     SessionEvent,
     ToolUseEvent,
     UserPromptEvent,
 )
+from .taxonomy import list_dimensions, list_states
 
 
 # ---------------------------------------------------------------------------
@@ -408,3 +410,77 @@ def merge_signal_results(*results: SignalResult) -> SignalResult:
             for state, weight in states.items():
                 merged[dim][state] = merged[dim].get(state, 0.0) + weight
     return merged
+
+
+# ---------------------------------------------------------------------------
+# Signal-to-distribution conversion (Task 1.3)
+# ---------------------------------------------------------------------------
+
+def hook_signals_to_distributions(
+    signals: SignalResult,
+) -> dict[str, BehavioralDistribution]:
+    """Convert merged hook signal weights into BehavioralDistribution objects.
+
+    For each behavioral dimension, the signal weights are combined with
+    a uniform prior (to avoid zero-mass states) and normalized into a
+    proper probability distribution.
+
+    Mapping rationale documented per dimension:
+
+    epistemic_style:
+        Tool selection patterns drive this. Read-heavy usage maps to
+        confident (researched before acting). High tool diversity maps
+        to speculating (exploratory approach). Low diversity with writes
+        maps to confident (knows what to do).
+
+    interaction_agency:
+        Delegation patterns (Agent tool, subagents) drive this.
+        High delegation maps to offers_options/defers_to_user.
+        Heavy Bash usage maps to assumes_and_acts (direct action).
+
+    communication_register:
+        Prompt length and read/write ratio drive this.
+        Short user prompts map to terse interaction style.
+        Long prompts and read-heavy tool use map to thorough.
+
+    risk_caution:
+        Read-before-write patterns, test execution, and failure rates
+        drive this. Test-before-commit maps to checks_before_acting.
+        High failure rates without retries map to acts_immediately.
+
+    Args:
+        signals: Merged SignalResult from all extractors.
+
+    Returns:
+        Dict mapping dimension name to BehavioralDistribution.
+    """
+    dists: dict[str, BehavioralDistribution] = {}
+
+    # Uniform prior weight prevents zero-mass states
+    prior_weight = 0.1
+
+    for dim in list_dimensions():
+        states = list_states(dim)
+        weights: dict[str, float] = {}
+
+        dim_signals = signals.get(dim, {})
+
+        for state in states:
+            # Start with a small uniform prior
+            w = prior_weight
+            # Add any signal contribution for this state
+            w += dim_signals.get(state, 0.0)
+            weights[state] = w
+
+        # Normalize to sum to 1.0
+        total = sum(weights.values())
+        if total > 0:
+            weights = {s: v / total for s, v in weights.items()}
+        else:
+            # Fallback to uniform
+            prob = 1.0 / len(states)
+            weights = {s: prob for s in states}
+
+        dists[dim] = BehavioralDistribution(dim, weights)
+
+    return dists

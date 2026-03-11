@@ -1,6 +1,7 @@
-"""Tests for hook signal extraction (Task 1.2).
+"""Tests for hook signal extraction (Tasks 1.2, 1.3).
 
-Covers all four extractor functions and the merge utility.
+Covers all four extractor functions, the merge utility,
+and the signal-to-distribution conversion.
 """
 
 import time
@@ -13,14 +14,17 @@ from helios_mcp.hook_events import (
     ToolUseEvent,
     UserPromptEvent,
 )
+from helios_mcp.distribution import BehavioralDistribution
 from helios_mcp.hook_observer import (
     SignalResult,
     extract_prompt_signals,
     extract_session_signals,
     extract_subagent_signals,
     extract_tool_signals,
+    hook_signals_to_distributions,
     merge_signal_results,
 )
+from helios_mcp.taxonomy import list_dimensions, list_states
 
 
 # ---------------------------------------------------------------------------
@@ -376,3 +380,124 @@ class TestMergeSignalResults:
             "epistemic_style", "interaction_agency",
             "communication_register", "risk_caution",
         }
+
+
+# ---------------------------------------------------------------------------
+# hook_signals_to_distributions (Task 1.3)
+# ---------------------------------------------------------------------------
+
+
+class TestHookSignalsToDistributions:
+    def test_empty_signals_produce_near_uniform(self):
+        """With no signal weights, result should be approximately uniform."""
+        signals: SignalResult = {
+            "epistemic_style": {},
+            "interaction_agency": {},
+            "communication_register": {},
+            "risk_caution": {},
+        }
+        dists = hook_signals_to_distributions(signals)
+        for dim in list_dimensions():
+            assert dim in dists
+            dist = dists[dim]
+            assert isinstance(dist, BehavioralDistribution)
+            # All states should have roughly equal probability
+            states = list_states(dim)
+            expected = 1.0 / len(states)
+            for s in states:
+                assert abs(dist[s] - expected) < 0.01
+
+    def test_returns_all_four_dimensions(self):
+        signals: SignalResult = {
+            "epistemic_style": {"confident": 5.0},
+            "interaction_agency": {},
+            "communication_register": {},
+            "risk_caution": {},
+        }
+        dists = hook_signals_to_distributions(signals)
+        assert set(dists.keys()) == set(list_dimensions())
+
+    def test_strong_signal_dominates(self):
+        """A strong signal weight should produce a distribution favoring that state."""
+        signals: SignalResult = {
+            "epistemic_style": {"confident": 10.0},
+            "interaction_agency": {},
+            "communication_register": {},
+            "risk_caution": {},
+        }
+        dists = hook_signals_to_distributions(signals)
+        ep = dists["epistemic_style"]
+        assert ep.most_likely() == "confident"
+        assert ep["confident"] > 0.5
+
+    def test_all_distributions_are_valid(self):
+        """Every returned distribution should sum to 1.0."""
+        signals: SignalResult = {
+            "epistemic_style": {"hedging": 2.0, "confident": 1.0},
+            "interaction_agency": {"asks_first": 3.0},
+            "communication_register": {"terse": 5.0},
+            "risk_caution": {"checks_before_acting": 4.0, "warns_frequently": 1.0},
+        }
+        dists = hook_signals_to_distributions(signals)
+        for dim, dist in dists.items():
+            total = sum(dist.probs)
+            assert abs(total - 1.0) < 1e-6, f"{dim} sums to {total}"
+
+    def test_no_zero_mass_states(self):
+        """Even states with no signal should have nonzero probability (prior)."""
+        signals: SignalResult = {
+            "epistemic_style": {"confident": 10.0},
+            "interaction_agency": {},
+            "communication_register": {},
+            "risk_caution": {},
+        }
+        dists = hook_signals_to_distributions(signals)
+        for dim in list_dimensions():
+            for s in list_states(dim):
+                assert dists[dim][s] > 0.0, f"{dim}.{s} has zero mass"
+
+    def test_multiple_signals_blend(self):
+        """Multiple signals in one dimension should blend proportionally."""
+        signals: SignalResult = {
+            "epistemic_style": {"confident": 3.0, "hedging": 3.0},
+            "interaction_agency": {},
+            "communication_register": {},
+            "risk_caution": {},
+        }
+        dists = hook_signals_to_distributions(signals)
+        ep = dists["epistemic_style"]
+        # confident and hedging should have equal weight (plus equal priors)
+        assert abs(ep["confident"] - ep["hedging"]) < 0.01
+
+    def test_end_to_end_with_extractors(self):
+        """Full pipeline: events → extract → merge → distributions."""
+        tool_events = [_tool("Read")] * 6 + [_tool("Edit")]
+        prompt_events = [_prompt(20, 0), _prompt(15, 0)]
+
+        tool_sig = extract_tool_signals(tool_events)
+        prompt_sig = extract_prompt_signals(prompt_events)
+        merged = merge_signal_results(tool_sig, prompt_sig)
+        dists = hook_signals_to_distributions(merged)
+
+        assert len(dists) == 4
+        for dim, dist in dists.items():
+            assert isinstance(dist, BehavioralDistribution)
+            total = sum(dist.probs)
+            assert abs(total - 1.0) < 1e-6
+
+    def test_proportional_to_weights(self):
+        """State with 2x the weight should have roughly 2x probability (minus prior)."""
+        signals: SignalResult = {
+            "epistemic_style": {"confident": 4.0, "hedging": 2.0},
+            "interaction_agency": {},
+            "communication_register": {},
+            "risk_caution": {},
+        }
+        dists = hook_signals_to_distributions(signals)
+        ep = dists["epistemic_style"]
+        # confident got 4.0 + 0.1 prior = 4.1, hedging got 2.0 + 0.1 = 2.1
+        # Others got 0.1 each (2 others = 0.2)
+        # Total = 4.1 + 2.1 + 0.1 + 0.1 = 6.4
+        # confident should be roughly 4.1/6.4 ≈ 0.64
+        assert ep["confident"] > ep["hedging"]
+        assert ep["confident"] > 0.5
