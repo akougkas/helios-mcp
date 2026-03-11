@@ -217,9 +217,26 @@ Each iteration of the loop agent MUST:
 - If a task takes more than one iteration, split it and note progress
 - After each commit, update the "Last completed" line below
 
-**Last completed**: P6.5 — ALL PHASES COMPLETE — 252 v2 tests passing
+**Last completed**: C8 — Claude Code Compliance Audit COMPLETE — 609 tests passing
 **Current phase**: COMPLETE ✅
-**Tests passing**: 252 v2 tests (all phases)
+**Tests passing**: 609 (252 v2 base + 280 Phase 1-3 + 77 compliance audit)
+
+---
+
+## Claude Code Compliance Audit (C1-C10)
+
+Audited Helios against actual Claude Code documentation (2026-03). Fixed gaps:
+
+- [x] C1: hook_events.py — common fields on HookEvent base, all 18 event types, updated parser
+- [x] C2: hook_observer.py — extract_failure_signals() + extract_config_signals()
+- [x] C3: cli.py — all 18 event types in hook command, common fields in JSONL records
+- [x] C4: plugin.json — correct top-level schema (not nested components)
+- [x] C5: hooks.json — all observation hooks, regex matchers, async:true, ${CLAUDE_PLUGIN_ROOT}
+- [x] C6: SKILL.md — YAML frontmatter, $ARGUMENTS routing, !`command` dynamic context
+- [x] C7: .mcp.json — type:stdio, env:{}
+- [x] C8: helios-skill/ — mirrors corrected plugin files
+- [x] C9: Tests updated alongside each task (609 total)
+- [x] C10: PLAN.md updated
 
 ---
 
