@@ -120,7 +120,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
 - [x] **2.8 CLI: helios-mcp export**
   `helios-mcp export <persona> [--format yaml|json|soulspec] [--dimensions dim1,dim2] [--diff N]`
 
-- [ ] **2.9 Tests for import/export**
+- [x] **2.9 Tests for import/export**
   `tests/test_importer.py` — format detection, markdown parsing, edge cases.
   `tests/test_projector.py` — projection prompt construction, distribution validation, keyword fallback.
   `tests/test_exporter.py` — all three export modes, SoulSpec format, round-trip (import→export→import produces same distributions).
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 2.8 CLI export command
-**Current phase:** Phase 2 — Profile Import/Export Engine
-**Tests passing:** 403 (253 baseline + 150 new)
+**Last completed:** 2.9 Phase 2 complete
+**Current phase:** Phase 3 — Claude Code Plugin Packaging
+**Tests passing:** 498 (253 baseline + 245 new)
