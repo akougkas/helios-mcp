@@ -17,6 +17,7 @@ from collections import Counter, defaultdict
 
 from .distribution import BehavioralDistribution
 from .hook_events import (
+    ConfigChangeEvent,
     SubagentEvent,
     SessionEvent,
     ToolUseEvent,
@@ -374,6 +375,88 @@ def extract_prompt_signals(events: list[UserPromptEvent]) -> SignalResult:
     # Question-heavy prompts suggest the user wants caution
     if question_rate > 0.5:
         result["risk_caution"]["checks_before_acting"] += 1.0
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Failure signal extraction (PostToolUseFailure events)
+# ---------------------------------------------------------------------------
+
+def extract_failure_signals(events: list[ToolUseEvent]) -> SignalResult:
+    """Extract behavioral signals from tool failure events.
+
+    Failure patterns indicate risk posture and epistemic style.
+    Repeated failures on the same tool suggest stubbornness or
+    insufficient caution. Failures after reads suggest thoroughness
+    that still didn't prevent the error.
+
+    Args:
+        events: List of ToolUseEvent with phase="post_failure".
+
+    Returns:
+        SignalResult mapping dimension -> state -> weight.
+    """
+    if not events:
+        return _empty_signal()
+
+    result: SignalResult = _empty_signal()
+    failure_count = len(events)
+    tool_counts = Counter(e.tool_name for e in events)
+
+    # Repeated failures on the same tool suggest acting without checking
+    max_same_tool_failures = max(tool_counts.values()) if tool_counts else 0
+    if max_same_tool_failures >= 3:
+        result["risk_caution"]["acts_immediately"] += 2.0
+        result["epistemic_style"]["confident"] += 1.0
+
+    # Many distinct tool failures suggest exploratory approach
+    if len(tool_counts) >= 3:
+        result["epistemic_style"]["speculating"] += 1.5
+
+    # Any failures boost warns_frequently (awareness of failure)
+    if failure_count >= 2:
+        result["risk_caution"]["warns_frequently"] += 1.0
+
+    # Single failure is normal, many failures suggest lack of caution
+    if failure_count >= 5:
+        result["risk_caution"]["acts_immediately"] += 1.5
+        result["interaction_agency"]["assumes_and_acts"] += 1.0
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Config change signal extraction
+# ---------------------------------------------------------------------------
+
+def extract_config_signals(events: list[ConfigChangeEvent]) -> SignalResult:
+    """Extract behavioral signals from configuration change events.
+
+    Config changes indicate how the agent/user manages their environment.
+    Frequent changes suggest an iterative, experimental style. Changes
+    to specific files can indicate caution (settings) or boldness (hooks).
+
+    Args:
+        events: List of ConfigChangeEvent from ConfigChange hooks.
+
+    Returns:
+        SignalResult mapping dimension -> state -> weight.
+    """
+    if not events:
+        return _empty_signal()
+
+    result: SignalResult = _empty_signal()
+    change_count = len(events)
+
+    # Frequent config changes suggest iterative/experimental approach
+    if change_count >= 3:
+        result["epistemic_style"]["speculating"] += 1.0
+        result["interaction_agency"]["assumes_and_acts"] += 1.0
+
+    # Any config changes suggest active environment management
+    if change_count >= 1:
+        result["risk_caution"]["checks_before_acting"] += 0.5
 
     return result
 

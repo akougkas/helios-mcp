@@ -1,6 +1,6 @@
-"""Tests for hook signal extraction (Tasks 1.2, 1.3).
+"""Tests for hook signal extraction (Tasks 1.2, 1.3 + C2 compliance).
 
-Covers all four extractor functions, the merge utility,
+Covers all six extractor functions, the merge utility,
 and the signal-to-distribution conversion.
 """
 
@@ -9,6 +9,7 @@ import time
 import pytest
 
 from helios_mcp.hook_events import (
+    ConfigChangeEvent,
     SubagentEvent,
     SessionEvent,
     ToolUseEvent,
@@ -17,6 +18,8 @@ from helios_mcp.hook_events import (
 from helios_mcp.distribution import BehavioralDistribution
 from helios_mcp.hook_observer import (
     SignalResult,
+    extract_config_signals,
+    extract_failure_signals,
     extract_prompt_signals,
     extract_session_signals,
     extract_subagent_signals,
@@ -501,3 +504,103 @@ class TestHookSignalsToDistributions:
         # confident should be roughly 4.1/6.4 ≈ 0.64
         assert ep["confident"] > ep["hedging"]
         assert ep["confident"] > 0.5
+
+
+# ---------------------------------------------------------------------------
+# extract_failure_signals (C2 compliance)
+# ---------------------------------------------------------------------------
+
+
+def _failure_tool(name: str, keys: tuple[str, ...] = ()) -> ToolUseEvent:
+    return ToolUseEvent(
+        tool_name=name, tool_input_keys=keys,
+        success=False, phase="post_failure",
+    )
+
+
+class TestExtractFailureSignals:
+    def test_empty_returns_empty(self):
+        result = extract_failure_signals([])
+        assert all(len(states) == 0 for states in result.values())
+
+    def test_repeated_same_tool_failures_boost_acts_immediately(self):
+        events = [_failure_tool("Bash")] * 4
+        result = extract_failure_signals(events)
+        assert _has_nonzero(result, "risk_caution", "acts_immediately")
+
+    def test_repeated_same_tool_failures_boost_confident(self):
+        events = [_failure_tool("Bash")] * 3
+        result = extract_failure_signals(events)
+        assert _has_nonzero(result, "epistemic_style", "confident")
+
+    def test_diverse_tool_failures_boost_speculating(self):
+        events = [
+            _failure_tool("Bash"),
+            _failure_tool("Edit"),
+            _failure_tool("Write"),
+        ]
+        result = extract_failure_signals(events)
+        assert _has_nonzero(result, "epistemic_style", "speculating")
+
+    def test_multiple_failures_boost_warns_frequently(self):
+        events = [_failure_tool("Bash"), _failure_tool("Edit")]
+        result = extract_failure_signals(events)
+        assert _has_nonzero(result, "risk_caution", "warns_frequently")
+
+    def test_many_failures_boost_assumes_and_acts(self):
+        events = [_failure_tool("Bash")] * 5
+        result = extract_failure_signals(events)
+        assert _has_nonzero(result, "interaction_agency", "assumes_and_acts")
+
+    def test_single_failure_minimal_signals(self):
+        events = [_failure_tool("Bash")]
+        result = extract_failure_signals(events)
+        # Single failure should not trigger heavy signals
+        assert not _has_nonzero(result, "risk_caution", "acts_immediately")
+        assert not _has_nonzero(result, "interaction_agency", "assumes_and_acts")
+
+    def test_returns_all_four_dimensions(self):
+        events = [_failure_tool("Bash")]
+        result = extract_failure_signals(events)
+        assert set(result.keys()) == {
+            "epistemic_style", "interaction_agency",
+            "communication_register", "risk_caution",
+        }
+
+
+# ---------------------------------------------------------------------------
+# extract_config_signals (C2 compliance)
+# ---------------------------------------------------------------------------
+
+
+def _config_change(source: str = "user", file_path: str = "") -> ConfigChangeEvent:
+    return ConfigChangeEvent(source=source, file_path=file_path)
+
+
+class TestExtractConfigSignals:
+    def test_empty_returns_empty(self):
+        result = extract_config_signals([])
+        assert all(len(states) == 0 for states in result.values())
+
+    def test_frequent_changes_boost_speculating(self):
+        events = [_config_change()] * 3
+        result = extract_config_signals(events)
+        assert _has_nonzero(result, "epistemic_style", "speculating")
+
+    def test_frequent_changes_boost_assumes_and_acts(self):
+        events = [_config_change()] * 3
+        result = extract_config_signals(events)
+        assert _has_nonzero(result, "interaction_agency", "assumes_and_acts")
+
+    def test_any_change_boosts_checks(self):
+        events = [_config_change()]
+        result = extract_config_signals(events)
+        assert _has_nonzero(result, "risk_caution", "checks_before_acting")
+
+    def test_returns_all_four_dimensions(self):
+        events = [_config_change()]
+        result = extract_config_signals(events)
+        assert set(result.keys()) == {
+            "epistemic_style", "interaction_agency",
+            "communication_register", "risk_caution",
+        }
