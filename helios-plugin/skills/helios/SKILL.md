@@ -1,17 +1,28 @@
+---
+name: helios
+description: Observes behavioral patterns, detects drift via KL-divergence, and negotiates profile updates with the human
+argument-hint: "[status|drift|negotiate|import|export]"
+user-invocable: true
+allowed-tools: "mcp__helios__get_behavioral_context,mcp__helios__observe_interaction,mcp__helios__get_drift_report,mcp__helios__negotiate_update,mcp__helios__import_profile,mcp__helios__export_profile"
+---
+
 # Helios Behavioral Science
 
 Helios observes your behavioral patterns and helps your agent learn your preferences. It detects when behavior drifts from your declared profile and proposes negotiated updates.
 
-## Activation
+## Commands
 
-This skill activates when the user says:
+Route based on $ARGUMENTS:
+
 - `/helios` or `/helios status` — show current behavioral profile
 - `/helios drift` — check for behavioral drift
 - `/helios negotiate` — review and accept/reject proposed changes
-- `/helios import` — import a personality file into Helios
-- `/helios export` — export behavioral profile
+- `/helios import <path>` — import a personality file into Helios
+- `/helios export [format]` — export behavioral profile (yaml, json, soulspec)
 
 ## Session Start
+
+!`helios-mcp status 2>/dev/null || echo "Helios not yet bootstrapped"`
 
 At the beginning of each session, call the `get_behavioral_context` MCP tool to load the user's behavioral preferences. Apply these preferences to guide your communication style, epistemic approach, interaction patterns, and risk posture.
 

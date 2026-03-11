@@ -205,6 +205,15 @@ class TestMCPConfig:
         assert server["command"] == "uvx"
         assert "helios-mcp" in server["args"]
 
+    def test_has_type_stdio(self, mcp):
+        server = mcp["mcpServers"]["helios"]
+        assert server["type"] == "stdio"
+
+    def test_has_env(self, mcp):
+        server = mcp["mcpServers"]["helios"]
+        assert "env" in server
+        assert isinstance(server["env"], dict)
+
 
 # ---------------------------------------------------------------------------
 # 3.5 SKILL.md
@@ -216,10 +225,37 @@ class TestSkillDefinition:
     def skill_content(self):
         return (PLUGIN_DIR / "skills" / "helios" / "SKILL.md").read_text()
 
+    def test_has_yaml_frontmatter(self, skill_content):
+        assert skill_content.startswith("---\n")
+        # Must have closing ---
+        parts = skill_content.split("---\n", 2)
+        assert len(parts) >= 3, "SKILL.md must have YAML frontmatter with opening and closing ---"
+
+    def test_frontmatter_has_name(self, skill_content):
+        assert "name: helios" in skill_content
+
+    def test_frontmatter_has_description(self, skill_content):
+        assert "description:" in skill_content
+
+    def test_frontmatter_has_argument_hint(self, skill_content):
+        assert "argument-hint:" in skill_content
+
+    def test_frontmatter_has_user_invocable(self, skill_content):
+        assert "user-invocable: true" in skill_content
+
+    def test_frontmatter_has_allowed_tools(self, skill_content):
+        assert "allowed-tools:" in skill_content
+
     def test_has_activation_triggers(self, skill_content):
         assert "/helios" in skill_content
         assert "/helios status" in skill_content
         assert "/helios drift" in skill_content
+
+    def test_has_arguments_routing(self, skill_content):
+        assert "$ARGUMENTS" in skill_content
+
+    def test_has_dynamic_context_injection(self, skill_content):
+        assert "!`helios-mcp" in skill_content
 
     def test_has_mcp_tool_guidance(self, skill_content):
         assert "get_behavioral_context" in skill_content
