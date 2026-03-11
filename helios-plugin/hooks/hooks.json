@@ -2,55 +2,105 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": {},
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "helios-mcp hook post-tool"
+            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook post-tool",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook post-tool-failure",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook prompt-submit",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook subagent-start",
+            "async": true
           }
         ]
       }
     ],
     "SubagentStop": [
       {
-        "matcher": {},
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "helios-mcp hook subagent-stop"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": {},
-        "hooks": [
-          {
-            "type": "command",
-            "command": "helios-mcp hook stop"
+            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook subagent-stop",
+            "async": true
           }
         ]
       }
     ],
     "SessionStart": [
       {
-        "matcher": {},
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "helios-mcp hook session-start"
+            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook session-start",
+            "async": true
           }
         ]
       }
     ],
     "SessionEnd": [
       {
-        "matcher": {},
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "helios-mcp hook session-end"
+            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook session-end",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook stop",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/../helios-mcp hook notification",
+            "async": true
           }
         ]
       }

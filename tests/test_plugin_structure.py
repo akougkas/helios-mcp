@@ -115,6 +115,19 @@ class TestHooksConfig:
         cmd = hooks["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
         assert "helios-mcp hook post-tool" in cmd
 
+    def test_post_tool_use_failure_hook(self, hooks):
+        assert "PostToolUseFailure" in hooks["hooks"]
+        cmd = hooks["hooks"]["PostToolUseFailure"][0]["hooks"][0]["command"]
+        assert "helios-mcp hook post-tool-failure" in cmd
+
+    def test_user_prompt_submit_hook(self, hooks):
+        assert "UserPromptSubmit" in hooks["hooks"]
+        cmd = hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+        assert "helios-mcp hook prompt-submit" in cmd
+
+    def test_subagent_start_hook(self, hooks):
+        assert "SubagentStart" in hooks["hooks"]
+
     def test_subagent_stop_hook(self, hooks):
         assert "SubagentStop" in hooks["hooks"]
 
@@ -127,15 +140,50 @@ class TestHooksConfig:
     def test_session_end_hook(self, hooks):
         assert "SessionEnd" in hooks["hooks"]
 
+    def test_notification_hook(self, hooks):
+        assert "Notification" in hooks["hooks"]
+
     def test_no_pre_tool_blocking(self, hooks):
         """Helios is observe-only. No PreToolUse hooks that could block."""
         assert "PreToolUse" not in hooks["hooks"]
+
+    def test_no_permission_request_blocking(self, hooks):
+        """Helios is observe-only. No PermissionRequest hooks."""
+        assert "PermissionRequest" not in hooks["hooks"]
 
     def test_all_hooks_are_command_type(self, hooks):
         for event_type, entries in hooks["hooks"].items():
             for entry in entries:
                 for hook in entry["hooks"]:
                     assert hook["type"] == "command"
+
+    def test_all_hooks_are_async(self, hooks):
+        """All observation hooks should be async (non-blocking)."""
+        for event_type, entries in hooks["hooks"].items():
+            for entry in entries:
+                for hook in entry["hooks"]:
+                    assert hook.get("async") is True, (
+                        f"{event_type} hook is not async"
+                    )
+
+    def test_hooks_use_plugin_root_variable(self, hooks):
+        """Commands should reference ${CLAUDE_PLUGIN_ROOT} for portability."""
+        for event_type, entries in hooks["hooks"].items():
+            for entry in entries:
+                for hook in entry["hooks"]:
+                    assert "${CLAUDE_PLUGIN_ROOT}" in hook["command"], (
+                        f"{event_type} hook does not use ${{CLAUDE_PLUGIN_ROOT}}"
+                    )
+
+    def test_tool_event_matchers_are_regex(self, hooks):
+        """Tool-related events should use regex matchers, not empty objects."""
+        tool_events = ["PostToolUse", "PostToolUseFailure"]
+        for evt in tool_events:
+            if evt in hooks["hooks"]:
+                matcher = hooks["hooks"][evt][0].get("matcher")
+                assert isinstance(matcher, str), (
+                    f"{evt} matcher should be a regex string"
+                )
 
 
 # ---------------------------------------------------------------------------
