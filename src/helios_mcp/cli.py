@@ -16,6 +16,7 @@ from . import __version__
 from .server import create_server
 from .bootstrap import BootstrapManager
 from .hierarchy import IdentityHierarchy
+from .hook_events import parse_hook_stdin
 from .observer import BehavioralObserver
 from .drift import DriftDetector
 from .taxonomy import list_dimensions
@@ -181,6 +182,68 @@ def negotiate_command(persona: str, helios_dir: Path, threshold: float) -> None:
         click.echo("Changes rejected.")
     else:
         click.echo("No action taken.")
+
+
+# ---------------------------------------------------------------------------
+# Hook event handlers (Task 1.4)
+# ---------------------------------------------------------------------------
+
+_VALID_HOOK_EVENTS = (
+    "pre-tool", "post-tool",
+    "subagent-start", "subagent-stop",
+    "session-start", "session-end",
+    "notification", "prompt-submit", "stop",
+)
+
+
+@main.command("hook")
+@click.argument("event_type", type=click.Choice(_VALID_HOOK_EVENTS))
+@click.option(
+    "--helios-dir",
+    default=lambda: Path(os.getenv("HELIOS_DIR", Path.home() / ".helios")),
+    type=click.Path(path_type=Path),
+)
+@click.option("--persona", default="default", help="Persona to record observation for")
+def hook_command(event_type: str, helios_dir: Path, persona: str) -> None:
+    """Process a Claude Code hook event from stdin.
+
+    Reads JSON from stdin, parses it into a typed event, and persists
+    the observation to the Helios store. Designed to be fast (< 100ms)
+    and non-blocking. Always exits 0 to avoid blocking Claude Code.
+    """
+    import json as _json
+
+    try:
+        raw_input = sys.stdin.read()
+        if not raw_input.strip():
+            raw_json: dict = {}
+        else:
+            raw_json = _json.loads(raw_input)
+            if not isinstance(raw_json, dict):
+                raw_json = {}
+
+        event = parse_hook_stdin(raw_json, event_type)
+
+        # Persist the event to the observation store
+        obs_dir = helios_dir / "observations" / "hooks"
+        obs_dir.mkdir(parents=True, exist_ok=True)
+
+        obs_file = obs_dir / f"{persona}.jsonl"
+        record = {
+            "event_type": event_type,
+            "timestamp": event.timestamp,
+            "data": raw_json,
+        }
+        with obs_file.open("a", encoding="utf-8") as f:
+            f.write(_json.dumps(record) + "\n")
+
+        logger.debug("Processed %s event for persona %s", event_type, persona)
+
+    except Exception as exc:
+        # Log but never fail. Hook handlers must exit 0.
+        logger.debug("Hook handler error for %s: %s", event_type, exc)
+
+    sys.exit(0)
 
 
 async def _run_server(helios_dir: Path, verbose: bool) -> None:

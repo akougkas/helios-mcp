@@ -43,7 +43,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   - Response completeness → risk_caution, epistemic_style
   Document the rationale for each mapping in code comments.
 
-- [ ] **1.4 CLI hook handlers**
+- [x] **1.4 CLI hook handlers**
   Add to `cli.py`: `helios-mcp hook <event-type>` subcommands that read JSON from stdin (as Claude Code hooks provide), parse into HookEvent, and feed to observer.
   Events to handle: `pre-tool`, `post-tool`, `subagent-start`, `subagent-stop`, `session-start`, `session-end`, `notification`, `prompt-submit`, `stop`.
   Each handler is fast (< 100ms) and non-blocking. Writes to observation store, exits 0.
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 1.3 Signal-to-distribution mapping
+**Last completed:** 1.4 CLI hook handlers
 **Current phase:** Phase 1 — Observation Overhaul
 **Tests passing:** 253 (baseline)
