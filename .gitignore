@@ -1,175 +1,44 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[codz]
-*$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
-MANIFEST
 
-# PyInstaller
-*.manifest
-*.spec
+# Build
+build/
+dist/
+sdist/
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# Virtual environments
+.venv/
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
+# Testing
+.pytest_cache/
+.hypothesis/
 .coverage
 .coverage.*
-.cache
-nosetests.xml
+htmlcov/
 coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
 
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-# .python-version
-
-# UV
-.uv/
-# Note: uv.lock should be tracked for reproducible builds
-
-# pdm
-.pdm-python
-.pdm-build/
-
-# pixi
-.pixi
-
-# PEP 582
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.envrc
-.env.local
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
+# Type checking
 .mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
+.ruff_cache/
 
 # IDE
 .vscode/
 .idea/
 *.swp
-*.swo
 *~
 .DS_Store
 
-# Ruff
-.ruff_cache/
+# UV
+.uv/
 
-# PyPI configuration
-.pypirc
-
-# Cursor
-.cursorignore
-.cursorindexingignore
-
-# Local development files
-*.tmp
-*.debug
-.claude/settings.local.json
+# Local scratch files
 /test_*.py
 scratch/
-
-# Archived documentation
-ai-docs/.archive/
-
-# Helios runtime
-~/.helios/
-helios.db
-
-# Prompts used
-docs/planning/prompts/
+*.tmp
+*.debug
+*.lock
+!uv.lock
