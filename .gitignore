@@ -161,7 +161,7 @@ cython_debug/
 *.tmp
 *.debug
 .claude/settings.local.json
-test_*.py
+/test_*.py
 scratch/
 
 # Archived documentation

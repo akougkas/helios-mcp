@@ -1,38 +1,35 @@
-"""Helios MCP - Configuration management for AI behaviors with weighted inheritance."""
+"""Helios MCP — behavioral science for AI agents."""
 
-import os
 from pathlib import Path
-from typing import Optional
 
-from .config import HeliosConfig, ConfigLoader
-from .server import create_server
+try:
+    import tomllib
+except ImportError:
+    tomllib = None  # type: ignore[assignment]
+
+try:
+    from importlib.metadata import version
+except ImportError:
+    version = None  # type: ignore[assignment]
 
 
 def _get_version() -> str:
-    """Get version dynamically from pyproject.toml or fallback."""
     try:
-        # Try to read from pyproject.toml if available
-        import tomllib
-        project_root = Path(__file__).parent.parent.parent
-        pyproject_path = project_root / "pyproject.toml"
-        
-        if pyproject_path.exists():
-            with pyproject_path.open("rb") as f:
-                pyproject = tomllib.load(f)
-                return pyproject["project"]["version"]
-    except (ImportError, FileNotFoundError, KeyError, tomllib.TOMLDecodeError):
+        if tomllib is not None:
+            pyproject = Path(__file__).parent.parent.parent / "pyproject.toml"
+            if pyproject.exists():
+                with pyproject.open("rb") as f:
+                    v = tomllib.load(f)["project"]["version"]
+                    if isinstance(v, str) and v:
+                        return v
+    except Exception:
         pass
-    
-    # Fallback to package metadata if installed
     try:
-        from importlib.metadata import version
-        return version("helios-mcp")
-    except ImportError:
+        if version is not None:
+            return version("helios-mcp")
+    except Exception:
         pass
-    
-    # Final fallback
     return "0.3.0"
 
 
 __version__ = _get_version()
-__all__ = ["HeliosConfig", "ConfigLoader", "create_server"]

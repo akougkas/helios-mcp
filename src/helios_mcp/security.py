@@ -78,14 +78,15 @@ class BaseConfigSchema(BaseModel):
     description: Optional[str] = Field(default=None, max_length=1000)
     created: Optional[str] = None
     
-    model_config = ConfigDict(extra="allow")  # Allow additional fields but validate known ones
+    model_config = ConfigDict(extra="ignore", strict=True)
 
 
 class PersonaConfigSchema(BaseModel):
     """Pydantic schema for persona configuration validation."""
     specialization_level: float = Field(
         ge=1.0,
-        description="Specialization level (must be >= 1.0)"
+        le=100.0,
+        description="Specialization level (must be >= 1.0 and <= 100.0)"
     )
     name: Optional[str] = Field(default=None, max_length=100, pattern=r'^[a-zA-Z0-9 _-]+$')
     description: Optional[str] = Field(default=None, max_length=1000)
@@ -94,7 +95,7 @@ class PersonaConfigSchema(BaseModel):
     learning_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     version: Optional[str] = Field(default=None, pattern=r'^\d+\.\d+\.\d+$')
     
-    model_config = ConfigDict(extra="allow")  # Allow additional fields but validate known ones
+    model_config = ConfigDict(extra="ignore", strict=True)
 
 
 def validate_persona_name(name: str) -> str:
@@ -299,6 +300,9 @@ def sanitize_git_message(message: str) -> str:
     for char in dangerous_chars:
         if char in message:
             message = message.replace(char, ' ')
+    # Remove literal escape sequences that could represent dangerous chars
+    for seq in ['\\u0000', '\\ufeff', '\\x00']:
+        message = message.replace(seq, ' ')
     
     # Remove multiple spaces
     message = re.sub(r'\s+', ' ', message).strip()
@@ -400,8 +404,11 @@ def sanitize_error_message(error: Exception) -> str:
     error_str = str(error)
     
     # Remove potentially sensitive information
-    # Replace full paths with just filenames
+    # Replace Unix full paths with just filenames
     error_str = re.sub(r'/[^\s]*/', '.../', error_str)
+    # Replace Windows full paths (C:\Users\... or \\server\share\...)
+    error_str = re.sub(r'[A-Za-z]:\\[^\s]*', '[PATH]', error_str)
+    error_str = re.sub(r'\\\\[^\s]+', '[PATH]', error_str)
     
     # Limit length
     if len(error_str) > 200:

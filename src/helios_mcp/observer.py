@@ -12,6 +12,11 @@ Four signal types (all used simultaneously):
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
+from pathlib import Path
+
 from .distribution import BehavioralDistribution
 from .taxonomy import list_dimensions, list_states
 
@@ -359,15 +364,69 @@ def signals_to_distributions(
 # ---------------------------------------------------------------------------
 
 class BehavioralObserver:
-    """Extracts behavioral signals from conversations and tracks observations per persona."""
+    """Extracts behavioral signals from conversations and persists observations per persona.
 
-    def __init__(self) -> None:
+    Observations are stored to ~/.helios/observations/{persona}.json atomically so
+    they accumulate across MCP tool calls (which each create a fresh instance).
+    """
+
+    def __init__(self, helios_dir: Path | None = None) -> None:
+        self._helios_dir = helios_dir
         self._observations: dict[str, list[dict]] = {}
+
+    # ------------------------------------------------------------------
+    # Persistence helpers
+    # ------------------------------------------------------------------
+
+    def _obs_path(self, persona_name: str) -> Path | None:
+        if self._helios_dir is None:
+            return None
+        return self._helios_dir / "observations" / f"{persona_name}.json"
+
+    def _load(self, persona_name: str) -> None:
+        """Load persisted observations for a persona into memory."""
+        path = self._obs_path(persona_name)
+        if path is None or not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                self._observations[persona_name] = data
+        except Exception:
+            pass  # Corrupt file: start fresh
+
+    def _save(self, persona_name: str) -> None:
+        """Atomically write observations for a persona to disk."""
+        path = self._obs_path(persona_name)
+        if path is None:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(self._observations.get(persona_name, [])).encode()
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            os.write(fd, payload)
+            os.fsync(fd)
+            os.close(fd)
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def observe(
         self, persona_name: str, messages: list[dict]
     ) -> dict[str, BehavioralDistribution]:
-        """Process a conversation and return observed distributions.
+        """Process a conversation, persist the observation, and return distributions.
 
         Args:
             persona_name: Name of the persona being observed.
@@ -376,14 +435,18 @@ class BehavioralObserver:
         Returns:
             Dict mapping dimension name → BehavioralDistribution.
         """
+        # Load existing observations from disk before appending
+        if persona_name not in self._observations:
+            self._load(persona_name)
+        if persona_name not in self._observations:
+            self._observations[persona_name] = []
+
         structural = extract_structural(messages)
         semantic = extract_semantic(messages)
         decisions = extract_decision_points(messages)
         user_sigs = extract_user_signals(messages)
         dists = signals_to_distributions(structural, semantic, decisions, user_sigs)
 
-        if persona_name not in self._observations:
-            self._observations[persona_name] = []
         self._observations[persona_name].append({
             "structural": structural,
             "semantic": semantic,
@@ -391,27 +454,22 @@ class BehavioralObserver:
             "user_signals": user_sigs,
         })
 
+        self._save(persona_name)
         return dists
 
     def get_observation_count(self, persona_name: str) -> int:
         """Return the number of conversations observed for a persona."""
+        if persona_name not in self._observations:
+            self._load(persona_name)
         return len(self._observations.get(persona_name, []))
 
     def get_accumulated_distributions(
         self, persona_name: str
     ) -> dict[str, BehavioralDistribution]:
-        """Merge all stored observations into a single set of distributions.
+        """Merge all stored observations into a single set of distributions."""
+        if persona_name not in self._observations:
+            self._load(persona_name)
 
-        Accumulates signals across all stored observations for the persona
-        and builds combined distributions.
-
-        Args:
-            persona_name: Name of the persona.
-
-        Returns:
-            Dict mapping dimension name → BehavioralDistribution.
-            Returns uniform distributions if no observations exist.
-        """
         obs_list = self._observations.get(persona_name, [])
 
         if not obs_list:
@@ -420,21 +478,18 @@ class BehavioralObserver:
                 for dim in list_dimensions()
             }
 
-        # Accumulate signals across all observations
         acc_structural: dict[str, float] = {}
         acc_semantic: list[str] = []
         acc_decisions: list[str] = []
         acc_user_signals: list[str] = []
 
         for obs in obs_list:
-            # Accumulate structural by averaging
             for key, val in obs["structural"].items():
                 acc_structural[key] = acc_structural.get(key, 0.0) + val
             acc_semantic.extend(obs["semantic"])
             acc_decisions.extend(obs["decisions"])
             acc_user_signals.extend(obs["user_signals"])
 
-        # Average structural features
         n = len(obs_list)
         avg_structural = {k: v / n for k, v in acc_structural.items()}
 
