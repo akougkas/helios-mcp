@@ -269,5 +269,47 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             logger.error(f"import_profile failed: {e}")
             return {"status": "error", "message": sanitize_error_message(str(e))}
 
+    # ------------------------------------------------------------------
+    # Tool: export_profile
+    # ------------------------------------------------------------------
+
+    @mcp.tool(
+        description="Export a behavioral profile in various formats (yaml, json, soulspec)",
+        tags={"behavioral", "export"},
+    )
+    async def export_profile(
+        persona_name: str = Field(description="Persona to export"),
+        format: str = Field(default="yaml", description="Export format: yaml, json, or soulspec"),
+        dimensions: Optional[list[str]] = Field(default=None, description="Specific dimensions to include (None = all)"),
+        ctx: Context = None,
+    ) -> Dict[str, Any]:
+        """Export a behavioral profile with optional dimension filtering."""
+        try:
+            from .hierarchy import IdentityHierarchy
+            from .exporter import export_dimensions, export_soulspec
+
+            validate_persona_name(persona_name)
+            hierarchy = IdentityHierarchy(helios_dir)
+            profile = hierarchy.resolve(persona_name)
+
+            if format == "soulspec":
+                return {
+                    "status": "success",
+                    "persona": persona_name,
+                    "format": "soulspec",
+                    "content": export_soulspec(profile),
+                }
+
+            exported = export_dimensions(profile, dimensions)
+            return {
+                "status": "success",
+                "persona": persona_name,
+                "format": format,
+                **exported,
+            }
+        except Exception as e:
+            logger.error(f"export_profile failed: {e}")
+            return {"status": "error", "message": sanitize_error_message(str(e))}
+
     logger.info(f"Helios MCP server created (config: {helios_dir})")
     return mcp

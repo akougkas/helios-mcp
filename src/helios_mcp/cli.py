@@ -185,6 +185,57 @@ def negotiate_command(persona: str, helios_dir: Path, threshold: float) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Export command (Task 2.8)
+# ---------------------------------------------------------------------------
+
+
+@main.command("export")
+@click.argument("persona")
+@click.option(
+    "--format", "fmt",
+    type=click.Choice(["yaml", "json", "soulspec"]),
+    default="yaml",
+    help="Export format (default: yaml)",
+)
+@click.option("--dimensions", "dims", default=None, help="Comma-separated dimension names to export")
+@click.option(
+    "--helios-dir",
+    default=lambda: Path(os.getenv("HELIOS_DIR", Path.home() / ".helios")),
+    type=click.Path(path_type=Path),
+)
+def export_command(persona: str, fmt: str, dims: str | None, helios_dir: Path) -> None:
+    """Export a behavioral profile for PERSONA."""
+    import json as _json
+    import yaml as _yaml
+    from .hierarchy import IdentityHierarchy
+    from .exporter import export_dimensions, export_soulspec
+
+    try:
+        hierarchy = IdentityHierarchy(helios_dir)
+        profile = hierarchy.resolve(persona)
+    except Exception as exc:
+        click.echo(f"Failed to load profile for '{persona}': {exc}", err=True)
+        raise SystemExit(1)
+
+    if fmt == "soulspec":
+        click.echo(export_soulspec(profile))
+        return
+
+    dim_list = [d.strip() for d in dims.split(",")] if dims else None
+
+    try:
+        exported = export_dimensions(profile, dim_list)
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
+        raise SystemExit(1)
+
+    if fmt == "json":
+        click.echo(_json.dumps(exported, indent=2))
+    else:
+        click.echo(_yaml.dump(exported, default_flow_style=False, sort_keys=False))
+
+
+# ---------------------------------------------------------------------------
 # Import command (Task 2.4)
 # ---------------------------------------------------------------------------
 

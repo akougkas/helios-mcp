@@ -101,7 +101,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
 
 ### Export
 
-- [ ] **2.5 Export module**
+- [x] **2.5 Export module**
   Create `src/helios_mcp/exporter.py`.
   Three export modes:
   - `export_dimensions(profile, dimensions: list[str]) -> dict` — per-dimension slice
@@ -109,15 +109,15 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   - `export_diff(profile, commits_back: int = 1) -> dict` — behavioral changelog from git history
   All return serializable dicts suitable for YAML/JSON output.
 
-- [ ] **2.6 SoulSpec-compatible export**
+- [x] **2.6 SoulSpec-compatible export**
   `export_soulspec(profile) -> str` — renders a BehavioralProfile as a SoulSpec-compatible SOUL.md file.
   Maps probability distributions back to natural language personality descriptions.
   Includes metadata comments showing the underlying distribution values.
 
-- [ ] **2.7 MCP tool: export_profile**
+- [x] **2.7 MCP tool: export_profile**
   Add to `server.py`: `export_profile(persona_name: str, format: str = "yaml", dimensions: list[str] | None = None) -> dict`
 
-- [ ] **2.8 CLI: helios-mcp export**
+- [x] **2.8 CLI: helios-mcp export**
   `helios-mcp export <persona> [--format yaml|json|soulspec] [--dimensions dim1,dim2] [--diff N]`
 
 - [ ] **2.9 Tests for import/export**
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 2.4 CLI import command
+**Last completed:** 2.8 CLI export command
 **Current phase:** Phase 2 — Profile Import/Export Engine
 **Tests passing:** 403 (253 baseline + 150 new)
