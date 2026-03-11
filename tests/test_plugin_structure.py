@@ -63,11 +63,37 @@ class TestPluginManifest:
         assert "behavioral" in kw
         assert "personalization" in kw
 
-    def test_has_components(self, manifest):
-        assert "hooks" in manifest["components"]
-        assert "skills" in manifest["components"]
-        assert "agents" in manifest["components"]
-        assert "mcp" in manifest["components"]
+    def test_has_author(self, manifest):
+        assert "author" in manifest
+        assert "name" in manifest["author"]
+
+    def test_has_homepage(self, manifest):
+        assert "homepage" in manifest
+
+    def test_has_repository(self, manifest):
+        assert "repository" in manifest
+
+    def test_has_license(self, manifest):
+        assert "license" in manifest
+
+    def test_top_level_skills(self, manifest):
+        assert "skills" in manifest
+        assert manifest["skills"] == "skills/"
+
+    def test_top_level_agents(self, manifest):
+        assert "agents" in manifest
+        assert manifest["agents"] == "agents/"
+
+    def test_top_level_hooks(self, manifest):
+        assert "hooks" in manifest
+        assert manifest["hooks"] == "hooks/hooks.json"
+
+    def test_top_level_mcp_servers(self, manifest):
+        assert "mcpServers" in manifest
+        assert manifest["mcpServers"] == ".mcp.json"
+
+    def test_no_nested_components(self, manifest):
+        assert "components" not in manifest
 
 
 # ---------------------------------------------------------------------------
