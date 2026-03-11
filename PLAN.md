@@ -75,7 +75,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
 
 ### Import
 
-- [ ] **2.1 Import module**
+- [x] **2.1 Import module**
   Create `src/helios_mcp/importer.py`.
   `import_from_markdown(path: Path, format: str = "auto") -> BehavioralProfile`
   Format detection: auto-detect CLAUDE.md vs soul.md vs agents.md vs gemini.md by content patterns.
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 1.8 Full test suite verification (Phase 1 complete)
+**Last completed:** 2.1 Import module
 **Current phase:** Phase 2 — Profile Import/Export Engine
 **Tests passing:** 403 (253 baseline + 150 new)
