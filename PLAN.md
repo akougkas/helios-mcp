@@ -57,14 +57,14 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   Add to `drift.py`: if total KL-divergence < 0.05 per dimension, auto-apply the observed distribution as the new declared profile. Silent. No negotiation. Git commit with message: `"Auto-evolved: minor drift in {dimension}"`.
   Add `auto_accept_threshold` to `HeliosConfig` (default: 0.05).
 
-- [ ] **1.7 Tests for hook observation**
+- [x] **1.7 Tests for hook observation**
   `tests/test_hook_events.py` — event parsing, validation, edge cases.
   `tests/test_hook_observer.py` — signal extraction from tool/subagent/session/prompt events.
   `tests/test_auto_accept.py` — auto-accept below threshold, negotiate above.
   `tests/test_unified_observer.py` — mixed text + hook signal pipeline.
   Target: all existing 253 tests still pass + new tests.
 
-- [ ] **1.8 Run full test suite, fix any regressions**
+- [x] **1.8 Run full test suite, fix any regressions**
   `uv run pytest tests/ -q` — every test passes. No regressions from the overhaul.
 
 ---
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 1.6 Auto-accept small drift
-**Current phase:** Phase 1 — Observation Overhaul
-**Tests passing:** 253 (baseline)
+**Last completed:** 1.8 Full test suite verification (Phase 1 complete)
+**Current phase:** Phase 2 — Profile Import/Export Engine
+**Tests passing:** 403 (253 baseline + 150 new)
