@@ -138,8 +138,8 @@ Users add to `.claude/settings.json`:
 ### PHASE 0 — Foundation (Hours 1-1.5)
 **Goal**: Scientific data types exist and are tested.
 
-- [ ] P0.1 Create `taxonomy.py` — BEHAVIORAL_TAXONOMY dict, validate_state(), list_dimensions()
-- [ ] P0.2 Create `distribution.py` — BehavioralDistribution class with:
+- [x] P0.1 Create `taxonomy.py` — BEHAVIORAL_TAXONOMY dict, validate_state(), list_dimensions()
+- [x] P0.2 Create `distribution.py` — BehavioralDistribution class with:
   - `__init__(dimension, states_dict)` — validates sums to 1.0
   - `kl_divergence(other)` — D_KL(self || other)
   - `kl_blend(other, weight)` — KL-divergence minimizing mixture
@@ -147,8 +147,8 @@ Users add to `.claude/settings.json`:
   - `sample()` — draw a state from the distribution
   - `entropy()` — measure of behavioral uncertainty
   - `most_likely()` — dominant behavioral state
-- [ ] P0.3 Create `tests/test_taxonomy.py` — validate taxonomy completeness
-- [ ] P0.4 Create `tests/test_distribution.py` — KL-divergence math, blending correctness
+- [x] P0.3 Create `tests/test_taxonomy.py` — validate taxonomy completeness
+- [x] P0.4 Create `tests/test_distribution.py` — KL-divergence math, blending correctness
 
 ### PHASE 1 — Schema and Config (Hours 1.5-2.5)
 **Goal**: Behavioral profiles stored as proper distributions in YAML.
@@ -244,8 +244,8 @@ Each iteration of the loop agent MUST:
 - If a task takes more than one iteration, split it and note progress
 - After each commit, update the "Last completed" line below
 
-**Last completed**: (none yet — starting fresh)
-**Current phase**: PHASE 0
+**Last completed**: P0.4 — taxonomy.py + distribution.py + 75 tests passing
+**Current phase**: PHASE 1
 **Tests passing**: baseline (run uv run pytest tests/ to check current count)
 
 ---
