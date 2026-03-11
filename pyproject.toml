@@ -1,7 +1,7 @@
 [project]
 name = "helios-mcp"
-version = "0.3.0"
-description = "Configuration management for AI behaviors with weighted inheritance"
+version = "0.4.0b1"
+description = "Behavioral genome for AI agents with drift detection and profile negotiation"
 readme = "README.md"
 authors = [
     { name = "Anthony Kougkas", email = "akougkas@iit.edu" }

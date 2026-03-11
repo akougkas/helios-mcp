@@ -76,24 +76,10 @@ class TestPluginManifest:
     def test_has_license(self, manifest):
         assert "license" in manifest
 
-    def test_top_level_skills(self, manifest):
-        assert "skills" in manifest
-        assert manifest["skills"] == "skills/"
-
-    def test_top_level_agents(self, manifest):
-        assert "agents" in manifest
-        assert manifest["agents"] == "agents/"
-
-    def test_top_level_hooks(self, manifest):
-        assert "hooks" in manifest
-        assert manifest["hooks"] == "hooks/hooks.json"
-
-    def test_top_level_mcp_servers(self, manifest):
-        assert "mcpServers" in manifest
-        assert manifest["mcpServers"] == ".mcp.json"
-
-    def test_no_nested_components(self, manifest):
-        assert "components" not in manifest
+    def test_no_component_keys_in_manifest(self, manifest):
+        """Convention-based discovery: component keys must NOT be in manifest."""
+        for key in ("skills", "agents", "hooks", "mcpServers", "components"):
+            assert key not in manifest
 
 
 # ---------------------------------------------------------------------------
@@ -219,21 +205,12 @@ class TestMCPConfig:
         return json.loads(path.read_text())
 
     def test_has_helios_server(self, mcp):
-        assert "helios" in mcp["mcpServers"]
+        assert "helios" in mcp
 
     def test_uses_uvx(self, mcp):
-        server = mcp["mcpServers"]["helios"]
+        server = mcp["helios"]
         assert server["command"] == "uvx"
         assert "helios-mcp" in server["args"]
-
-    def test_has_type_stdio(self, mcp):
-        server = mcp["mcpServers"]["helios"]
-        assert server["type"] == "stdio"
-
-    def test_has_env(self, mcp):
-        server = mcp["mcpServers"]["helios"]
-        assert "env" in server
-        assert isinstance(server["env"], dict)
 
 
 # ---------------------------------------------------------------------------

@@ -371,7 +371,7 @@ async def _run_server(helios_dir: Path, verbose: bool) -> None:
     server = await create_server(helios_dir)
     if verbose:
         logger.debug("FastMCP server created")
-    await server.run()
+    await server.run_async()
 
 
 if __name__ == "__main__":

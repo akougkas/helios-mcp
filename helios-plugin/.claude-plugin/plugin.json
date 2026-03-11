@@ -1,14 +1,10 @@
 {
   "name": "helios",
-  "version": "1.0.0",
+  "version": "0.4.0-beta.1",
   "description": "Behavioral genome for AI agents. Observes behavior, detects drift via KL-divergence, negotiates profile updates with the human.",
   "author": {"name": "Helios Contributors"},
   "homepage": "https://github.com/akougkas/helios-mcp",
   "repository": "https://github.com/akougkas/helios-mcp",
   "license": "MIT",
-  "keywords": ["behavioral", "personality", "drift", "personalization", "preferences"],
-  "skills": "skills/",
-  "agents": "agents/",
-  "hooks": "hooks/hooks.json",
-  "mcpServers": ".mcp.json"
+  "keywords": ["behavioral", "personality", "drift", "personalization", "preferences"]
 }

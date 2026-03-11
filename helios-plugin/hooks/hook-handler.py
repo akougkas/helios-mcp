@@ -35,16 +35,27 @@ def main() -> None:
     obs_dir = helios_dir / "observations" / "hooks"
     obs_dir.mkdir(parents=True, exist_ok=True)
 
+    # Resolve persona: env var > .helios-persona file in cwd > "default"
+    cwd = raw_json.get("cwd", "")
+    persona = os.environ.get("HELIOS_PERSONA", "")
+    if not persona and cwd:
+        persona_file = Path(cwd) / ".helios-persona"
+        if persona_file.is_file():
+            persona = persona_file.read_text().strip()
+    if not persona:
+        persona = "default"
+
     record = {
         "event_type": event_type,
         "timestamp": time.time(),
         "session_id": raw_json.get("session_id", ""),
         "transcript_path": raw_json.get("transcript_path", ""),
-        "cwd": raw_json.get("cwd", ""),
+        "cwd": cwd,
+        "persona": persona,
         "data": raw_json,
     }
 
-    obs_file = obs_dir / "default.jsonl"
+    obs_file = obs_dir / f"{persona}.jsonl"
     with obs_file.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
 

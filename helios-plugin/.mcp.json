@@ -1,10 +1,6 @@
 {
-  "mcpServers": {
-    "helios": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["helios-mcp"],
-      "env": {}
-    }
+  "helios": {
+    "command": "uvx",
+    "args": ["helios-mcp"]
   }
 }

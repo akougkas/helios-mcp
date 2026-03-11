@@ -29,7 +29,7 @@ def _get_version() -> str:
             return version("helios-mcp")
     except Exception:
         pass
-    return "0.3.0"
+    return "0.4.0b1"
 
 
 __version__ = _get_version()

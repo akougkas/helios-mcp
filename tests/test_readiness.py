@@ -228,8 +228,13 @@ class TestPluginInstallReadiness:
     def test_plugin_json_valid(self):
         path = PLUGIN_DIR / ".claude-plugin" / "plugin.json"
         manifest = json.loads(path.read_text())
-        required_keys = {"name", "version", "description", "skills", "agents", "hooks", "mcpServers"}
+        required_keys = {"name", "version", "description"}
         assert required_keys.issubset(set(manifest.keys()))
+        # Convention-based discovery: these fields must NOT be in the manifest
+        assert "skills" not in manifest
+        assert "agents" not in manifest
+        assert "hooks" not in manifest
+        assert "mcpServers" not in manifest
 
     def test_hooks_json_valid(self):
         path = PLUGIN_DIR / "hooks" / "hooks.json"
@@ -244,8 +249,7 @@ class TestPluginInstallReadiness:
     def test_mcp_json_valid(self):
         path = PLUGIN_DIR / ".mcp.json"
         config = json.loads(path.read_text())
-        server = config["mcpServers"]["helios"]
-        assert server["type"] == "stdio"
+        server = config["helios"]
         assert server["command"] == "uvx"
 
     def test_skill_has_frontmatter(self):
@@ -261,12 +265,12 @@ class TestPluginInstallReadiness:
         assert "from helios_mcp" not in content
         assert "import helios_mcp" not in content
 
-    def test_all_referenced_files_exist(self):
-        manifest = json.loads((PLUGIN_DIR / ".claude-plugin" / "plugin.json").read_text())
-        assert (PLUGIN_DIR / manifest["hooks"]).exists()
-        assert (PLUGIN_DIR / manifest["mcpServers"]).exists()
-        assert (PLUGIN_DIR / manifest["skills"]).is_dir()
-        assert (PLUGIN_DIR / manifest["agents"]).is_dir()
+    def test_all_convention_dirs_exist(self):
+        """Convention-based discovery requires these paths to exist."""
+        assert (PLUGIN_DIR / "hooks" / "hooks.json").exists()
+        assert (PLUGIN_DIR / ".mcp.json").exists()
+        assert (PLUGIN_DIR / "skills").is_dir()
+        assert (PLUGIN_DIR / "agents").is_dir()
 
     def test_agent_definition_exists(self):
         assert (PLUGIN_DIR / "agents" / "helios-observer.md").is_file()
@@ -282,9 +286,9 @@ class TestStandaloneSkillReadiness:
         assert content.startswith("---\n")
         assert "name: helios" in content
 
-    def test_mcp_json_has_type(self):
+    def test_mcp_json_has_server(self):
         config = json.loads((self.SKILL_DIR / ".mcp.json").read_text())
-        assert config["mcpServers"]["helios"]["type"] == "stdio"
+        assert config["helios"]["command"] == "uvx"
 
     def test_skill_matches_plugin(self):
         plugin_skill = (PLUGIN_DIR / "skills" / "helios" / "SKILL.md").read_text()
