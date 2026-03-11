@@ -90,12 +90,12 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   Returns validated `BehavioralDistribution` objects.
   Fallback: if no LLM available, use keyword-based heuristic mapping (deterministic, lower quality).
 
-- [ ] **2.3 MCP tool: import_profile**
+- [x] **2.3 MCP tool: import_profile**
   Add to `server.py`: `import_profile(source_path: str, persona_name: str) -> dict`
   Reads the file, projects to distributions, saves as a new persona YAML, git-commits.
   Returns the created profile summary.
 
-- [ ] **2.4 CLI: helios-mcp import**
+- [x] **2.4 CLI: helios-mcp import**
   `helios-mcp import <path> [--persona NAME] [--format auto|claude|soul|agents]`
   Interactive confirmation before saving. Shows the projected distributions before committing.
 
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 2.2 LLM-assisted projection
+**Last completed:** 2.4 CLI import command
 **Current phase:** Phase 2 — Profile Import/Export Engine
 **Tests passing:** 403 (253 baseline + 150 new)

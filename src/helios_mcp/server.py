@@ -219,5 +219,55 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             logger.error(f"negotiate_update failed: {e}")
             return {"status": "error", "message": str(e)}
 
+    # ------------------------------------------------------------------
+    # Tool: import_profile
+    # ------------------------------------------------------------------
+
+    @mcp.tool(
+        description="Import a personality file (CLAUDE.md, soul.md, etc.) into a Helios behavioral profile",
+        tags={"behavioral", "import"},
+    )
+    async def import_profile(
+        source_path: str = Field(description="Path to the personality file to import"),
+        persona_name: str = Field(default="", description="Name for the new persona (default: derived from filename)"),
+        ctx: Context = None,
+    ) -> Dict[str, Any]:
+        """Parse a personality file and create a new Helios persona with projected distributions."""
+        try:
+            from .importer import import_from_markdown
+            from .profile import BehavioralProfile
+
+            path = Path(source_path).expanduser().resolve()
+            profile = import_from_markdown(path)
+
+            if persona_name:
+                validate_persona_name(persona_name)
+                profile.agent_id = persona_name
+
+            # Save to personas directory
+            personas_dir = helios_dir / "personas"
+            personas_dir.mkdir(parents=True, exist_ok=True)
+            out_path = personas_dir / f"{profile.agent_id}.yaml"
+            profile.save(out_path)
+
+            # Return summary
+            summary: Dict[str, Any] = {
+                "status": "success",
+                "persona": profile.agent_id,
+                "source": str(path),
+                "saved_to": str(out_path),
+                "distributions": {},
+            }
+            for dim, dist in profile.distributions.items():
+                summary["distributions"][dim] = {
+                    "dominant": dist.most_likely(),
+                    "entropy": round(dist.normalized_entropy(), 3),
+                }
+
+            return summary
+        except Exception as e:
+            logger.error(f"import_profile failed: {e}")
+            return {"status": "error", "message": sanitize_error_message(str(e))}
+
     logger.info(f"Helios MCP server created (config: {helios_dir})")
     return mcp

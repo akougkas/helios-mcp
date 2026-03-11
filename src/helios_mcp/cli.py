@@ -185,6 +185,58 @@ def negotiate_command(persona: str, helios_dir: Path, threshold: float) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Import command (Task 2.4)
+# ---------------------------------------------------------------------------
+
+
+@main.command("import")
+@click.argument("path", type=click.Path(exists=True, path_type=Path))
+@click.option("--persona", default="", help="Name for the imported persona (default: from filename)")
+@click.option(
+    "--format", "fmt",
+    type=click.Choice(["auto", "claude", "soul", "agents", "gemini", "generic"]),
+    default="auto",
+    help="Personality file format (default: auto-detect)",
+)
+@click.option(
+    "--helios-dir",
+    default=lambda: Path(os.getenv("HELIOS_DIR", Path.home() / ".helios")),
+    type=click.Path(path_type=Path),
+)
+def import_command(path: Path, persona: str, fmt: str, helios_dir: Path) -> None:
+    """Import a personality file into Helios behavioral distributions."""
+    from .importer import import_from_markdown
+
+    try:
+        profile = import_from_markdown(path, format=fmt)
+
+        if persona:
+            profile.agent_id = persona
+
+        # Show projected distributions before saving
+        click.echo(f"Imported from: {path}")
+        click.echo(f"Persona: {profile.agent_id}")
+        click.echo(f"Format: {fmt}")
+        click.echo("\nProjected distributions:")
+        for dim, dist in profile.distributions.items():
+            dominant = dist.most_likely()
+            prob = dist[dominant]
+            entropy = dist.normalized_entropy()
+            click.echo(f"  {dim:<28} {dominant} ({prob:.2f}), entropy: {entropy:.2f}")
+
+        # Save
+        personas_dir = helios_dir / "personas"
+        personas_dir.mkdir(parents=True, exist_ok=True)
+        out_path = personas_dir / f"{profile.agent_id}.yaml"
+        profile.save(out_path)
+        click.echo(f"\nSaved to: {out_path}")
+
+    except Exception as exc:
+        click.echo(f"Import failed: {exc}", err=True)
+        raise SystemExit(1)
+
+
+# ---------------------------------------------------------------------------
 # Hook event handlers (Task 1.4)
 # ---------------------------------------------------------------------------
 
