@@ -134,7 +134,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
 
 ### Plugin structure
 
-- [ ] **3.1 Create plugin directory layout**
+- [x] **3.1 Create plugin directory layout**
   ```
   helios-plugin/
   ├── .claude-plugin/
@@ -150,11 +150,11 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   └── README.md
   ```
 
-- [ ] **3.2 plugin.json manifest**
+- [x] **3.2 plugin.json manifest**
   Name: "helios", description, version, author, keywords (behavioral, personality, drift, personalization).
   Component declarations pointing to hooks/, skills/, agents/, .mcp.json.
 
-- [ ] **3.3 hooks.json — behavioral observation hooks**
+- [x] **3.3 hooks.json — behavioral observation hooks**
   Define hooks for all observed events. Each hook runs `helios-mcp hook <event-type>` as a command hook.
   ```json
   {
@@ -169,7 +169,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   ```
   Observe-only. No PreToolUse blocking. No modification of tool inputs.
 
-- [ ] **3.4 .mcp.json — MCP server config**
+- [x] **3.4 .mcp.json — MCP server config**
   ```json
   {
     "mcpServers": {
@@ -181,7 +181,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   }
   ```
 
-- [ ] **3.5 Helios skill (SKILL.md)**
+- [x] **3.5 Helios skill (SKILL.md)**
   Create `skills/helios/SKILL.md` with:
   - Skill activation triggers: `/helios`, `/helios status`, `/helios drift`, `/helios negotiate`, `/helios import`, `/helios export`
   - Instructions for Claude on how to use the MCP tools
@@ -189,15 +189,15 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   - Drift check guidance (call `get_drift_report` periodically or on session end)
   - Negotiation flow (when drift is detected, present proposal to user naturally)
 
-- [ ] **3.6 Observer agent (helios-observer.md)**
+- [x] **3.6 Observer agent (helios-observer.md)**
   Agent definition for background behavioral analysis. Can be spawned by the skill to analyze accumulated observations and generate insights beyond simple drift reports.
 
-- [ ] **3.7 Standalone skill package**
+- [x] **3.7 Standalone skill package**
   For users who want Helios without the full plugin (no hooks, just MCP + skill):
   Create a separate `helios-skill/` directory with just `SKILL.md` and `.mcp.json`.
   Users install via: `claude plugin add helios-skill` or copy SKILL.md into `.claude/skills/`.
 
-- [ ] **3.8 Plugin installation test**
+- [x] **3.8 Plugin installation test**
   Verify the plugin installs correctly:
   `claude plugin add ./helios-plugin/`
   Verify hooks register, MCP server starts, skill activates.
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 2.9 Phase 2 complete
-**Current phase:** Phase 3 — Claude Code Plugin Packaging
-**Tests passing:** 498 (253 baseline + 245 new)
+**Last completed:** 3.8 Phase 3 complete
+**Current phase:** Phase 4 — Local Dogfooding
+**Tests passing:** 532 (253 baseline + 279 new)

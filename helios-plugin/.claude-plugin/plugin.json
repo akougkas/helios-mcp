@@ -1,0 +1,16 @@
+{
+  "name": "helios",
+  "version": "1.0.0",
+  "description": "Behavioral genome for AI agents. Observes behavior, detects drift, negotiates profile updates.",
+  "author": "Helios Contributors",
+  "keywords": ["behavioral", "personality", "drift", "personalization", "preferences"],
+  "components": {
+    "hooks": "hooks/hooks.json",
+    "skills": ["skills/helios/SKILL.md"],
+    "agents": ["agents/helios-observer.md"],
+    "mcp": ".mcp.json"
+  },
+  "requires": {
+    "helios-mcp": ">=1.0.0"
+  }
+}
