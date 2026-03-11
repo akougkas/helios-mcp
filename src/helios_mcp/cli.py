@@ -292,10 +292,15 @@ def import_command(path: Path, persona: str, fmt: str, helios_dir: Path) -> None
 # ---------------------------------------------------------------------------
 
 _VALID_HOOK_EVENTS = (
-    "pre-tool", "post-tool",
+    "pre-tool", "post-tool", "post-tool-failure",
     "subagent-start", "subagent-stop",
     "session-start", "session-end",
     "notification", "prompt-submit", "stop",
+    "instructions-loaded", "permission-request",
+    "teammate-idle", "task-completed",
+    "config-change",
+    "worktree-create", "worktree-remove",
+    "pre-compact",
 )
 
 
@@ -335,6 +340,9 @@ def hook_command(event_type: str, helios_dir: Path, persona: str) -> None:
         record = {
             "event_type": event_type,
             "timestamp": event.timestamp,
+            "session_id": event.session_id,
+            "transcript_path": event.transcript_path,
+            "cwd": event.cwd,
             "data": raw_json,
         }
         with obs_file.open("a", encoding="utf-8") as f:
