@@ -217,9 +217,9 @@ Each iteration of the loop agent MUST:
 - If a task takes more than one iteration, split it and note progress
 - After each commit, update the "Last completed" line below
 
-**Last completed**: C8 — Claude Code Compliance Audit COMPLETE — 609 tests passing
+**Last completed**: Hardening — deployment readiness COMPLETE — 672 tests passing
 **Current phase**: COMPLETE ✅
-**Tests passing**: 609 (252 v2 base + 280 Phase 1-3 + 77 compliance audit)
+**Tests passing**: 672 (252 v2 base + 280 Phase 1-3 + 77 compliance + 63 readiness)
 
 ---
 
@@ -237,6 +237,15 @@ Audited Helios against actual Claude Code documentation (2026-03). Fixed gaps:
 - [x] C8: helios-skill/ — mirrors corrected plugin files
 - [x] C9: Tests updated alongside each task (609 total)
 - [x] C10: PLAN.md updated
+
+### Hardening (deployment readiness)
+
+- [x] Fast-path hook-handler.py (30ms latency, down from 750ms)
+- [x] Correct ${CLAUDE_PLUGIN_ROOT} usage (bundled handler, no path traversal)
+- [x] Hook handler tests: all 18 event types, edge cases, performance
+- [x] Session simulation: 15+ hook events, observation pipeline, distribution generation
+- [x] Plugin install readiness: all referenced files exist, valid JSON schemas
+- [x] Standalone skill readiness: matches plugin, frontmatter correct
 
 ---
 
