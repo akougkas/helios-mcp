@@ -24,6 +24,7 @@ from .hook_events import (
     SessionEvent,
     ToolUseEvent,
     UserPromptEvent,
+    parse_hook_stdin,
 )
 from .hook_observer import (
     extract_prompt_signals,
@@ -579,6 +580,40 @@ class BehavioralObserver:
         self._save_hooks(persona_name)
 
         return dists
+
+    def replay_raw_hooks(self, persona_name: str) -> dict[str, BehavioralDistribution] | None:
+        """Read raw JSONL hook events and process them through the observation pipeline.
+
+        The fast-path hook handler writes raw events to
+        ~/.helios/observations/hooks/<persona>.jsonl. This method reads
+        those events, parses them into typed HookEvent objects, and
+        processes them through observe_hooks().
+
+        Returns distributions if events were found, None otherwise.
+        """
+        if self._helios_dir is None:
+            return None
+
+        jsonl_path = self._helios_dir / "observations" / "hooks" / f"{persona_name}.jsonl"
+        if not jsonl_path.exists():
+            return None
+
+        events: list[AnyHookEvent] = []
+        for line in jsonl_path.read_text(encoding="utf-8").strip().splitlines():
+            try:
+                record = json.loads(line)
+                event_type = record.get("event_type", "")
+                data = record.get("data", {})
+                if event_type and isinstance(data, dict):
+                    event = parse_hook_stdin(data, event_type)
+                    events.append(event)
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+        if not events:
+            return None
+
+        return self.observe_hooks(persona_name, events)
 
     def get_observation_count(self, persona_name: str) -> int:
         """Return the total number of observations (text + hook) for a persona."""

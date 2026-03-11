@@ -137,9 +137,18 @@ def status_command(helios_dir: Path) -> None:
 @click.option("--threshold", default=0.30, type=float, help="Drift threshold (default: 0.30)")
 def negotiate_command(persona: str, helios_dir: Path, threshold: float) -> None:
     """Show drift report for PERSONA and prompt for action."""
-    observer = BehavioralObserver()
+    observer = BehavioralObserver(helios_dir=helios_dir)
     detector = DriftDetector()
     hierarchy = IdentityHierarchy(helios_dir)
+
+    # Replay raw hook events from the fast-path handler.
+    # Try persona-specific file first, fall back to default.
+    observer.replay_raw_hooks(persona)
+    if observer.get_observation_count(persona) == 0 and persona != "default":
+        observer.replay_raw_hooks("default")
+        # Re-attribute to the requested persona
+        if "default" in observer._hook_observations:
+            observer._hook_observations[persona] = observer._hook_observations["default"]
 
     obs_count = observer.get_observation_count(persona)
     if obs_count == 0:
