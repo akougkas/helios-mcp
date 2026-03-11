@@ -18,6 +18,21 @@ import tempfile
 from pathlib import Path
 
 from .distribution import BehavioralDistribution
+from .hook_events import (
+    AnyHookEvent,
+    SubagentEvent,
+    SessionEvent,
+    ToolUseEvent,
+    UserPromptEvent,
+)
+from .hook_observer import (
+    extract_prompt_signals,
+    extract_session_signals,
+    extract_subagent_signals,
+    extract_tool_signals,
+    hook_signals_to_distributions,
+    merge_signal_results,
+)
 from .taxonomy import list_dimensions, list_states
 
 # ---------------------------------------------------------------------------
@@ -364,15 +379,25 @@ def signals_to_distributions(
 # ---------------------------------------------------------------------------
 
 class BehavioralObserver:
-    """Extracts behavioral signals from conversations and persists observations per persona.
+    """Unified observation engine for Helios v2.
 
-    Observations are stored to ~/.helios/observations/{persona}.json atomically so
-    they accumulate across MCP tool calls (which each create a fresh instance).
+    Accepts both text messages (existing conversation analysis) and hook events
+    (Claude Code hook telemetry). Persists both observation types and merges
+    them into blended distributions with configurable weights.
+
+    Text observations: stored to ~/.helios/observations/{persona}.json
+    Hook observations: stored to ~/.helios/observations/hooks/{persona}.json
     """
+
+    # Weight for text-derived signals when blending with hook-derived signals.
+    # 0.5 = equal weight. Higher = more emphasis on text analysis.
+    TEXT_WEIGHT: float = 0.4
+    HOOK_WEIGHT: float = 0.6
 
     def __init__(self, helios_dir: Path | None = None) -> None:
         self._helios_dir = helios_dir
         self._observations: dict[str, list[dict]] = {}
+        self._hook_observations: dict[str, list[dict]] = {}
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -420,6 +445,51 @@ class BehavioralObserver:
             raise
 
     # ------------------------------------------------------------------
+    # Hook observation persistence
+    # ------------------------------------------------------------------
+
+    def _hook_obs_path(self, persona_name: str) -> Path | None:
+        if self._helios_dir is None:
+            return None
+        return self._helios_dir / "observations" / "hooks" / f"{persona_name}.json"
+
+    def _load_hooks(self, persona_name: str) -> None:
+        """Load persisted hook observations for a persona into memory."""
+        path = self._hook_obs_path(persona_name)
+        if path is None or not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                self._hook_observations[persona_name] = data
+        except Exception:
+            pass
+
+    def _save_hooks(self, persona_name: str) -> None:
+        """Atomically write hook observations for a persona to disk."""
+        path = self._hook_obs_path(persona_name)
+        if path is None:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(self._hook_observations.get(persona_name, [])).encode()
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            os.write(fd, payload)
+            os.fsync(fd)
+            os.close(fd)
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -428,6 +498,8 @@ class BehavioralObserver:
     ) -> dict[str, BehavioralDistribution]:
         """Process a conversation, persist the observation, and return distributions.
 
+        This is the text-based observation path. For hook events, use observe_hooks().
+
         Args:
             persona_name: Name of the persona being observed.
             messages: List of dicts with 'role' and 'content' keys.
@@ -435,7 +507,6 @@ class BehavioralObserver:
         Returns:
             Dict mapping dimension name → BehavioralDistribution.
         """
-        # Load existing observations from disk before appending
         if persona_name not in self._observations:
             self._load(persona_name)
         if persona_name not in self._observations:
@@ -457,26 +528,121 @@ class BehavioralObserver:
         self._save(persona_name)
         return dists
 
+    def observe_hooks(
+        self, persona_name: str, events: list[AnyHookEvent]
+    ) -> dict[str, BehavioralDistribution]:
+        """Process hook events, persist the observation, and return distributions.
+
+        Categorizes events by type, runs the appropriate signal extractors,
+        merges results, and converts to BehavioralDistribution objects.
+
+        Args:
+            persona_name: Name of the persona being observed.
+            events: List of typed hook events.
+
+        Returns:
+            Dict mapping dimension name → BehavioralDistribution.
+        """
+        if persona_name not in self._hook_observations:
+            self._load_hooks(persona_name)
+        if persona_name not in self._hook_observations:
+            self._hook_observations[persona_name] = []
+
+        # Categorize events by type
+        tool_events = [e for e in events if isinstance(e, ToolUseEvent)]
+        subagent_events = [e for e in events if isinstance(e, SubagentEvent)]
+        session_events = [e for e in events if isinstance(e, SessionEvent)]
+        prompt_events = [e for e in events if isinstance(e, UserPromptEvent)]
+
+        # Extract signals from each category
+        tool_sig = extract_tool_signals(tool_events)
+        subagent_sig = extract_subagent_signals(subagent_events)
+        session_sig = extract_session_signals(session_events)
+        prompt_sig = extract_prompt_signals(prompt_events)
+
+        # Merge all signal contributions
+        merged = merge_signal_results(tool_sig, subagent_sig, session_sig, prompt_sig)
+
+        # Convert to distributions
+        dists = hook_signals_to_distributions(merged)
+
+        # Persist
+        self._hook_observations[persona_name].append({
+            "merged_signals": {dim: dict(states) for dim, states in merged.items()},
+            "event_counts": {
+                "tool": len(tool_events),
+                "subagent": len(subagent_events),
+                "session": len(session_events),
+                "prompt": len(prompt_events),
+            },
+        })
+        self._save_hooks(persona_name)
+
+        return dists
+
     def get_observation_count(self, persona_name: str) -> int:
-        """Return the number of conversations observed for a persona."""
+        """Return the total number of observations (text + hook) for a persona."""
+        if persona_name not in self._observations:
+            self._load(persona_name)
+        if persona_name not in self._hook_observations:
+            self._load_hooks(persona_name)
+        text_count = len(self._observations.get(persona_name, []))
+        hook_count = len(self._hook_observations.get(persona_name, []))
+        return text_count + hook_count
+
+    def get_text_observation_count(self, persona_name: str) -> int:
+        """Return the number of text-based observations for a persona."""
         if persona_name not in self._observations:
             self._load(persona_name)
         return len(self._observations.get(persona_name, []))
 
+    def get_hook_observation_count(self, persona_name: str) -> int:
+        """Return the number of hook-based observations for a persona."""
+        if persona_name not in self._hook_observations:
+            self._load_hooks(persona_name)
+        return len(self._hook_observations.get(persona_name, []))
+
     def get_accumulated_distributions(
         self, persona_name: str
     ) -> dict[str, BehavioralDistribution]:
-        """Merge all stored observations into a single set of distributions."""
+        """Merge all stored observations (text + hook) into blended distributions.
+
+        Text-derived and hook-derived distributions are blended using
+        configurable weights (TEXT_WEIGHT and HOOK_WEIGHT). If only one
+        source has data, that source is used exclusively.
+        """
+        text_dists = self._get_text_distributions(persona_name)
+        hook_dists = self._get_hook_distributions(persona_name)
+
+        has_text = text_dists is not None
+        has_hooks = hook_dists is not None
+
+        if has_text and has_hooks:
+            return self._blend_distributions(text_dists, hook_dists)
+        if has_text:
+            return text_dists
+        if has_hooks:
+            return hook_dists
+
+        return {
+            dim: BehavioralDistribution.uniform(dim)
+            for dim in list_dimensions()
+        }
+
+    # ------------------------------------------------------------------
+    # Internal blending
+    # ------------------------------------------------------------------
+
+    def _get_text_distributions(
+        self, persona_name: str
+    ) -> dict[str, BehavioralDistribution] | None:
+        """Compute distributions from text observations only. Returns None if no data."""
         if persona_name not in self._observations:
             self._load(persona_name)
 
         obs_list = self._observations.get(persona_name, [])
-
         if not obs_list:
-            return {
-                dim: BehavioralDistribution.uniform(dim)
-                for dim in list_dimensions()
-            }
+            return None
 
         acc_structural: dict[str, float] = {}
         acc_semantic: list[str] = []
@@ -496,3 +662,50 @@ class BehavioralObserver:
         return signals_to_distributions(
             avg_structural, acc_semantic, acc_decisions, acc_user_signals
         )
+
+    def _get_hook_distributions(
+        self, persona_name: str
+    ) -> dict[str, BehavioralDistribution] | None:
+        """Compute distributions from hook observations only. Returns None if no data."""
+        if persona_name not in self._hook_observations:
+            self._load_hooks(persona_name)
+
+        obs_list = self._hook_observations.get(persona_name, [])
+        if not obs_list:
+            return None
+
+        # Merge all stored signal snapshots
+        merged = {
+            "epistemic_style": {},
+            "interaction_agency": {},
+            "communication_register": {},
+            "risk_caution": {},
+        }
+        for obs in obs_list:
+            for dim, states in obs.get("merged_signals", {}).items():
+                if dim in merged:
+                    for state, weight in states.items():
+                        merged[dim][state] = merged[dim].get(state, 0.0) + weight
+
+        return hook_signals_to_distributions(merged)
+
+    def _blend_distributions(
+        self,
+        text_dists: dict[str, BehavioralDistribution],
+        hook_dists: dict[str, BehavioralDistribution],
+    ) -> dict[str, BehavioralDistribution]:
+        """Blend text and hook distributions using configured weights."""
+        blended: dict[str, BehavioralDistribution] = {}
+        for dim in list_dimensions():
+            text_d = text_dists.get(dim)
+            hook_d = hook_dists.get(dim)
+            if text_d and hook_d:
+                # kl_blend: weight is for self (text), (1-weight) for other (hook)
+                blended[dim] = text_d.kl_blend(hook_d, self.TEXT_WEIGHT)
+            elif text_d:
+                blended[dim] = text_d
+            elif hook_d:
+                blended[dim] = hook_d
+            else:
+                blended[dim] = BehavioralDistribution.uniform(dim)
+        return blended

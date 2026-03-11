@@ -48,7 +48,7 @@ It persists observations to `~/.helios/observations/{persona}.json`.
   Events to handle: `pre-tool`, `post-tool`, `subagent-start`, `subagent-stop`, `session-start`, `session-end`, `notification`, `prompt-submit`, `stop`.
   Each handler is fast (< 100ms) and non-blocking. Writes to observation store, exits 0.
 
-- [ ] **1.5 Unified observation pipeline**
+- [x] **1.5 Unified observation pipeline**
   Refactor `BehavioralObserver` to accept both text messages (existing) AND hook events (new).
   Single `observe()` method dispatches to the right extractor based on input type.
   Accumulated distributions merge text-derived and hook-derived signals with configurable weights.
@@ -309,6 +309,6 @@ Each session should:
 - If a task is too large for one session, split it and note partial progress
 - After each commit, update the "Last completed" line below
 
-**Last completed:** 1.4 CLI hook handlers
+**Last completed:** 1.5 Unified observation pipeline
 **Current phase:** Phase 1 — Observation Overhaul
 **Tests passing:** 253 (baseline)
