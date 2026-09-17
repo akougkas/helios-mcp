@@ -19,6 +19,7 @@ from .hierarchy import IdentityHierarchy
 from .hook_events import parse_hook_stdin
 from .observer import BehavioralObserver
 from .drift import DriftDetector
+from .negotiation import NegotiationEngine
 from .taxonomy import list_dimensions
 
 log_level_str = os.getenv("HELIOS_LOG_LEVEL", "INFO").upper()
@@ -135,8 +136,17 @@ def status_command(helios_dir: Path) -> None:
     type=click.Path(path_type=Path),
 )
 @click.option("--threshold", default=0.30, type=float, help="Drift threshold (default: 0.30)")
-def negotiate_command(persona: str, helios_dir: Path, threshold: float) -> None:
-    """Show drift report for PERSONA and prompt for action."""
+@click.option(
+    "--yes", "-y",
+    is_flag=True,
+    help="Accept the proposed update without an interactive prompt (non-interactive).",
+)
+def negotiate_command(persona: str, helios_dir: Path, threshold: float, yes: bool) -> None:
+    """Show drift report for PERSONA and prompt for action.
+
+    With --yes/-y, the proposed update is accepted non-interactively —
+    useful for scripting and tests.
+    """
     observer = BehavioralObserver(helios_dir=helios_dir)
     detector = DriftDetector()
     hierarchy = IdentityHierarchy(helios_dir)
@@ -182,13 +192,38 @@ def negotiate_command(persona: str, helios_dir: Path, threshold: float) -> None:
         click.echo(f"  {dim:<28} {kl:.2f} {dim_flag}  (declared: {declared_state}, observed: {observed_state})")
 
     click.echo("")
-    action = click.prompt("[A]ccept all  [R]eject  [Q]uit", default="Q", show_default=False)
-    action = action.strip().upper()
+
+    action = (
+        "A"
+        if yes
+        else click.prompt(
+            "[A]ccept all  [R]eject  [Q]uit", default="Q", show_default=False
+        ).strip().upper()
+    )
+
+    engine = NegotiationEngine()
 
     if action == "A":
-        click.echo("Changes accepted.")
+        try:
+            proposal = engine.generate_summary(persona, profile, observed, result)
+            outcome = engine.apply_update(persona, proposal, helios_dir)
+        except Exception as exc:
+            click.echo(f"Failed to apply update for '{persona}': {exc}", err=True)
+            raise SystemExit(1)
+
+        updated = outcome.get("updated_dimensions", [])
+        if updated:
+            click.echo(f"Changes accepted — updated dimensions: {', '.join(updated)}.")
+        else:
+            click.echo("Changes accepted — no dimensions required updates.")
+        click.echo(f"Committed to git: {outcome.get('commit_message', '(no commit message)')}")
     elif action == "R":
-        click.echo("Changes rejected.")
+        try:
+            outcome = engine.reject_update(persona, "user rejected", helios_dir)
+        except Exception as exc:
+            click.echo(f"Failed to reject update for '{persona}': {exc}", err=True)
+            raise SystemExit(1)
+        click.echo(f"Changes rejected: {outcome.get('reason', 'user rejected')}")
     else:
         click.echo("No action taken.")
 

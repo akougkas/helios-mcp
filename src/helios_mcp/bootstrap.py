@@ -62,8 +62,8 @@ class BootstrapManager:
             else:
                 logger.debug("Git operations disabled - skipping repository initialization")
             
-            # Create default base configuration
-            self._create_default_base_config()
+            # Create default v2 behavioral profiles (species base + domain personas)
+            self._create_default_v2_profiles()
             
             # Create welcome persona
             self._create_welcome_persona()
