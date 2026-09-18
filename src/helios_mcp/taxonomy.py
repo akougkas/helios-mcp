@@ -4,11 +4,18 @@ Defines the four core behavioral dimensions and their discrete state spaces.
 This is the scientific foundation: everything else (distributions, drift,
 inheritance, observation) references these definitions.
 
-The four dimensions cover the fundamental axes of AI agent behavior:
+The first four dimensions cover the agent's stance:
 - Epistemic style: how the agent handles uncertainty and knowledge boundaries
 - Interaction agency: how autonomous and directive the agent is
-- Communication register: the formality, density, and structure of outputs
+- Communication register: the length and density of outputs
 - Risk and caution: how the agent weighs safety vs speed
+
+The next five cover manner, which users notice as much as stance:
+- Structure: prose versus headers and bullets
+- Sycophancy: praise and validation versus candor
+- Narration: announcing, recapping and closing pleasantries
+- Specificity: concrete references versus adjectives
+- Pushback: holding a correct position versus giving in
 """
 
 from __future__ import annotations
@@ -46,6 +53,34 @@ BEHAVIORAL_TAXONOMY: Final[dict[str, list[str]]] = {
         "warns_frequently",      # Surfaces risks and caveats proactively
         "refuses_ambiguity",     # Stops and asks when situation is unclear
     ],
+    # The dimensions below are orthogonal to the four above: they describe the
+    # shape and manner of a response rather than its stance.
+    "structure": [
+        "prose",            # Paragraphs; lists only for genuinely parallel items
+        "light_structure",  # Mostly prose with an occasional list or code block
+        "heavy_structure",  # Headers, bullets and tables by default
+    ],
+    "sycophancy": [
+        "candid",      # Names problems and disagreements plainly, no praise
+        "neutral",     # Neither praise nor pointed candor
+        "flattering",  # Praises the user or the question, validates by reflex
+    ],
+    "narration": [
+        "silent_action",        # Does the work and reports the result
+        "brief_signposting",    # A short line of orientation where it helps
+        "narrates_and_recaps",  # Announces steps, recaps, closing pleasantries
+    ],
+    "specificity": [
+        "concrete",  # Paths, line numbers, symbols, measured numbers
+        "mixed",     # Some concrete references, some general description
+        "vague",     # Adjectives and generalities instead of specifics
+    ],
+    # Observed only on turns that answer user pushback, so evidence is sparse.
+    "pushback": [
+        "holds_position",        # Keeps a correct position and says why
+        "concedes_with_reason",  # Changes course when shown to be wrong
+        "capitulates",           # Agrees because the user objected
+    ],
 }
 
 # Human-readable descriptions for each dimension (used in negotiation summaries)
@@ -68,6 +103,26 @@ DIMENSION_DESCRIPTIONS: Final[dict[str, str]] = {
         "how the agent weighs safety vs speed: whether it acts immediately, "
         "checks before consequential actions, warns proactively, or "
         "refuses to proceed under ambiguity"
+    ),
+    "structure": (
+        "how responses are shaped: flowing prose, prose with occasional "
+        "lists, or headers and bullets by default"
+    ),
+    "sycophancy": (
+        "whether the agent praises and validates the user, stays neutral, or "
+        "names problems candidly"
+    ),
+    "narration": (
+        "how much the agent talks about its own process: announcing steps, "
+        "recapping and closing pleasantries, or just doing the work"
+    ),
+    "specificity": (
+        "whether claims come with concrete paths, symbols and numbers, or with "
+        "adjectives and generalities"
+    ),
+    "pushback": (
+        "what the agent does when the user pushes back: holds a correct "
+        "position, concedes when actually wrong, or gives in"
     ),
 }
 
@@ -102,6 +157,39 @@ STATE_LABELS: Final[dict[str, dict[str, str]]] = {
                                " issues",
         "refuses_ambiguity":    "stop and ask for clarification when the situation is"
                                " unclear",
+    },
+    "structure": {
+        "prose":           "write in prose paragraphs; use a list only for three"
+                           " or more parallel items",
+        "light_structure": "write mostly prose, with a list or code block where"
+                           " it helps",
+        "heavy_structure": "organize responses with headers and bullet points",
+    },
+    "sycophancy": {
+        "candid":     "skip praise and name problems and disagreements plainly",
+        "neutral":    "keep a neutral tone without praise or validation",
+        "flattering": "acknowledge the user's ideas warmly",
+    },
+    "narration": {
+        "silent_action":       "do the work without announcing it, and report"
+                               " the result without a recap",
+        "brief_signposting":   "orient the reader in a short line when a task has"
+                               " several steps",
+        "narrates_and_recaps": "explain each step as you take it and summarize"
+                               " at the end",
+    },
+    "specificity": {
+        "concrete": "cite paths, line numbers, symbols and measured numbers"
+                    " rather than adjectives",
+        "mixed":    "combine concrete references with general description",
+        "vague":    "describe things in general terms",
+    },
+    "pushback": {
+        "holds_position":       "when the user pushes back and you are right, hold"
+                                " the position and give the reason",
+        "concedes_with_reason": "when the user pushes back, concede if they are"
+                                " right and say what changed",
+        "capitulates":          "defer to the user's objection",
     },
 }
 

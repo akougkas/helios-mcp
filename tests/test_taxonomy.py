@@ -20,9 +20,9 @@ from helios_mcp.taxonomy import (
 # ---------------------------------------------------------------------------
 
 class TestTaxonomyStructure:
-    def test_four_dimensions_exist(self) -> None:
-        dims = list_dimensions()
-        assert len(dims) == 4
+    def test_manner_dimensions_present(self) -> None:
+        dims = set(list_dimensions())
+        assert {"structure", "sycophancy", "narration", "specificity", "pushback"} <= dims
 
     def test_required_dimensions_present(self) -> None:
         dims = set(list_dimensions())

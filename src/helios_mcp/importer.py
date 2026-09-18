@@ -280,6 +280,7 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
         weights[dim] = dict.fromkeys(list_states(dim), 0.1)  # uniform prior
 
     full_text = " ".join(text_blocks).lower()
+    matched: set[str] = set()
 
     for keyword, contributions in _KEYWORD_MAP.items():
         if keyword in full_text:
@@ -287,10 +288,16 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
                 if dim not in weights:
                     continue
                 weights[dim][state] = weights[dim].get(state, 0.0) + weight
+                matched.add(dim)
 
-    # Normalize to distributions
+    # Normalize to distributions. A dimension no keyword touched says nothing
+    # about the text, so it keeps the species default rather than uniform.
+    species = BehavioralProfile.default_species().distributions
     dists: dict[str, BehavioralDistribution] = {}
     for dim in list_dimensions():
+        if dim not in matched:
+            dists[dim] = species[dim]
+            continue
         total = sum(weights[dim].values())
         if total > 0:
             normalized = {s: v / total for s, v in weights[dim].items()}
