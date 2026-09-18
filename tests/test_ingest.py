@@ -82,8 +82,12 @@ def test_final_ingest_adds_model_rows_with_transcript_facts_enforced(tmp_path: P
     reply = {"turns": [{"id": "0", **label}, {"id": "1", **label}]}
     helios = tmp_path / "helios"
     ingest_session(helios, "dev", path, "s1", final=True, client=FakeClient(reply))
-    llm_rows = [r for r in ObservationStore(helios).iter("dev") if r.source == "llm"]
+    rows = list(ObservationStore(helios).iter("dev"))
+    llm_rows = [r for r in rows if r.source == "llm"]
     assert [r.endorsement for r in llm_rows] == [-1.0, None]
+    # Both sources carry the transcript's model id, for per-model fingerprints.
+    assert {r.source for r in rows} == {"heuristic", "llm"}
+    assert {r.model for r in rows} == {"claude-test"}
 
 
 def test_missing_or_truncated_transcripts(tmp_path: Path):

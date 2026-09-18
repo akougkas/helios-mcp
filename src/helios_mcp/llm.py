@@ -234,7 +234,10 @@ For every turn produce:
    something the agent said or did; otherwise pushback is null.
 2. confidence in [0, 1]: how much evidence the turn carries overall.
 3. endorsement in [-1, 1], judged only from what the user did next:
-   1 explicit approval; 0.5 the user moved on without objecting; 0 no human
+   1 explicit approval, wherever it sits in the reply: "thanks", "perfect",
+   "good catch", "your fix is accepted", "agreed, go ahead", even when the
+   same message goes on to the next task; 0.5 the user moved on without
+   praising or objecting; 0 no human
    response or a response unrelated to the agent's behavior; -0.5 the outcome
    was wrong but not the behavior; -1 correction, frustration, interrupt or
    denied tool call. null when nothing followed.
@@ -248,9 +251,21 @@ For every turn produce:
    communication_register terse, "stop asking, just do it" means
    interaction_agency assumes_and_acts, "check with me before changing files"
    means interaction_agency asks_first and risk_caution checks_before_acting.
-   Task instructions, scope rules and requests about the product being built
-   are not style requests. Most turns have no hint; use an empty object when
-   in doubt.
+   Every dimension can be addressed: "too many bullets" or "write it as
+   prose" means structure prose; "don't flatter me" or "be honest" means
+   sycophancy candid; "stop narrating" or "skip the recap" means narration
+   silent_action, and "what are you doing? give me an update" means
+   brief_signposting; "be specific, cite the file" means specificity
+   concrete; "don't just agree with me" means pushback holds_position;
+   "stop hedging, pick one" means epistemic_style confident; "did you make
+   that up?" means admits_ignorance. A standing preference stated mid-session
+   ("from now on keep replies short", "always run the tests first") is a
+   hint too, with the endorsement set by the rest of the reply.
+   A hint needs the user to comment on how the agent works or talks.
+   Directives for the next step are not hints: "stand down", "is it done?",
+   "fix exactly those four tests", "reply 'done'", "reply in one line" for a
+   single report, scope rules, and requests about the product being built.
+   Most turns have no hint; use an empty object when in doubt.
 
 Dimensions and states:
 {taxonomy}
