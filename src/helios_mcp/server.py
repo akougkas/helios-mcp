@@ -46,6 +46,7 @@ class ObserveInteractionResult(TypedDict, total=False):
     turns: int
     negotiation_recommended: bool
     proposal_id: str | None
+    proposal_tier: str | None
     auto_accepted: list[str]
     message: str
 
@@ -56,6 +57,7 @@ class GetDriftReportResult(TypedDict, total=False):
     turns: int
     negotiation_recommended: bool
     proposal_id: str | None
+    proposal_tier: str | None
     summary: str
     per_dimension: dict[str, str]
     endorsed: dict[str, DimensionReport]

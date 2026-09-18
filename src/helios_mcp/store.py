@@ -208,6 +208,7 @@ class ProposedChange:
     target: dict[str, float]
     divergence: float
     credibility: float
+    tier: str = "strong"
 
 
 @dataclass(frozen=True)
@@ -221,6 +222,12 @@ class Proposal:
     decided_at: float | None = None
     decided_dimensions: tuple[str, ...] = ()
     reason: str | None = None
+
+    @property
+    def tier(self) -> str:
+        """``strong`` if any dimension is, otherwise ``suggestion``."""
+        tiers = {c.tier for c in self.changes.values()}
+        return "strong" if "strong" in tiers or not tiers else "suggestion"
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

@@ -14,6 +14,7 @@ THOROUGH = {"thorough": 1.0}
 
 
 def turn(tid, source="heuristic", label=None, **kw):
+    kw.setdefault("endorsement", 1.0)
     return TurnObservation(persona="dev", session_id="s", turn_id=tid,
                            timestamp=0.0, source=source,
                            labels={DIM: label or THOROUGH}, **kw)
@@ -26,11 +27,17 @@ def test_source_precedence_picks_llm_over_heuristic_per_turn():
     assert ev.fingerprint[DIM] == {"terse": 1.0}
 
 
-def test_uncorrected_turns_count_for_both_posteriors():
-    ev = estimate([turn("t1", endorsement=None), turn("t2", endorsement=1.0),
-                   turn("t3", endorsement=0.0, confidence=0.5)], config=LINEAR)
-    assert ev.fingerprint[DIM]["thorough"] == 2.5
-    assert ev.endorsed[DIM]["thorough"] == 2.5
+def test_uncorrected_turns_are_endorsed_by_how_the_user_responded():
+    obs = [turn("t1", endorsement=None), turn("t2", endorsement=1.0),
+           turn("t3", endorsement=0.5), turn("t4", endorsement=0.0),
+           turn("t5", endorsement=-0.5)]
+    ev = estimate(obs, config=LINEAR)
+    # The fingerprint counts every turn; endorsed counts an approval in full,
+    # moving on weakly, and silence or an outcome complaint not at all.
+    assert ev.fingerprint[DIM]["thorough"] == 5.0
+    assert math.isclose(ev.endorsed[DIM]["thorough"],
+                        DEFAULT_CONFIG.approval_weight + DEFAULT_CONFIG.moved_on_weight)
+    assert set(ev.endorsed[DIM]) == {"thorough"}
 
 
 def test_hinted_correction_moves_endorsed_mass_to_hinted_state_only():
@@ -87,14 +94,15 @@ def test_standing_preference_counts_toward_hint_in_place_of_label():
         labels={DIM: THOROUGH, "risk_caution": {"acts_immediately": 1.0}},
         endorsement=0.5, correction_hint={DIM: "terse"})])
     assert ev.endorsed[DIM] == {"terse": DEFAULT_CONFIG.standing_hint_weight}
-    assert ev.endorsed["risk_caution"] == {"acts_immediately": 1.0}
+    assert ev.endorsed["risk_caution"] == {
+        "acts_immediately": DEFAULT_CONFIG.moved_on_weight}
 
 
 def test_dim_confidence_overrides_turn_confidence_per_dimension():
     ev = estimate([TurnObservation(
         persona="dev", session_id="s", turn_id="t1", timestamp=0, source="heuristic",
         labels={DIM: THOROUGH, "risk_caution": {"acts_immediately": 1.0}},
-        confidence=0.6, dim_confidence={DIM: 0.2})], config=LINEAR)
+        confidence=0.6, dim_confidence={DIM: 0.2}, endorsement=1.0)], config=LINEAR)
     assert ev.endorsed[DIM] == {"thorough": 0.2}
     assert ev.fingerprint["risk_caution"] == {"acts_immediately": 0.6}
 

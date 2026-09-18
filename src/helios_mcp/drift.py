@@ -17,7 +17,11 @@ Two numbers describe drift on that dimension:
   level until the counts actually pull the mean away. That replaces the fixed
   minimum-observation count.
 
-A dimension is *drifted* when credibility reaches ``credibility_level``. A
+A dimension is *drifted* when credibility reaches ``suggestion_level``, and
+its tier says how firmly to put it: a ``suggestion`` below
+``credibility_level`` and a ``strong`` proposal at or above it. Suggestions
+come early on purpose, because the user can say no and a rejection is cheap
+evidence in its own right. A
 dimension qualifies for *auto-accept* when the posterior is confidently close
 to ``q`` (``P(JS < auto_accept_js) >= auto_accept_level``) yet has moved by a
 measurable amount, so a silent update is both safe and non-trivial. The update
@@ -30,10 +34,13 @@ import math
 import random
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Literal
 
 from .taxonomy import list_states
 
 LN2 = math.log(2.0)
+
+Tier = Literal["strong", "suggestion"]
 
 
 @dataclass(frozen=True)
@@ -54,11 +61,15 @@ class DriftConfig:
     prior_strength: float = 25.0
     js_threshold: float = 0.0125
     credibility_level: float = 0.95
+    suggestion_level: float = 0.8
     auto_accept_js: float = 0.0125
     auto_accept_level: float = 0.9
     auto_accept_min_change: float = 0.004
     rejection_strength: float = 10.0
     standing_hint_weight: float = 1.0
+    approval_weight: float = 1.0
+    moved_on_weight: float = 0.2
+    neutral_weight: float = 0.0
     unhinted_correction_weight: float = 0.25
     confidence_exponent: float = 0.5
     samples: int = 1000
@@ -117,6 +128,7 @@ class DimensionDrift:
     closeness: float
     drifted: bool
     auto_accept: bool
+    tier: Tier | None = None
 
 
 @dataclass(frozen=True)
@@ -164,7 +176,12 @@ def assess_dimension(
     closeness = below / config.samples
     divergence = js_divergence(mean, q)
 
-    drifted = credibility >= config.credibility_level
+    tier: Tier | None = (
+        "strong" if credibility >= config.credibility_level
+        else "suggestion" if credibility >= config.suggestion_level
+        else None
+    )
+    drifted = tier is not None
     auto_accept = (
         not drifted
         and closeness >= config.auto_accept_level
@@ -180,6 +197,7 @@ def assess_dimension(
         closeness=closeness,
         drifted=drifted,
         auto_accept=auto_accept,
+        tier=tier,
     )
 
 
