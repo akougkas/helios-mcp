@@ -102,10 +102,10 @@ Helios ships on three surfaces:
   config and `SKILL.md`, for lighter-weight adoption without the hooks.
 - **Marketplace entry** — [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json):
   lists `helios-plugin/` as an installable plugin. The manifest lives at the
-  repo root (not in a nested `marketplace/` directory) because a marketplace
-  plugin `source` must resolve inside the marketplace's own root — pointing
-  it anywhere outside that root, symlink or plain relative path, is rejected
-  at install.
+  repo root, not in a nested `marketplace/` directory, because a marketplace
+  plugin `source` must resolve inside the marketplace's own root. A source
+  pointing anywhere outside that root, symlink or plain relative path, is
+  rejected at install.
 
 The package also installs a console script: `helios-mcp = helios_mcp.cli:main`.
 

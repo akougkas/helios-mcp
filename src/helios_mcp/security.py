@@ -63,10 +63,10 @@ def persona_path(base_dir: Path, persona: str, suffix: str) -> Path:
     """Build base_dir/{persona}{suffix}, guaranteed to resolve under base_dir.
 
     Validates persona through validate_persona_name and suffix against a
-    matching whitelist (letters, digits, underscore, dot — no separators),
-    so callers get one call for both "is this name safe" and "is this
-    path safe" instead of relying on validate_persona_name having already
-    run. The resolved path is re-checked against the resolved base_dir as
+    matching whitelist (letters, digits, underscore, and dot; no path
+    separators), so callers get one call for both "is this name safe"
+    and "is this path safe" instead of relying on validate_persona_name
+    having already run. The resolved path is re-checked against base_dir as
     a second, independent guarantee: even if the whitelist regexes above
     were ever loosened, a traversal attempt would still be caught here.
 

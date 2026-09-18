@@ -8,16 +8,16 @@ Code only reads a SessionStart hook's stdout as context if it waits for
 the hook to finish.
 
 Per current Claude Code docs, a SessionStart hook's stdout is added to
-context as plain text — unlike UserPromptSubmit, which documents a
-structured `{"hookSpecificOutput": {...}}` stdout envelope, SessionStart
-is only documented to consume raw stdout text. So this prints the
+context as plain text. UserPromptSubmit documents a structured
+`{"hookSpecificOutput": {...}}` stdout envelope instead, but SessionStart
+is only documented to consume raw stdout text, so this prints the
 rendered markdown directly rather than wrapping it in that envelope.
 
-Silent no-op (no stdout, exit 0) whenever there's nothing to inject —
-fresh install, unrendered persona, or a read failure — so a session
-start is never delayed or polluted by a missing file. Must stay fast:
-this hook blocks session start, stdlib-only, no subprocess, one file
-read.
+Silent no-op (no stdout, exit 0) whenever there's nothing to inject:
+a fresh install, an unrendered persona, or a read failure. A session
+start is never delayed or polluted by a missing file this way. Must
+stay fast: this hook blocks session start, stdlib-only, no subprocess,
+one file read.
 """
 
 import json

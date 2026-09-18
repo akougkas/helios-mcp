@@ -5,7 +5,7 @@ records without depending on the full helios-mcp CLI stack. This is the
 hot path that Claude Code invokes on every hook event, so most tests here
 run the script as a real subprocess the way Claude Code does. A few tests
 load it as a module instead (it isn't meant to be imported in production,
-only executed) to reach internal helpers directly — persona-validator
+only executed) to reach internal helpers directly: persona-validator
 agreement with helios_mcp.security, and _trigger_ingest with subprocess.run
 mocked out so tests never actually shell out to uvx.
 """
@@ -378,7 +378,7 @@ class TestHookHandlerIngestTrigger:
     stop blocks on subprocess.run (heuristic-only ingest, fast); every
     stop test here mocks subprocess.run so nothing actually invokes uvx.
     session-end launches --final fully detached via subprocess.Popen and
-    returns immediately without waiting — session-end tests mock Popen
+    returns immediately without waiting. session-end tests mock Popen
     instead, since --final also runs the Haiku batch labeler, which can
     take far longer than a SessionEnd hook is allowed to block for.
     """

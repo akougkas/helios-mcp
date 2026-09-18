@@ -1,6 +1,6 @@
 ---
 name: helios
-description: Observes behavioral patterns, detects drift via KL-divergence, and negotiates profile updates with the human
+description: Learns your preferences for how an agent should communicate, act, and take risks. Negotiates an update with you when observed behavior drifts from what's declared.
 argument-hint: "[status|drift|negotiate|import|export]"
 user-invocable: true
 allowed-tools: "mcp__plugin_helios_helios__list_personas,mcp__plugin_helios_helios__get_behavioral_context,mcp__plugin_helios_helios__observe_interaction,mcp__plugin_helios_helios__get_drift_report,mcp__plugin_helios_helios__negotiate_update,mcp__plugin_helios_helios__import_profile,mcp__plugin_helios_helios__export_profile"
