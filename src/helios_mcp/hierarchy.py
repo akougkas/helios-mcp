@@ -6,8 +6,8 @@ Hierarchy levels (outermost to most specific):
   user     -> person-specific adaptation
   session  -> temporary context override
 
-Each level inherits from its parent using KL-divergence minimizing blend.
-Missing levels are gracefully skipped (use parent's resolved profile).
+Each level blends with its parent as a mixture. Missing levels are skipped,
+and dimensions a level does not declare pass through from its parent.
 """
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .distribution import BehavioralDistribution
 from .profile import BehavioralProfile
+from .security import validate_persona_name
 from .taxonomy import list_dimensions
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,9 @@ class IdentityHierarchy:
     # Public API
     # ------------------------------------------------------------------
 
-    def resolve(self, persona_name: str) -> BehavioralProfile:
+    def resolve(
+        self, persona_name: str, include_session: bool = True
+    ) -> BehavioralProfile:
         """Load and blend the full inheritance chain for a persona.
 
         Chain:
@@ -46,14 +49,20 @@ class IdentityHierarchy:
           3. user     (personas/{persona_name}_user.yaml) — blended if present
           4. session  (temporary/{persona_name}.yaml) — blended if present
 
-        Returns the final merged BehavioralProfile.
+        Returns the final merged BehavioralProfile. Negotiation passes
+        ``include_session=False``: a temporary session override is not the
+        baseline that long-term learning should be judged against.
         """
+        validate_persona_name(persona_name)
         # Level 1: species — always required
         species_path = self.base_path / "identity.yaml"
         species = self._load_level(species_path)
+        default = BehavioralProfile.default_species()
         if species is None:
-            logger.warning("Species profile missing — using default_species() fallback")
-            species = BehavioralProfile.default_species()
+            logger.warning("Species profile missing, using the built-in default")
+            species = default
+        for dim, dist in default.distributions.items():
+            species.distributions.setdefault(dim, dist)
 
         resolved = species
 
@@ -75,7 +84,7 @@ class IdentityHierarchy:
 
         # Level 4: session override
         session_path = self.temporary_path / f"{persona_name}.yaml"
-        session = self._load_level(session_path)
+        session = self._load_level(session_path) if include_session else None
         if session is not None:
             resolved = self._blend_profiles(resolved, session)
 
@@ -100,16 +109,17 @@ class IdentityHierarchy:
         parent: BehavioralProfile,
         child: BehavioralProfile,
     ) -> BehavioralProfile:
-        """Blend parent and child profiles using KL-divergence minimizing mixture.
+        """Blend ``child`` over ``parent`` as ``w * parent + (1 - w) * child``.
 
-        weight = parent.base_importance / (child.specialization_level ** 2)
-        Clamped to [0.01, 1.0].
-
-        High weight -> result closer to parent (strong inheritance).
-        Low weight  -> result closer to child (high specialization).
+        ``w`` is the child's ``inherit_weight`` when set, otherwise
+        ``parent.base_importance / child.specialization_level**2`` clamped to
+        [0.01, 1.0]. High weight keeps the result close to the parent.
         """
-        raw_weight = parent.base_importance / (child.specialization_level ** 2)
-        weight = max(_MIN_WEIGHT, min(_MAX_WEIGHT, raw_weight))
+        if child.inherit_weight is not None:
+            raw_weight = weight = max(0.0, min(_MAX_WEIGHT, child.inherit_weight))
+        else:
+            raw_weight = parent.base_importance / (child.specialization_level ** 2)
+            weight = max(_MIN_WEIGHT, min(_MAX_WEIGHT, raw_weight))
 
         logger.debug(
             f"Blending '{parent.agent_id}' + '{child.agent_id}': "
@@ -118,13 +128,12 @@ class IdentityHierarchy:
 
         blended_dists: dict[str, BehavioralDistribution] = {}
         for dim in list_dimensions():
-            parent_dist = parent.distributions.get(
-                dim, BehavioralDistribution.uniform(dim)
+            parent_dist = parent.distributions[dim]
+            child_dist = child.distributions.get(dim)
+            blended_dists[dim] = (
+                parent_dist if child_dist is None
+                else parent_dist.kl_blend(child_dist, weight)
             )
-            child_dist = child.distributions.get(
-                dim, BehavioralDistribution.uniform(dim)
-            )
-            blended_dists[dim] = parent_dist.kl_blend(child_dist, weight)
 
         return BehavioralProfile(
             agent_id=child.agent_id,
