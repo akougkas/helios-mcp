@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 try:
     import click
@@ -389,7 +390,7 @@ def hook_command(event_type: str, helios_dir: Path, persona: str) -> None:
     try:
         raw_input = sys.stdin.read()
         if not raw_input.strip():
-            raw_json: dict = {}
+            raw_json: dict[str, Any] = {}
         else:
             raw_json = _json.loads(raw_input)
             if not isinstance(raw_json, dict):

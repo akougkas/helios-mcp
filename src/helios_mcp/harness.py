@@ -84,7 +84,7 @@ class BehavioralHarness:
         profile = self._load_profile()
         return self._renderer.render(profile, self.persona)
 
-    def observe(self, messages: list[dict]) -> None:
+    def observe(self, messages: list[dict[str, Any]]) -> None:
         """Pass messages to the observer.
 
         Args:
@@ -143,7 +143,7 @@ class BehavioralHarness:
     # Decorator support
     # ------------------------------------------------------------------
 
-    def __call__(self, func: Callable) -> Callable:
+    def __call__(self, func: Callable[..., Any]) -> Callable[..., Any]:
         """Decorator: wrap func with behavioral context injection and observation.
 
         If func has a 'system' parameter, injects the rendered behavioral context
@@ -171,7 +171,7 @@ class BehavioralHarness:
 
             if should_observe and isinstance(result, str):
                 # Build a minimal message list to record the output
-                obs_messages: list[dict] = [
+                obs_messages: list[dict[str, Any]] = [
                     {"role": "assistant", "content": result}
                 ]
                 self._observer.observe(self.persona, obs_messages)

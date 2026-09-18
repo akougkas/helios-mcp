@@ -9,7 +9,7 @@ import os
 from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from git import InvalidGitRepositoryError, Repo
 
@@ -77,9 +77,12 @@ class GitStore:
             # Check for merge conflicts before committing
             try:
                 # Look for conflict markers in tracked files
-                conflict_files = []
+                conflict_files: list[str] = []
                 for item in self.repo.index.diff(None):
-                    file_path = self.helios_dir / item.a_path
+                    # a_path is only None for tree-vs-tree diffs with added
+                    # files; this diff is index-vs-working-tree, so it is
+                    # always populated here.
+                    file_path = self.helios_dir / cast(str, item.a_path)
                     if file_path.exists() and file_path.is_file():
                         try:
                             content = file_path.read_text(encoding='utf-8')
@@ -245,7 +248,17 @@ class GitStore:
             since = self.repo.head.commit.committed_datetime - timedelta(hours=hours)
             commits = list(self.repo.iter_commits(since=since))
             
-            return [commit.message.strip() for commit in commits]
+            # GitPython types commit.message as str | bytes: it hands back bytes
+            # when the commit encoding is not valid UTF-8, so decode rather than
+            # assume, and never raise on a malformed historical message.
+            return [
+                (
+                    message.decode("utf-8", "replace")
+                    if isinstance(message := commit.message, bytes)
+                    else message
+                ).strip()
+                for commit in commits
+            ]
             
         except Exception as e:
             logger.error(f"Error getting recent changes: {e}")

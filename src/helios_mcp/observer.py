@@ -17,6 +17,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from .distribution import BehavioralDistribution
 from .hook_events import (
@@ -28,6 +29,7 @@ from .hook_events import (
     parse_hook_stdin,
 )
 from .hook_observer import (
+    SignalResult,
     extract_prompt_signals,
     extract_session_signals,
     extract_subagent_signals,
@@ -76,7 +78,7 @@ _OPTIONS_PHRASES: list[str] = [
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _assistant_messages(messages: list[dict]) -> list[str]:
+def _assistant_messages(messages: list[dict[str, Any]]) -> list[str]:
     """Return content strings for all assistant messages."""
     return [m["content"] for m in messages if m.get("role") == "assistant"]
 
@@ -116,7 +118,7 @@ def _word_count(text: str) -> int:
 # Signal extraction functions
 # ---------------------------------------------------------------------------
 
-def extract_structural(messages: list[dict]) -> dict[str, float]:
+def extract_structural(messages: list[dict[str, Any]]) -> dict[str, float]:
     """Compute scalar structural features from assistant messages.
 
     Args:
@@ -156,7 +158,7 @@ def extract_structural(messages: list[dict]) -> dict[str, float]:
     }
 
 
-def extract_semantic(messages: list[dict]) -> list[str]:
+def extract_semantic(messages: list[dict[str, Any]]) -> list[str]:
     """Classify the dominant epistemic intent of each assistant message.
 
     Args:
@@ -185,7 +187,7 @@ def extract_semantic(messages: list[dict]) -> list[str]:
     return results
 
 
-def extract_decision_points(messages: list[dict]) -> list[str]:
+def extract_decision_points(messages: list[dict[str, Any]]) -> list[str]:
     """Classify the agency pattern of each assistant message.
 
     Args:
@@ -224,7 +226,7 @@ def extract_decision_points(messages: list[dict]) -> list[str]:
     return results
 
 
-def extract_user_signals(messages: list[dict]) -> list[str]:
+def extract_user_signals(messages: list[dict[str, Any]]) -> list[str]:
     """Classify user messages that follow assistant messages.
 
     Args:
@@ -410,8 +412,8 @@ class BehavioralObserver:
 
     def __init__(self, helios_dir: Path | None = None) -> None:
         self._helios_dir = helios_dir
-        self._observations: dict[str, list[dict]] = {}
-        self._hook_observations: dict[str, list[dict]] = {}
+        self._observations: dict[str, list[dict[str, Any]]] = {}
+        self._hook_observations: dict[str, list[dict[str, Any]]] = {}
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -496,7 +498,7 @@ class BehavioralObserver:
     # ------------------------------------------------------------------
 
     def observe(
-        self, persona_name: str, messages: list[dict]
+        self, persona_name: str, messages: list[dict[str, Any]]
     ) -> dict[str, BehavioralDistribution]:
         """Process a conversation, persist the observation, and return distributions.
 
@@ -654,14 +656,11 @@ class BehavioralObserver:
         text_dists = self._get_text_distributions(persona_name)
         hook_dists = self._get_hook_distributions(persona_name)
 
-        has_text = text_dists is not None
-        has_hooks = hook_dists is not None
-
-        if has_text and has_hooks:
+        if text_dists is not None and hook_dists is not None:
             return self._blend_distributions(text_dists, hook_dists)
-        if has_text:
+        if text_dists is not None:
             return text_dists
-        if has_hooks:
+        if hook_dists is not None:
             return hook_dists
 
         return {
@@ -721,7 +720,7 @@ class BehavioralObserver:
             return None
 
         # Merge all stored signal snapshots
-        merged = {
+        merged: SignalResult = {
             "epistemic_style": {},
             "interaction_agency": {},
             "communication_register": {},

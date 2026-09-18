@@ -140,7 +140,7 @@ def extract_tool_signals(events: list[ToolUseEvent]) -> SignalResult:
     return result
 
 
-def _tool_diversity(counts: Counter, total: int) -> float:
+def _tool_diversity(counts: Counter[str], total: int) -> float:
     """Compute normalized Shannon entropy of tool distribution."""
     if total == 0 or len(counts) <= 1:
         return 0.0

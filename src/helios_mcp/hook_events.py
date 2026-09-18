@@ -29,6 +29,7 @@ from __future__ import annotations
 import contextlib
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Base event
@@ -254,7 +255,7 @@ _EVENT_TYPE_MAP: dict[str, str] = {
 # Parser / dispatcher
 # ---------------------------------------------------------------------------
 
-def _extract_common_fields(raw_json: dict) -> dict:
+def _extract_common_fields(raw_json: dict[str, Any]) -> dict[str, str]:
     """Extract common fields shared by all Claude Code hook events."""
     return {
         "session_id": str(raw_json.get("session_id", "") or ""),
@@ -265,7 +266,9 @@ def _extract_common_fields(raw_json: dict) -> dict:
     }
 
 
-def parse_hook_stdin(raw_json: dict, event_type: str | None = None) -> AnyHookEvent:
+def parse_hook_stdin(
+    raw_json: dict[str, Any], event_type: str | None = None
+) -> AnyHookEvent:
     """Parse raw JSON from Claude Code hook stdin into a typed HookEvent.
 
     Claude Code pipes JSON to hook commands via stdin. This function
@@ -324,7 +327,7 @@ def parse_hook_stdin(raw_json: dict, event_type: str | None = None) -> AnyHookEv
     raise ValueError(f"Unknown event type: {event_type!r}")
 
 
-def _extract_timestamp(raw_json: dict) -> float:
+def _extract_timestamp(raw_json: dict[str, Any]) -> float:
     """Extract timestamp from raw JSON, falling back to current time."""
     ts = raw_json.get("timestamp")
     if ts is not None:
@@ -334,7 +337,7 @@ def _extract_timestamp(raw_json: dict) -> float:
 
 
 def _parse_tool_use(
-    raw_json: dict, event_type: str, ts: float, common: dict
+    raw_json: dict[str, Any], event_type: str, ts: float, common: dict[str, str]
 ) -> ToolUseEvent:
     tool_name = (
         raw_json.get("tool_name", "") or raw_json.get("tool", {}).get("name", "")
@@ -369,7 +372,7 @@ def _parse_tool_use(
 
 
 def _parse_subagent(
-    raw_json: dict, event_type: str, ts: float, common: dict
+    raw_json: dict[str, Any], event_type: str, ts: float, common: dict[str, str]
 ) -> SubagentEvent:
     agent_type = raw_json.get("agent_type", "") or raw_json.get("type_name", "")
     agent_id = raw_json.get("agent_id", "") or raw_json.get("id", "")
@@ -385,7 +388,7 @@ def _parse_subagent(
 
 
 def _parse_session(
-    raw_json: dict, event_type: str, ts: float, common: dict
+    raw_json: dict[str, Any], event_type: str, ts: float, common: dict[str, str]
 ) -> SessionEvent:
     sub_event = "start" if event_type == "session-start" else "end"
     source = str(raw_json.get("source", "") or "")
@@ -400,7 +403,9 @@ def _parse_session(
     )
 
 
-def _parse_notification(raw_json: dict, ts: float, common: dict) -> NotificationEvent:
+def _parse_notification(
+    raw_json: dict[str, Any], ts: float, common: dict[str, str]
+) -> NotificationEvent:
     content = raw_json.get("content", "") or raw_json.get("message", "")
     length = len(str(content)) if content else 0
     notification_type = str(raw_json.get("notification_type", "") or "")
@@ -414,7 +419,7 @@ def _parse_notification(raw_json: dict, ts: float, common: dict) -> Notification
 
 
 def _parse_user_prompt(
-    raw_json: dict, ts: float, common: dict
+    raw_json: dict[str, Any], ts: float, common: dict[str, str]
 ) -> UserPromptSubmitEvent:
     content = raw_json.get("content", "") or raw_json.get("prompt", "")
     text = str(content) if content else ""
@@ -429,29 +434,33 @@ def _parse_user_prompt(
     )
 
 
-def _parse_stop(raw_json: dict, ts: float, common: dict) -> StopEvent:
+def _parse_stop(
+    raw_json: dict[str, Any], ts: float, common: dict[str, str]
+) -> StopEvent:
     stop_hook_active = bool(raw_json.get("stop_hook_active", False))
     return StopEvent(timestamp=ts, stop_hook_active=stop_hook_active, **common)
 
 
 def _parse_permission_request(
-    raw_json: dict, ts: float, common: dict
+    raw_json: dict[str, Any], ts: float, common: dict[str, str]
 ) -> PermissionRequestEvent:
     tool_name = str(raw_json.get("tool_name", "") or "")
     return PermissionRequestEvent(timestamp=ts, tool_name=tool_name, **common)
 
 
-def _parse_config_change(raw_json: dict, ts: float, common: dict) -> ConfigChangeEvent:
+def _parse_config_change(
+    raw_json: dict[str, Any], ts: float, common: dict[str, str]
+) -> ConfigChangeEvent:
     source = str(raw_json.get("source", "") or "")
     file_path = str(raw_json.get("file_path", "") or "")
     return ConfigChangeEvent(timestamp=ts, source=source, file_path=file_path, **common)
 
 
 def _parse_worktree(
-    raw_json: dict,  # noqa: ARG001 - uniform parser signature for the dispatch table
+    raw_json: dict[str, Any],  # noqa: ARG001 - uniform dispatch signature
     event_type: str,
     ts: float,
-    common: dict,
+    common: dict[str, str],
 ) -> WorktreeEvent:
     wt_event = "create" if event_type == "worktree-create" else "remove"
     return WorktreeEvent(timestamp=ts, event_type=wt_event, **common)

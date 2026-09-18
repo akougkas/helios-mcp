@@ -42,4 +42,3 @@ jobs:
 
       - name: Mypy
         run: uv run mypy src
-        continue-on-error: true

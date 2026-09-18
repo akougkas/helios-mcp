@@ -5,6 +5,7 @@ import datetime
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -72,9 +73,9 @@ class BehavioralProfile:
             description="Species-level base behavioral profile for all agents",
         )
 
-    def to_yaml_dict(self) -> dict:
+    def to_yaml_dict(self) -> dict[str, Any]:
         """Serialize to a YAML-serializable dict."""
-        d: dict = {
+        d: dict[str, Any] = {
             "schema_version": self.schema_version,
             "agent_id": self.agent_id,
             "level": self.level,
@@ -95,7 +96,7 @@ class BehavioralProfile:
         return d
 
     @classmethod
-    def from_yaml_dict(cls, data: dict) -> BehavioralProfile:
+    def from_yaml_dict(cls, data: dict[str, Any]) -> BehavioralProfile:
         """Deserialize from a loaded YAML dict."""
         raw_dists = data.get("behavioral_distributions", {})
         distributions: dict[str, BehavioralDistribution] = {}

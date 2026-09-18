@@ -14,6 +14,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from .distribution import BehavioralDistribution
 from .drift import DriftDetector, DriftResult
@@ -197,7 +198,7 @@ class NegotiationEngine:
         proposal: NegotiationProposal,
         helios_dir: Path,
         accepted_dimensions: list[str] | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Apply an accepted negotiation proposal to the persona's profile.
 
         Args:
@@ -259,7 +260,7 @@ class NegotiationEngine:
         persona_name: str,
         reason: str,
         helios_dir: Path,  # noqa: ARG002 - symmetry with apply_update
-    ) -> dict:
+    ) -> dict[str, str]:
         """Reject a negotiation proposal and log the rejection.
 
         Args:

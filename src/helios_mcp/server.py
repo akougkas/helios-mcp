@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
@@ -153,7 +153,7 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
         ),
     )
     async def list_personas(
-        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+        ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> ListPersonasResult:
         """Return the names of all .yaml files under ~/.helios/personas/."""
         personas_dir = helios_dir / "personas"
@@ -180,7 +180,7 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
     )
     async def get_behavioral_context(
         persona_name: str = Field(description="Persona name (e.g. 'developer')"),
-        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+        ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> GetBehavioralContextResult:
         """Resolve the 4-level behavioral hierarchy and render as system prompt text."""
         try:
@@ -223,7 +223,7 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
         messages: list[dict[str, Any]] = Field(
             description="Conversation messages (role+content dicts)"
         ),
-        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+        ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> ObserveInteractionResult:
         """Feed messages into the observation engine and check drift."""
         try:
@@ -273,7 +273,7 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
     )
     async def get_drift_report(
         persona_name: str = Field(description="Persona to report on"),
-        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+        ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> GetDriftReportResult:
         """Generate a human-readable behavioral drift summary with a proposal."""
         try:
@@ -344,7 +344,7 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
             default=None,
             description="Specific dimensions to accept (None = accept all)",
         ),
-        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+        ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> NegotiateUpdateResult:
         """Apply or reject a behavioral evolution proposal. Accepted changes \
 are git-committed."""
@@ -357,8 +357,13 @@ are git-committed."""
             engine = NegotiationEngine()
 
             if decision.lower() == "reject":
-                return engine.reject_update(
-                    persona_name, reason or "user rejected", helios_dir
+                # negotiation.py's reject_update is annotated `-> dict`; cast to
+                # the published tool return shape without changing its payload.
+                return cast(
+                    NegotiateUpdateResult,
+                    engine.reject_update(
+                        persona_name, reason or "user rejected", helios_dir
+                    ),
                 )
 
             if decision.lower() == "accept":
@@ -374,8 +379,13 @@ are git-committed."""
                 proposal = engine.generate_summary(
                     persona_name, profile, observed_dists, drift_result
                 )
-                return engine.apply_update(
-                    persona_name, proposal, helios_dir, accepted_dimensions
+                # negotiation.py's apply_update is annotated `-> dict`; cast to
+                # the published tool return shape without changing its payload.
+                return cast(
+                    NegotiateUpdateResult,
+                    engine.apply_update(
+                        persona_name, proposal, helios_dir, accepted_dimensions
+                    ),
                 )
 
             return {
@@ -412,7 +422,7 @@ are git-committed."""
             default="",
             description="Name for the new persona (default: derived from filename)",
         ),
-        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+        ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> ImportProfileResult:
         """Parse a personality file and create a new Helios persona \
 with projected distributions."""
@@ -449,7 +459,7 @@ with projected distributions."""
             return summary
         except Exception as e:
             logger.error(f"import_profile failed: {e}")
-            return {"status": "error", "message": sanitize_error_message(str(e))}
+            return {"status": "error", "message": sanitize_error_message(e)}
 
     # ------------------------------------------------------------------
     # Tool: export_profile
@@ -478,7 +488,7 @@ with projected distributions."""
             default=None,
             description="Specific dimensions to include (None = all)",
         ),
-        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+        ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> ExportProfileResult:
         """Export a behavioral profile with optional dimension filtering."""
         try:
@@ -498,15 +508,20 @@ with projected distributions."""
                 }
 
             exported = export_dimensions(profile, dimensions)
+            # export_dimensions returns dict[str, Any]; mypy cannot verify a
+            # ** expansion into a TypedDict, so build the result explicitly.
+            # Keys/values are identical to the exported dict's own keys.
             return {
                 "status": "success",
                 "persona": persona_name,
                 "format": format,
-                **exported,
+                "agent_id": exported["agent_id"],
+                "level": exported["level"],
+                "dimensions": exported["dimensions"],
             }
         except Exception as e:
             logger.error(f"export_profile failed: {e}")
-            return {"status": "error", "message": sanitize_error_message(str(e))}
+            return {"status": "error", "message": sanitize_error_message(e)}
 
     logger.info(f"Helios MCP server created (config: {helios_dir})")
     return mcp
