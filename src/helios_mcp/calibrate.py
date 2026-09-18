@@ -392,6 +392,8 @@ def ledger_report(helios_dir: Path) -> dict[str, Any]:
         "llm": defaultdict(Counter),
     }
     label_n: Counter[str] = Counter()
+    coverage: dict[str, Counter[str]] = defaultdict(Counter)
+    agree: Counter[str] = Counter()
 
     def sign(v: float | None) -> str:
         return "none" if v is None else ("neg" if v < 0 else "nonneg")
@@ -408,8 +410,12 @@ def ledger_report(helios_dir: Path) -> dict[str, Any]:
         endorse[f"h_{sign(h_obs.endorsement)}__l_{sign(l_obs.endorsement)}"] += 1
         for dim in list_dimensions():
             hl, ll = h_obs.labels.get(dim), l_obs.labels.get(dim)
+            coverage[dim]["heuristic"] += hl is not None
+            coverage[dim]["llm"] += ll is not None
             if hl is None or ll is None:
                 continue
+            coverage[dim]["both"] += 1
+            agree[dim] += _argmax(hl) == _argmax(ll)
             label_n[dim] += 1
             label_mean["heuristic"][dim].update(hl)
             label_mean["llm"][dim].update(ll)
@@ -425,6 +431,10 @@ def ledger_report(helios_dir: Path) -> dict[str, Any]:
                 "precision": round(hint_hits[k] / n, 3),
             }
             for k, n in hint_fires.most_common()
+        },
+        "labeled_turns": {dim: dict(c) for dim, c in coverage.items()},
+        "argmax_agreement": {
+            dim: round(agree[dim] / label_n[dim], 3) for dim in label_n
         },
         "llm_hints": dict(llm_hints.most_common()),
         "endorsement_sign": dict(endorse.most_common()),
