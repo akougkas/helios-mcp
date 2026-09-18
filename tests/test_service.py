@@ -1,5 +1,7 @@
 """The engine through its two front doors: MCP tools and the CLI."""
 
+from dataclasses import replace
+
 import pytest
 from click.testing import CliRunner
 from fastmcp import Client
@@ -73,6 +75,13 @@ async def test_every_persona_tool_rejects_traversal(tmp_path, tool, args):
     assert result["status"] == "error"
     assert not list(tmp_path.glob("escape*"))
     assert not list(tmp_path.rglob("escape*"))
+
+
+def test_observation_count_counts_turns_not_label_rows(tmp_path):
+    service = HeliosService(tmp_path)
+    heuristic = terse_turns(1)[0]
+    service.record([heuristic, replace(heuristic, source="llm")], "developer")
+    assert service.context("developer")["observation_count"] == 1
 
 
 def test_cli_group_helios_dir_reaches_subcommands(tmp_path):

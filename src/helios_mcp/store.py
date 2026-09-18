@@ -374,14 +374,29 @@ class ProposalStore:
 
     def all(self, persona: str) -> list[Proposal]:
         """Every proposal for ``persona``, oldest first."""
+        return self._load(persona, for_write=False)
+
+    def _load(self, persona: str, for_write: bool) -> list[Proposal]:
+        """Read the proposals; an unreadable file reads as empty.
+
+        Before a write, the unreadable file is moved aside to
+        ``<persona>.json.corrupt-<time>`` so its watermarks, rejections and
+        cooldowns stay recoverable instead of being overwritten.
+        """
         path = self.path(persona)
         if not path.exists():
             return []
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
             return [Proposal.from_dict(p) for p in raw]
-        except (ValueError, KeyError, TypeError) as exc:
-            logger.warning("unreadable proposal file %s: %s", path, exc)
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            if for_write:
+                aside = path.with_name(f"{path.name}.corrupt-{time.time_ns()}")
+                path.replace(aside)
+                logger.error("unreadable proposal file %s moved to %s: %s",
+                             path, aside, exc)
+            else:
+                logger.warning("unreadable proposal file %s: %s", path, exc)
             return []
 
     def get(self, persona: str, proposal_id: str) -> Proposal | None:
@@ -420,7 +435,7 @@ class ProposalStore:
             existing = [
                 replace(p, status="superseded", decided_at=now)
                 if p.status == "pending" else p
-                for p in self.all(persona)
+                for p in self._load(persona, for_write=True)
             ]
             self._write(persona, [*existing, proposal])
         return proposal
@@ -446,7 +461,7 @@ class ProposalStore:
             reason=reason,
         )
         with _file_lock(self.path(persona)):
-            self._write(persona, [*self.all(persona), proposal])
+            self._write(persona, [*self._load(persona, for_write=True), proposal])
         return proposal
 
     def decide(self, persona: str, proposal_id: str, status: ProposalStatus,
@@ -462,7 +477,7 @@ class ProposalStore:
         """
         now = time.time() if now is None else now
         with _file_lock(self.path(persona)):
-            proposals = self.all(persona)
+            proposals = self._load(persona, for_write=True)
             idx = next((i for i, p in enumerate(proposals) if p.id == proposal_id),
                        None)
             if idx is None:
