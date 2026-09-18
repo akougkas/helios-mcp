@@ -130,7 +130,8 @@ def test_label_session_validates_and_keys_by_turn_id():
 def test_hints_and_approvals_must_quote_the_user():
     turns = _session()
     hint = {"interaction_agency": {"state": "asks_first", "quote": "check with me first"},
-            "communication_register": {"state": "terse", "quote": "be   TERSE."}}
+            "communication_register": {"state": "terse", "quote": "be   TERSE."},
+            "risk_caution": {"state": "acts_immediately", "quote": "too long"}}
     reply = {"turns": [
         {"id": "0", "confidence": 1, "endorsement": 1, "approval_quote": "perfect, thanks",
          "correction_hint": hint},
@@ -146,7 +147,8 @@ def test_hints_and_approvals_must_quote_the_user():
     b.say("Done.")
     approved = parse_records(b.records).turns
     out = label_session(turns, FakeClient([reply]))
-    # Only the quote found in the user's reply survives, and "perfect, thanks"
+    # Only a quote found in the user's reply that names its dimension's style
+    # survives ("too long" is said, but says nothing about risk). "perfect, thanks"
     # was never said after turn 0, so its approval falls back to moving on.
     assert out[turns[0].turn_id].correction_hint == {"communication_register": "terse"}
     assert out[turns[0].turn_id].endorsement == 0.5

@@ -239,6 +239,43 @@ def grounded(quote: Any, texts: Sequence[str]) -> bool:
     return len(q) >= _MIN_QUOTE and any(q in _norm(t) for t in texts)
 
 
+# Words a request about each dimension almost always contains. A quoted task
+# directive ("do not commit this file", "timebox G4 now") names no style, so
+# a hint whose quote carries none of its dimension's cues is dropped.
+_STYLE_CUES: dict[str, re.Pattern[str]] = {
+    dim: re.compile(pattern, re.IGNORECASE)
+    for dim, pattern in {
+        "communication_register": r"short|long|brief|concise|terse|verbose|wordy|"
+        r"words?\b|detail|elaborat|explain|jargon|simpl|plain|technical|lost|"
+        r"understand|follow|essay|ramble|fluff|tl;?dr|lines?\b|sentence",
+        "interaction_agency": r"\bask|decid|option|yourself|trust|wait|just do|"
+        r"judg|call\b|control|autonom|deliberat|overthink|permission|confirm|"
+        r"check with|enough|stop (?:reading|exploring|investigating|planning)",
+        "risk_caution": r"careful|check|verif|test|confirm|warn|risk|caution|"
+        r"before|safe|broke|double|slow down|faster",
+        "epistemic_style": r"sure|guess|hedg|know|made (?:it|that|this|up)|"
+        r"making (?:it|that|this|things|stuff) up|hallucinat|confiden|certain|"
+        r"honest|direct|decisive|pick one|recommend|ass\b|bullshit|ground",
+        "structure": r"bullet|list|header|heading|table|prose|format|paragraph|"
+        r"markdown|section",
+        "sycophancy": r"flatter|prais|compliment|sycophan|honest|candid|blunt|"
+        r"sugarcoat|agree|pleasantr|apolog|nice|polite",
+        "narration": r"narrat|recap|summar|announc|preamble|update|happening|"
+        r"what are you doing|status|progress|telling me|point|chase",
+        "specificity": r"specific|concrete|vague|precise|path|line|number|"
+        r"evidence|exact|cite|example",
+        "pushback": r"push ?back|disagree|wrong|agree|cave|fold|back down|"
+        r"stand your ground|challenge|argue",
+    }.items()
+}
+
+
+def styled(dim: str, quote: str) -> bool:
+    """Whether a quoted request plausibly speaks about ``dim``."""
+    cue = _STYLE_CUES.get(dim)
+    return cue is None or cue.search(quote) is not None
+
+
 # ---------------------------------------------------------------------------
 # Session labeling
 # ---------------------------------------------------------------------------
@@ -453,8 +490,9 @@ def _parse_turn(
     for d, h in raw_hint.items() if isinstance(raw_hint, dict) else []:
         if not isinstance(h, dict) or d not in list_dimensions():
             continue
-        state = h.get("state")
-        if state in list_states(d) and grounded(h.get("quote"), said):
+        state, quote = h.get("state"), h.get("quote")
+        if (state in list_states(d) and grounded(quote, said)
+                and styled(d, str(quote))):
             hint[d] = state
     return index, LLMTurnLabel(labels, confidence, endorsement, hint or None)
 
