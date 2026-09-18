@@ -154,18 +154,32 @@ def _result_text(block: dict[str, Any]) -> str:
     return ""
 
 
+def machine_sent(record: dict[str, Any]) -> bool:
+    """Whether a user record came from a program rather than the person.
+
+    Orchestrator panes, headless ``claude -p`` sessions and scheduled fires
+    write user records too. Their text says nothing about how the person
+    received the turn, so it carries no endorsement and no hints. Messages
+    queued while a turn runs are still the person typing, so they stay.
+    """
+    origin = record.get("origin")
+    origin_kind = origin.get("kind") if isinstance(origin, dict) else None
+    return (
+        record.get("promptSource") == "system"
+        or origin_kind in {"task-notification", "peer", "coordinator"}
+        or record.get("entrypoint") == "sdk-cli"
+        or bool(record.get("scheduledTaskId"))
+    )
+
+
 def classify_user_text(text: str, record: dict[str, Any]) -> UserKind | None:
     """Kind of a user text record, or None when it should be ignored."""
     stripped = text.lstrip()
+    if machine_sent(record):
+        return "notification"
     if stripped.startswith(_INTERRUPT_PREFIX):
         return "interrupt"
-    origin = record.get("origin")
-    origin_kind = origin.get("kind") if isinstance(origin, dict) else None
-    if (
-        record.get("promptSource") == "system"
-        or origin_kind in {"task-notification", "peer"}
-        or stripped.startswith(_NOTIFICATION_PREFIXES)
-    ):
+    if stripped.startswith(_NOTIFICATION_PREFIXES):
         return "notification"
     if stripped.startswith(_COMMAND_PREFIXES):
         return "command"
@@ -259,7 +273,8 @@ class _Builder:
         # transcripts only have the rejection text. Declining a question the
         # agent asked is the user answering in chat, not refusing an action,
         # and auto-mode blocks are a classifier's decision, not the user's.
-        denied = call.name not in _NOT_DENIALS and (
+        # A denial in a machine-driven session is policy, not the person.
+        denied = call.name not in _NOT_DENIALS and not machine_sent(rec) and (
             denial_kind == "user-rejected"
             or (denial_kind is None and is_error and text.startswith(_REJECTED_MARKER))
         )

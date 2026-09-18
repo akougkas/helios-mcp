@@ -42,9 +42,7 @@ class TranscriptBuilder:
         return self._base(
             "user",
             message={"role": "user", "content": text},
-            promptSource="typed",
-            origin={"kind": "human"},
-            **extra,
+            **{"promptSource": "typed", "origin": {"kind": "human"}, **extra},
         )
 
     def notification(self, text: str = "<task-notification>done</task-notification>") -> dict[str, Any]:

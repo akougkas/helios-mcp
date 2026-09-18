@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from helios_mcp.endorsement import hints_from_text, judge_text, judge_turn
+from helios_mcp.endorsement import (
+    Endorsement,
+    hints_from_text,
+    judge_text,
+    judge_turn,
+    opener_hints,
+)
 from helios_mcp.transcript import parse_records
 
 from .transcript_fixtures import TranscriptBuilder
@@ -136,3 +142,25 @@ def test_hints_for_undefined_dimensions_are_dropped(monkeypatch):
     assert hints_from_text("too many bullets, and too long") == (
         {"communication_register": "terse"}, True,
     )
+
+
+def test_machine_sent_input_is_neutral_and_carries_no_hints():
+    # Orchestrator, headless and scheduled prompts are not the person reacting,
+    # however corrective or stylistic their words are.
+    for provenance in ({"origin": {"kind": "coordinator"}},
+                       {"entrypoint": "sdk-cli"},
+                       {"scheduledTaskId": "cron-1"}):
+        b = TranscriptBuilder()
+        b.prompt("be terse. refactor the parser", **provenance)
+        b.say("Here is a long walkthrough of every change.")
+        b.prompt("no, that's wrong. too verbose, be brief", **provenance)
+        turn = parse_records(b.records).turns[0]
+        assert judge_turn(turn) == Endorsement(0.0, "neutral", None), provenance
+        assert opener_hints(turn) == {}
+
+    b = TranscriptBuilder()
+    b.prompt("be terse. refactor the parser")
+    b.say("Here is a long walkthrough of every change.")
+    b.prompt("no, that's wrong. too verbose, be brief")
+    assert judge_turn(parse_records(b.records).turns[0]) == Endorsement(
+        -1.0, "corrected", {"communication_register": "terse"})
