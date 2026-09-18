@@ -15,7 +15,8 @@ from helios_mcp.store import (
 
 DIM = "communication_register"
 # Linear in confidence, full-weight corrections: the bookkeeping is easy to read.
-LINEAR = DriftConfig(confidence_exponent=1.0, unhinted_correction_weight=1.0)
+LINEAR = DriftConfig(confidence_exponent=1.0, unhinted_correction_weight=1.0,
+                     hint_weight=1.0)
 TERSE = {"terse": 1.0}
 THOROUGH = {"thorough": 1.0}
 
@@ -52,7 +53,7 @@ def test_hinted_correction_moves_endorsed_mass_to_hinted_state_only():
         persona="dev", session_id="s", turn_id="t1", timestamp=0, source="llm",
         labels={DIM: THOROUGH, "risk_caution": {"acts_immediately": 1.0}},
         endorsement=-1.0, correction_hint={DIM: "terse"})])
-    assert ev.endorsed == {DIM: {"terse": 1.0}}
+    assert ev.endorsed == {DIM: {"terse": DEFAULT_CONFIG.hint_weight}}
     # The fingerprint still records what the agent actually did.
     assert ev.fingerprint[DIM] == {"thorough": 1.0}
 
@@ -109,7 +110,7 @@ def test_standing_preference_counts_toward_hint_in_place_of_label():
         persona="dev", session_id="s", turn_id="t1", timestamp=0, source="llm",
         labels={DIM: THOROUGH, "risk_caution": {"acts_immediately": 1.0}},
         endorsement=0.5, correction_hint={DIM: "terse"})])
-    assert ev.endorsed[DIM] == {"terse": DEFAULT_CONFIG.standing_hint_weight}
+    assert ev.endorsed[DIM] == {"terse": DEFAULT_CONFIG.hint_weight}
     assert ev.endorsed["risk_caution"] == {
         "acts_immediately": DEFAULT_CONFIG.moved_on_weight}
 

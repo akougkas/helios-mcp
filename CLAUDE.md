@@ -106,13 +106,14 @@ All live in `drift.DriftConfig`. Drift runs on the `endorsed` posterior only. Wi
 - Drift score: JS divergence (nats, at most ln 2) between posterior mean and declared
 - Tiers over 1000 seeded samples of P(JS(sample, declared) > 0.0125): a suggestion at >= 0.8, a strong proposal at >= 0.95
 - Auto-accept (silent): P(JS < 0.0125) >= 0.9 and JS(mean, declared) >= 0.004
-- Standing preference (hint on an uncorrected turn): weight 1.0 toward the hinted state
+- Hints: a correction with a hint puts weight 2.5 times its strength on the hinted state, and a standing preference (hint on an uncorrected turn) puts 2.5 there in place of the label. Against the default developer narration, consecutive hints toward silent_action reach a suggestion at 5 and a strong proposal at 7
 - Declared dimensions (the ones `init`/`import` took from CLAUDE.md or the output style, recorded as `declared_dimensions` on the profile): uncorrected turns count toward endorsed only when explicitly approved; corrections, hints, standing preferences and rejections count as elsewhere, and the fingerprint is unaffected
 - Unhinted correction: 0.25 weight spread over the complement of the label
 - Rejection: 10 pseudo-counts toward the declared profile, 3-day cooldown per dimension
 - Probability floor on disk and in priors: 0.005
 - Simulated with hard labels on the default profiles, every turn an approval, checking every turn: strong-tier stationary FP < 1% over 200 turns (under 0.3% by turn 30); a 0.3-mass shift is detected at a median of 26 to 30 turns (80th percentile 38 to 44)
 - Founder corpus, 200 model-labeled sessions (600 turns, 16 approvals, 99 hints, 75 corrections), 100 random session orders: stationary FP 2% for suggestions and 0% for strong proposals (23% for suggestions at 0.7, 98% at s = 15). Against the default developer profile, interaction_agency becomes a suggestion after session 59 and strong after session 122, and communication_register a suggestion after session 139. Without response grading the same corpus proposes agency after session 3, so explicit signals set the pace; the moved-on weight barely matters (0.1 to 0.3 gives sessions 59 to 61)
+- Founder corpus under the current labeling prompt (v3: 349 sessions, 1663 turns, 61 approvals, 71 hinted turns, 286 corrections), 100 random session orders at hint weight 2.5: stationary FP 4% for suggestions and 0% for strong proposals (0% and 0% at weight 1, 14% and 0% at 3). Against the default developer profile, communication_register becomes a suggestion after session 19 (59 at weight 2, never at 1). The session counts in the previous bullet were measured at hint weight 1. The earlier ledgers labeled with the old hint prompt carry about eight times as many hints, many contradictory, and at weight 2.5 their stationary suggestion FP is 74 to 77%, so the hint weight assumes the current prompt's hint precision
 
 ## Design Constraints
 
