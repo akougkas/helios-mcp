@@ -30,6 +30,7 @@ target in either case is the posterior mean.
 
 from __future__ import annotations
 
+import functools
 import math
 import random
 from collections.abc import Mapping, Sequence
@@ -157,6 +158,25 @@ class DriftAssessment:
         return bool(self.drifted_dimensions)
 
 
+@functools.lru_cache(maxsize=4096)
+def _sampled_tails(dimension: str, alpha: tuple[float, ...], q: tuple[float, ...],
+                   samples: int, seed: int, js_threshold: float,
+                   auto_accept_js: float) -> tuple[float, float]:
+    """``P(JS > js_threshold)`` and ``P(JS < auto_accept_js)`` by seeded sampling.
+
+    Sampling is most of the cost of every tool call, and the result is a pure
+    function of its arguments, so a long-running server reuses it for every
+    dimension whose evidence did not change.
+    """
+    rng = random.Random(f"{seed}:{dimension}")
+    above = below = 0
+    for _ in range(samples):
+        js = js_divergence(sample_dirichlet(alpha, rng), q)
+        above += js > js_threshold
+        below += js < auto_accept_js
+    return above / samples, below / samples
+
+
 def assess_dimension(
     dimension: str,
     declared: Mapping[str, float],
@@ -171,14 +191,9 @@ def assess_dimension(
     concentration = sum(alpha)
     mean = [a / concentration for a in alpha]
 
-    rng = random.Random(f"{config.seed}:{dimension}")
-    above = below = 0
-    for _ in range(config.samples):
-        js = js_divergence(sample_dirichlet(alpha, rng), q)
-        above += js > config.js_threshold
-        below += js < config.auto_accept_js
-    credibility = above / config.samples
-    closeness = below / config.samples
+    credibility, closeness = _sampled_tails(
+        dimension, tuple(alpha), tuple(q), config.samples, config.seed,
+        config.js_threshold, config.auto_accept_js)
     divergence = js_divergence(mean, q)
 
     tier: Tier | None = (
