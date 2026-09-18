@@ -34,9 +34,19 @@ def test_roundtrip_preserves_fields(tmp_path):
     store = ObservationStore(tmp_path)
     original = obs("t1", endorsement=-1.0, confidence=0.4,
                    correction_hint={"communication_register": "terse"},
-                   dim_confidence={"communication_register": 0.9})
+                   dim_confidence={"communication_register": 0.9},
+                   model="claude-opus-5")
     store.append([original])
     assert list(store.iter("dev")) == [original]
+
+
+def test_rows_written_before_the_model_field_still_load(tmp_path):
+    store = ObservationStore(tmp_path)
+    store.path("dev").parent.mkdir(parents=True, exist_ok=True)
+    store.path("dev").write_text(
+        '{"persona":"dev","session_id":"s","turn_id":"t","timestamp":1.0,'
+        '"source":"heuristic","labels":{}}\n')
+    assert [o.model for o in store.iter("dev")] == [None]
 
 
 def test_corrupt_and_torn_lines_are_skipped(tmp_path):

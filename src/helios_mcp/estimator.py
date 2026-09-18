@@ -37,7 +37,7 @@ dimension ignores turns first seen before its latest accept watermark.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .drift import DEFAULT_CONFIG, DriftConfig
 from .store import SOURCES, Proposal, TurnObservation
@@ -68,6 +68,9 @@ class Evidence:
     turns: int = 0
     ledger_rows: int = 0
     endorsed_turns: int = 0
+    # Fingerprint counts and turn counts per model, for turns whose model is known.
+    fingerprint_by_model: dict[str, Counts] = field(default_factory=dict)
+    model_turns: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,7 @@ class _Turn:
     first_row: int
     obs: TurnObservation
     llm_row: int | None = None
+    model: str | None = None
 
 
 def select_turns(observations: Iterable[TurnObservation]) -> tuple[list[_Turn], int]:
@@ -92,10 +96,13 @@ def select_turns(observations: Iterable[TurnObservation]) -> tuple[list[_Turn], 
         current = chosen.get(key)
         llm_row = row if obs.source == "llm" else None
         if current is None:
-            chosen[key] = _Turn(row, obs, llm_row)
+            chosen[key] = _Turn(row, obs, llm_row, obs.model)
         elif rank[obs.source] < rank[current.obs.source]:
             chosen[key] = _Turn(current.first_row, obs,
-                                current.llm_row if llm_row is None else llm_row)
+                                current.llm_row if llm_row is None else llm_row,
+                                current.model or obs.model)
+        elif current.model is None and obs.model is not None:
+            chosen[key] = replace(current, model=obs.model)
     return sorted(chosen.values(), key=lambda t: t.first_row), rows
 
 
@@ -143,14 +150,22 @@ def estimate(
 
     fingerprint: Counts = {}
     endorsed: Counts = {}
+    by_model: dict[str, Counts] = {}
+    model_turns: dict[str, int] = {}
     def weight(obs: TurnObservation, dim: str) -> float:
         return float(obs.confidence_for(dim) ** config.confidence_exponent)
 
     endorsed_turns = 0
     for turn in turns:
         obs = turn.obs
+        model_counts = None
+        if turn.model is not None:
+            model_counts = by_model.setdefault(turn.model, {})
+            model_turns[turn.model] = model_turns.get(turn.model, 0) + 1
         for dim, label in obs.labels.items():
             _add(fingerprint, dim, label, weight(obs, dim))
+            if model_counts is not None:
+                _add(model_counts, dim, label, weight(obs, dim))
 
         position = turn.first_row
         if llm_labels:
@@ -195,4 +210,5 @@ def estimate(
             if p.observation_count > marks.get(dim, 0) and dim in p.changes:
                 _add(endorsed, dim, p.changes[dim].declared, config.rejection_strength)
 
-    return Evidence(fingerprint, endorsed, len(turns), rows, endorsed_turns)
+    return Evidence(fingerprint, endorsed, len(turns), rows, endorsed_turns,
+                    by_model, model_turns)

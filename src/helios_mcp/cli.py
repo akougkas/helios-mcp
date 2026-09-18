@@ -169,10 +169,17 @@ def ingest_command(persona: str | None, session_id: str, transcript: Path,
 
 @main.command("render")
 @click.argument("persona", required=False)
+@click.option("--model", default=None,
+              help="Print the context for this model id instead of writing the file.")
 @helios_dir_option
-def render_command(persona: str | None, helios_dir: Path | None) -> None:
+def render_command(persona: str | None, model: str | None,
+                   helios_dir: Path | None) -> None:
     """Write rendered/<persona>.md, the context injected at SessionStart."""
-    click.echo(str(_service(helios_dir).render(persona)))
+    service = _service(helios_dir)
+    if model:
+        click.echo(service.render_text(persona, model), nl=False)
+    else:
+        click.echo(str(service.render(persona)))
 
 
 @main.group("persona")

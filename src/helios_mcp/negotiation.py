@@ -93,6 +93,23 @@ class Negotiator:
             evidence,
         )
 
+    def model_fingerprints(self, persona: str, evidence: Evidence | None = None,
+                           ) -> list[tuple[str, int, DriftAssessment]]:
+        """Each known model's fingerprint against the declared profile.
+
+        Returns ``(model, turns, assessment)`` with the most observed model
+        first. A model's credible deviations are what the rendered context
+        asks it to counter.
+        """
+        if evidence is None:
+            evidence = estimate(self.ledger.iter(persona), self.proposals.all(persona),
+                                self.config, llm_labels=llm_enabled(self.helios_dir))
+        declared = self.declared(persona)
+        ranked = sorted(evidence.model_turns.items(), key=lambda mt: (-mt[1], mt[0]))
+        return [(model, turns,
+                 assess(declared, evidence.fingerprint_by_model[model], self.config))
+                for model, turns in ranked]
+
     def evaluate(self, persona: str, auto_accept: bool = True,
                  now: float | None = None) -> Evaluation:
         """Assess drift, apply auto-accepts, and reconcile the pending proposal."""
