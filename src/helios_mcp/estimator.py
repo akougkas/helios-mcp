@@ -3,13 +3,20 @@
 Two sets of counts come out, one per posterior:
 
 - ``fingerprint`` is what the agent did: every selected turn contributes its
-  soft label weighted by classifier confidence. Diagnostics only.
+  soft label weighted by ``confidence ** confidence_exponent``. The soft label
+  already spreads mass by the classifier's uncertainty, so the full confidence
+  would discount the same doubt twice; on the founder's corpus the square root
+  cut time to the first plausible proposal from 19 sessions to 8 with no
+  stationary false positives. Diagnostics only.
 - ``endorsed`` is what the user endorses. A turn the user did not correct
   counts toward what the agent did. A corrected turn with a ``correction_hint``
   puts its weight on the hinted state instead. A corrected turn without a hint
-  spreads its weight over every state except the labeled one, in proportion to
-  ``1 - label``, which moves mass away from what the agent did without
-  inventing a direction. A hint on an uncorrected turn is a standing
+  spreads ``unhinted_correction_weight`` of its weight over every state except
+  the labeled one, in proportion to ``1 - label``, which moves mass away from
+  what the agent did without inventing a direction. The weight is low because
+  on real sessions corrected turns look stylistically like all other turns:
+  most corrections are about content, and at full weight they pull every
+  dimension toward uniform. A hint on an uncorrected turn is a standing
   preference and adds ``standing_hint_weight`` toward the hinted state in
   place of that dimension's label. Rejected proposals add ``rejection_strength``
   pseudo-counts of the profile that was declared when the user said no.
@@ -101,10 +108,13 @@ def estimate(
 
     fingerprint: Counts = {}
     endorsed: Counts = {}
+    def weight(obs: TurnObservation, dim: str) -> float:
+        return float(obs.confidence_for(dim) ** config.confidence_exponent)
+
     for turn in turns:
         obs = turn.obs
         for dim, label in obs.labels.items():
-            _add(fingerprint, dim, label, obs.confidence_for(dim))
+            _add(fingerprint, dim, label, weight(obs, dim))
 
         hints = obs.correction_hint or {}
         live = {
@@ -120,7 +130,7 @@ def estimate(
                 if dim in live:
                     _add(endorsed, dim, {state: 1.0}, config.standing_hint_weight)
             for dim in (live & obs.labels.keys()) - hints.keys():
-                _add(endorsed, dim, obs.labels[dim], obs.confidence_for(dim))
+                _add(endorsed, dim, obs.labels[dim], weight(obs, dim))
             continue
 
         strength = -(obs.endorsement or 0.0)
@@ -133,7 +143,7 @@ def estimate(
         else:
             for dim in live & obs.labels.keys():
                 _add(endorsed, dim, _complement(dim, obs.labels[dim]),
-                     strength * obs.confidence_for(dim))
+                     strength * config.unhinted_correction_weight * weight(obs, dim))
 
     for p in proposals:
         if p.status != "rejected":

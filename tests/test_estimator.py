@@ -2,11 +2,13 @@
 
 import math
 
-from helios_mcp.drift import DEFAULT_CONFIG
+from helios_mcp.drift import DEFAULT_CONFIG, DriftConfig
 from helios_mcp.estimator import estimate
 from helios_mcp.store import Proposal, ProposedChange, TurnObservation
 
 DIM = "communication_register"
+# Linear in confidence, full-weight corrections: the bookkeeping is easy to read.
+LINEAR = DriftConfig(confidence_exponent=1.0, unhinted_correction_weight=1.0)
 TERSE = {"terse": 1.0}
 THOROUGH = {"thorough": 1.0}
 
@@ -26,7 +28,7 @@ def test_source_precedence_picks_llm_over_heuristic_per_turn():
 
 def test_uncorrected_turns_count_for_both_posteriors():
     ev = estimate([turn("t1", endorsement=None), turn("t2", endorsement=1.0),
-                   turn("t3", endorsement=0.0, confidence=0.5)])
+                   turn("t3", endorsement=0.0, confidence=0.5)], config=LINEAR)
     assert ev.fingerprint[DIM]["thorough"] == 2.5
     assert ev.endorsed[DIM]["thorough"] == 2.5
 
@@ -41,11 +43,19 @@ def test_hinted_correction_moves_endorsed_mass_to_hinted_state_only():
     assert ev.fingerprint[DIM] == {"thorough": 1.0}
 
 
-def test_unhinted_correction_moves_mass_away_from_labeled_state():
+def test_unhinted_correction_moves_down_weighted_mass_away_from_labeled_state():
     ev = estimate([turn("t1", endorsement=-1.0)])
     endorsed = ev.endorsed[DIM]
     assert endorsed["thorough"] == 0.0
-    assert math.isclose(sum(endorsed.values()), 1.0)
+    assert math.isclose(sum(endorsed.values()),
+                        DEFAULT_CONFIG.unhinted_correction_weight)
+
+
+def test_confidence_exponent_softens_the_confidence_discount():
+    obs = [turn("t1", confidence=0.25)]
+    assert estimate(obs, config=LINEAR).endorsed[DIM]["thorough"] == 0.25
+    assert estimate(obs, config=DriftConfig(confidence_exponent=0.5)
+                    ).endorsed[DIM]["thorough"] == 0.5
 
 
 def proposal(status, count, dims=(DIM,), declared=None):
@@ -84,6 +94,6 @@ def test_dim_confidence_overrides_turn_confidence_per_dimension():
     ev = estimate([TurnObservation(
         persona="dev", session_id="s", turn_id="t1", timestamp=0, source="heuristic",
         labels={DIM: THOROUGH, "risk_caution": {"acts_immediately": 1.0}},
-        confidence=0.6, dim_confidence={DIM: 0.2})])
+        confidence=0.6, dim_confidence={DIM: 0.2})], config=LINEAR)
     assert ev.endorsed[DIM] == {"thorough": 0.2}
     assert ev.fingerprint["risk_caution"] == {"acts_immediately": 0.6}
