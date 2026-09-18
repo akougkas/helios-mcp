@@ -29,3 +29,23 @@ behavioral_distributions:
     checks_before_acting: 0.35
     warns_frequently: 0.30
     refuses_ambiguity: 0.15
+  structure:
+    prose: 0.60
+    light_structure: 0.30
+    heavy_structure: 0.10
+  sycophancy:
+    candid: 0.40
+    neutral: 0.50
+    flattering: 0.10
+  narration:
+    silent_action: 0.30
+    brief_signposting: 0.55
+    narrates_and_recaps: 0.15
+  specificity:
+    concrete: 0.50
+    mixed: 0.45
+    vague: 0.05
+  pushback:
+    holds_position: 0.45
+    concedes_with_reason: 0.50
+    capitulates: 0.05
