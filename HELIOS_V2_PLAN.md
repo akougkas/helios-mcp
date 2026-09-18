@@ -1,5 +1,11 @@
 # Helios v2 — Behavioral Science Implementation Plan
 
+> **HISTORICAL — retained for record, 2026 (documentation pass).** This
+> document planned the v2 behavioral-science rewrite (taxonomy, distributions,
+> hierarchy, drift, negotiation). That rewrite is complete and merged; the
+> checklists below are historical record, not open work. For the current
+> forward-looking plan, see [`PLAN.md`](PLAN.md).
+
 **Started**: 2026-03-10 23:26
 **Target**: 2026-03-11 06:30 (~7 hours, ~28 iterations at 15min)
 **Branch**: helios-v2-behavioral-science

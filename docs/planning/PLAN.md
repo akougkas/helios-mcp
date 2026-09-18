@@ -1,5 +1,14 @@
 # Implementation Roadmap
 
+> **HISTORICAL — retained for record, 2026 (documentation pass).** This is
+> the original pre-v2 roadmap: a 5-tool, weighted-scalar-inheritance design
+> (`get_base_config`, `merge_behaviors`, `update_preference`, ...) that none
+> of the current code implements. It was superseded by the v2
+> behavioral-distribution rewrite (see root [`PLAN.md`](../../PLAN.md) for the
+> current forward-looking plan and [`HELIOS_V2_PLAN.md`](../../HELIOS_V2_PLAN.md)
+> for how the rewrite happened). Kept for historical context only — do not
+> use this as a source of truth for the current tool surface or schema.
+
 **CRITICAL INSTRUCTION FOR CODING AI**: This is a UV-EXCLUSIVE project. NEVER use pip, python, or any other package manager. ONLY use uv commands. This is non-negotiable.
 
 This is a configuration management system for AI behaviors using weighted inheritance patterns. Base configurations provide foundation behaviors, specialized personas inherit with configurable weights.

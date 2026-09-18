@@ -1,5 +1,12 @@
 # Helios Implementation Plan
 
+> **Canonical forward-looking plan.** This is the current, live plan for
+> Helios. It supersedes [`HELIOS_V2_PLAN.md`](HELIOS_V2_PLAN.md) (the v2
+> behavioral-science rewrite it depended on is complete — that file is now
+> historical record) and `docs/planning/PLAN.md` / `docs/planning/PRD.md`
+> (the pre-v2 vision docs, also historical). Phases 1–3 below are complete;
+> Phase 4 (dogfooding) and Phase 5 (distribution) are the open work.
+
 **Created:** 2026-03-11
 **Branch:** helios-v2-behavioral-science
 **Starting point:** 5 MCP tools, 253 tests, ~3,900 lines, all passing

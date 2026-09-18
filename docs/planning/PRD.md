@@ -1,5 +1,13 @@
 # Helios MCP: The AI Behavior Solar System
 
+> **HISTORICAL — retained for record, 2026 (documentation pass).** This is
+> the original product-vision doc, written before the v2 behavioral-science
+> rewrite. It describes a weighted-scalar inheritance model and a tool set
+> (`get_base_config`, `search_patterns`, `commit_changes`, ...) that the
+> current code does not implement. See the root [`README.md`](../../README.md)
+> for what Helios actually is today and [`PLAN.md`](../../PLAN.md) for the
+> current forward-looking plan. Kept for historical context only.
+
 ## Vision
 
 Helios transforms AI agents from stateless tools into evolving personalities with persistent memory, learned behaviors, and user-specific adaptations. Like a hierarchical configuration system where specialized personas inherit from a base identity, AI behaviors inherit with configurable weights, maintaining their specialization while remaining connected to fundamental principles.
