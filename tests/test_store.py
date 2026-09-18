@@ -118,3 +118,16 @@ def test_decide_refuses_non_pending_and_unknown(tmp_path):
         store.decide("dev", p.id, "rejected")
     with pytest.raises(KeyError):
         store.decide("dev", "missing", "accepted")
+
+
+def test_key_index_survives_rows_written_behind_its_back(tmp_path):
+    store = ObservationStore(tmp_path)
+    store.append([obs("t1")])
+    # Another writer, or a crash between the ledger and index writes, leaves
+    # the index behind the ledger; the next append must still see every key.
+    with store.path("dev").open("a") as f:
+        f.write(obs("t2").to_json() + "\n")
+    assert store.append([obs("t2"), obs("t3")]) == 1
+    store.index_path("dev").write_text('[12, [["s1"')  # torn index line
+    assert store.append([obs("t1"), obs("t3")]) == 0
+    assert store.count("dev") == 3
