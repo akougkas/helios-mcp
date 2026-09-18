@@ -30,7 +30,7 @@ EXPECTED_HINTS = {
         "idempotentHint": False,
     },
     "get_drift_report": {
-        "readOnlyHint": True,
+        "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
     },

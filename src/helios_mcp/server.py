@@ -1,46 +1,36 @@
-"""Helios MCP Server — behavioral science tools for AI agents."""
+"""Helios MCP server: seven tools, each a thin layer over HeliosService.
+
+Every tool returns ``status`` plus either the service payload or ``message``.
+Result TypedDicts are total=False because the error branch carries only
+``status`` and ``message``.
+"""
 
 import logging
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from .security import (
-    sanitize_error_message,
-    validate_persona_name,
-)
+from .security import sanitize_error_message
+from .service import DimensionReport, HeliosService
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()],
-)
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Structured output shapes — one TypedDict per tool return payload.
-#
-# Tools whose bodies only ever return one key set use a total (all-required)
-# TypedDict. Tools with an error/short-circuit branch that returns a
-# different key set use total=False so every key that can genuinely appear
-# on any success/error path is modeled without inventing or renaming keys.
-# ---------------------------------------------------------------------------
+_PERSONA_HELP = (
+    "Persona name, e.g. 'developer'. Omit to use HELIOS_DIR/default_persona, "
+    "or 'default' when that is unset."
+)
 
 
-class ListPersonasResult(TypedDict):
-    """Return shape of list_personas — a single, unconditional success shape."""
-
+class ListPersonasResult(TypedDict, total=False):
     status: str
     personas: list[str]
+    message: str
 
 
 class GetBehavioralContextResult(TypedDict, total=False):
-    """Return shape of get_behavioral_context (success or error branch)."""
-
     status: str
     persona: str
     behavioral_context: str
@@ -50,66 +40,53 @@ class GetBehavioralContextResult(TypedDict, total=False):
 
 
 class ObserveInteractionResult(TypedDict, total=False):
-    """Return shape of observe_interaction (success or error branch)."""
-
     status: str
     persona: str
-    observation_count: int
-    current_drift: float
-    drift_threshold: float
+    observations_added: int
+    turns: int
     negotiation_recommended: bool
+    proposal_id: str | None
+    auto_accepted: list[str]
     message: str
 
 
 class GetDriftReportResult(TypedDict, total=False):
-    """Return shape of get_drift_report (success, no_data, or error branch)."""
-
     status: str
     persona: str
-    message: str
+    turns: int
+    negotiation_recommended: bool
+    proposal_id: str | None
     summary: str
     per_dimension: dict[str, str]
-    total_drift: float
-    exceeds_threshold: bool
-    proposed_at: str
+    endorsed: dict[str, DimensionReport]
+    fingerprint: dict[str, DimensionReport]
+    auto_accepted: list[str]
+    cooling_down: list[str]
+    message: str
 
 
 class NegotiateUpdateResult(TypedDict, total=False):
-    """Return shape of negotiate_update.
-
-    Covers all four branches: rejected (status/persona/reason), applied
-    (status/updated_dimensions/commit_message), unknown decision
-    (status/message), and the exception handler (status/message).
-    """
-
     status: str
     persona: str
-    reason: str
-    updated_dimensions: list[str]
-    commit_message: str
+    proposal_id: str
+    decision: str
+    dimensions: list[str]
+    commit: str | None
+    reason: str | None
     message: str
 
 
 class ImportProfileResult(TypedDict, total=False):
-    """Return shape of import_profile (success or error branch)."""
-
     status: str
     persona: str
     source: str
     saved_to: str
+    commit: str | None
     distributions: dict[str, dict[str, str | float]]
     message: str
 
 
 class ExportProfileResult(TypedDict, total=False):
-    """Return shape of export_profile.
-
-    Covers the soulspec branch (status/persona/format/content), the
-    yaml/json branch (status/persona/format/agent_id/level/dimensions,
-    spread from export_dimensions), and the exception handler
-    (status/message).
-    """
-
     status: str
     persona: str
     format: str
@@ -120,289 +97,157 @@ class ExportProfileResult(TypedDict, total=False):
     message: str
 
 
+def _error(tool: str, exc: Exception) -> Any:
+    logger.error("%s failed: %s", tool, exc)
+    return {"status": "error", "message": sanitize_error_message(exc)}
+
+
+def _ok(payload: Any) -> Any:
+    return {"status": "success", **payload}
+
+
 async def create_server(helios_dir: Path | None = None) -> FastMCP:
-    """Create the Helios MCP server with behavioral science tools.
-
-    Args:
-        helios_dir: Path to ~/.helios. Defaults to ~/.helios.
-
-    Returns:
-        Configured FastMCP server instance.
-    """
+    """Create the Helios MCP server over ``helios_dir`` (default ``~/.helios``)."""
     if helios_dir is None:
         helios_dir = Path.home() / ".helios"
-
     helios_dir.mkdir(parents=True, exist_ok=True)
-
+    service = HeliosService(helios_dir)
     mcp = FastMCP("Helios")
-
-    # ------------------------------------------------------------------
-    # Tool: list_personas
-    # ------------------------------------------------------------------
 
     @mcp.tool(
         description="List available persona names in the Helios directory",
         tags={"personas"},
         title="List Personas",
         annotations=ToolAnnotations(
-            title="List Personas",
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
+            title="List Personas", readOnlyHint=True, destructiveHint=False,
+            idempotentHint=True, openWorldHint=False,
         ),
     )
     async def list_personas(
         ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> ListPersonasResult:
-        """Return the names of all .yaml files under ~/.helios/personas/."""
-        personas_dir = helios_dir / "personas"
-        if not personas_dir.exists():
-            return {"status": "success", "personas": []}
-        names = sorted(p.stem for p in personas_dir.glob("*.yaml"))
-        return {"status": "success", "personas": names}
-
-    # ------------------------------------------------------------------
-    # Tool: get_behavioral_context
-    # ------------------------------------------------------------------
+        try:
+            return {"status": "success", "personas": service.list_personas()}
+        except Exception as e:
+            return cast(ListPersonasResult, _error("list_personas", e))
 
     @mcp.tool(
-        description="Get the full behavioral context for a persona as system "
-        "prompt text",
+        description="Get the behavioral context for a persona as system prompt text",
         tags={"behavioral", "context"},
         title="Get Behavioral Context",
         annotations=ToolAnnotations(
-            title="Get Behavioral Context",
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
+            title="Get Behavioral Context", readOnlyHint=True,
+            destructiveHint=False, idempotentHint=True,
         ),
     )
     async def get_behavioral_context(
-        persona_name: str = Field(description="Persona name (e.g. 'developer')"),
+        persona_name: str = Field(default="", description=_PERSONA_HELP),
         ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> GetBehavioralContextResult:
-        """Resolve the 4-level behavioral hierarchy and render as system prompt text."""
         try:
-            from .hierarchy import IdentityHierarchy
-            from .renderer import BehavioralRenderer
-
-            hierarchy = IdentityHierarchy(helios_dir)
-            profile = hierarchy.resolve(persona_name)
-            text = BehavioralRenderer().render(profile, persona_name)
-
-            return {
-                "status": "success",
-                "persona": persona_name,
-                "behavioral_context": text,
-                "observation_count": profile.observation_count,
-                "specialization_level": profile.specialization_level,
-            }
+            return cast(GetBehavioralContextResult,
+                        _ok(service.context(persona_name or None)))
         except Exception as e:
-            logger.error(f"get_behavioral_context failed: {e}")
-            return {"status": "error", "message": str(e)}
-
-    # ------------------------------------------------------------------
-    # Tool: observe_interaction
-    # ------------------------------------------------------------------
+            return cast(GetBehavioralContextResult,
+                        _error("get_behavioral_context", e))
 
     @mcp.tool(
-        description="Observe a conversation and update behavioral fingerprint "
-        "for a persona",
+        description="Record the agent turns in a conversation for a persona and "
+        "report whether a profile update is recommended",
         tags={"behavioral", "observation"},
         title="Observe Interaction",
         annotations=ToolAnnotations(
-            title="Observe Interaction",
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
+            title="Observe Interaction", readOnlyHint=False,
+            destructiveHint=False, idempotentHint=False,
         ),
     )
     async def observe_interaction(
-        persona_name: str = Field(description="Persona to observe for"),
         messages: list[dict[str, Any]] = Field(
             description="Conversation messages (role+content dicts)"
         ),
+        persona_name: str = Field(default="", description=_PERSONA_HELP),
+        session_id: str = Field(
+            default="",
+            description="Stable id for this conversation, so repeated calls "
+            "do not count the same turns twice",
+        ),
         ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> ObserveInteractionResult:
-        """Feed messages into the observation engine and check drift."""
         try:
-            from .drift import DriftDetector
-            from .hierarchy import IdentityHierarchy
-            from .observer import BehavioralObserver
-
-            observer = BehavioralObserver(helios_dir)
-            observer.observe(persona_name, messages)
-            count = observer.get_observation_count(persona_name)
-
-            hierarchy = IdentityHierarchy(helios_dir)
-            profile = hierarchy.resolve(persona_name)
-            observed_dists = observer.get_accumulated_distributions(persona_name)
-            detector = DriftDetector()
-            drift_result = detector.compute_drift(
-                profile.distributions, observed_dists, count
-            )
-
-            return {
-                "status": "success",
-                "persona": persona_name,
-                "observation_count": count,
-                "current_drift": round(drift_result.total_drift, 4),
-                "drift_threshold": DriftDetector.TOTAL_THRESHOLD,
-                "negotiation_recommended": detector.exceeds_threshold(drift_result),
-            }
+            return cast(ObserveInteractionResult, _ok(service.observe_messages(
+                persona_name or None, messages, session_id or None)))
         except Exception as e:
-            logger.error(f"observe_interaction failed: {e}")
-            return {"status": "error", "message": str(e)}
-
-    # ------------------------------------------------------------------
-    # Tool: get_drift_report
-    # ------------------------------------------------------------------
+            return cast(ObserveInteractionResult, _error("observe_interaction", e))
 
     @mcp.tool(
-        description="Get a natural language drift report — call when "
-        "negotiation_recommended is true",
+        description="Get the drift report for a persona: endorsed drift, "
+        "fingerprint diagnostics and the id of the pending proposal, if any. "
+        "Call when negotiation_recommended is true.",
         tags={"behavioral", "drift"},
         title="Get Drift Report",
         annotations=ToolAnnotations(
-            title="Get Drift Report",
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
+            # Persists the pending proposal so its id stays valid, which is a
+            # write, but never changes a profile; repeated calls on the same
+            # ledger return the same proposal.
+            title="Get Drift Report", readOnlyHint=False,
+            destructiveHint=False, idempotentHint=True,
         ),
     )
     async def get_drift_report(
-        persona_name: str = Field(description="Persona to report on"),
+        persona_name: str = Field(default="", description=_PERSONA_HELP),
         ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> GetDriftReportResult:
-        """Generate a human-readable behavioral drift summary with a proposal."""
         try:
-            from .drift import DriftDetector
-            from .hierarchy import IdentityHierarchy
-            from .negotiation import NegotiationEngine
-            from .observer import BehavioralObserver
-
-            hierarchy = IdentityHierarchy(helios_dir)
-            profile = hierarchy.resolve(persona_name)
-
-            observer = BehavioralObserver(helios_dir)
-            count = observer.get_observation_count(persona_name)
-            if count == 0:
-                return {
-                    "status": "no_data",
-                    "message": f"No observations for '{persona_name}'. "
-                    "Use observe_interaction first.",
-                }
-
-            observed_dists = observer.get_accumulated_distributions(persona_name)
-            detector = DriftDetector()
-            drift_result = detector.compute_drift(
-                profile.distributions, observed_dists, count
-            )
-
-            proposal = NegotiationEngine().generate_summary(
-                persona_name, profile, observed_dists, drift_result
-            )
-
-            return {
-                "status": "success",
-                "persona": persona_name,
-                "summary": proposal.summary,
-                "per_dimension": proposal.per_dimension_summary,
-                "total_drift": round(drift_result.total_drift, 4),
-                "exceeds_threshold": drift_result.exceeds_total_threshold,
-                "proposed_at": proposal.proposed_at,
-            }
+            return cast(GetDriftReportResult,
+                        _ok(service.drift_report(persona_name or None)))
         except Exception as e:
-            logger.error(f"get_drift_report failed: {e}")
-            return {"status": "error", "message": str(e)}
-
-    # ------------------------------------------------------------------
-    # Tool: negotiate_update
-    # ------------------------------------------------------------------
+            return cast(GetDriftReportResult, _error("get_drift_report", e))
 
     @mcp.tool(
-        description="Accept or reject a proposed behavioral update for a persona",
+        description="Accept or reject a proposal from get_drift_report. Accepted "
+        "changes update the persona's user profile and are git-committed; "
+        "rejections are recorded and pause proposals on those dimensions.",
         tags={"behavioral", "negotiation"},
         title="Negotiate Behavioral Update",
         annotations=ToolAnnotations(
-            title="Negotiate Behavioral Update",
-            readOnlyHint=False,
-            # On accept, this overwrites the persona's existing declared
-            # distributions in place (profile.save() replaces the YAML file
-            # and a git commit is made) — that is a destructive update to
-            # the previously declared behavioral state, not an additive one.
-            destructiveHint=True,
-            idempotentHint=False,
+            # Accept overwrites the persona's user-level distributions.
+            title="Negotiate Behavioral Update", readOnlyHint=False,
+            destructiveHint=True, idempotentHint=False,
         ),
     )
     async def negotiate_update(
-        persona_name: str = Field(description="Persona to update"),
+        proposal_id: str = Field(description="Proposal id from get_drift_report"),
         decision: str = Field(description="'accept' or 'reject'"),
-        reason: str = Field(default="", description="Optional reason for rejection"),
+        persona_name: str = Field(default="", description=_PERSONA_HELP),
+        reason: str = Field(default="", description="Why, for a rejection"),
         accepted_dimensions: list[str] | None = Field(
             default=None,
-            description="Specific dimensions to accept (None = accept all)",
+            description="Dimensions to decide on (default: all in the proposal)",
         ),
         ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> NegotiateUpdateResult:
-        """Apply or reject a behavioral evolution proposal. Accepted changes \
-are git-committed."""
         try:
-            from .drift import DriftDetector
-            from .hierarchy import IdentityHierarchy
-            from .negotiation import NegotiationEngine
-            from .observer import BehavioralObserver
-
-            engine = NegotiationEngine()
-
-            if decision.lower() == "reject":
-                rejected = engine.reject_update(
-                    persona_name, reason or "user rejected", helios_dir
-                )
-                # Widened explicitly rather than cast: negotiation.py states its
-                # exact return shape, while this tool's published schema is
-                # total=False across every branch, so the keys are mapped by hand
-                # to keep both sides type-checked.
-                return NegotiateUpdateResult(
-                    status=rejected["status"],
-                    persona=rejected["persona"],
-                    reason=rejected["reason"],
-                )
-
-            if decision.lower() == "accept":
-                hierarchy = IdentityHierarchy(helios_dir)
-                profile = hierarchy.resolve(persona_name)
-                observer = BehavioralObserver(helios_dir)
-                observed_dists = observer.get_accumulated_distributions(persona_name)
-                count = observer.get_observation_count(persona_name)
-                detector = DriftDetector()
-                drift_result = detector.compute_drift(
-                    profile.distributions, observed_dists, count
-                )
-                proposal = engine.generate_summary(
-                    persona_name, profile, observed_dists, drift_result
-                )
-                applied = engine.apply_update(
-                    persona_name, proposal, helios_dir, accepted_dimensions
-                )
-                return NegotiateUpdateResult(
-                    status=applied["status"],
-                    updated_dimensions=applied["updated_dimensions"],
-                    commit_message=applied["commit_message"],
-                )
-
+            choice = decision.strip().lower()
+            persona = persona_name or None
+            if choice == "accept":
+                report = service.accept(persona, proposal_id, accepted_dimensions)
+            elif choice == "reject":
+                report = service.reject(persona, proposal_id, reason,
+                                        accepted_dimensions)
+            else:
+                raise ValueError(
+                    f"unknown decision {decision!r}; use 'accept' or 'reject'")
             return {
-                "status": "error",
-                "message": f"Unknown decision '{decision}'. Use 'accept' or 'reject'.",
+                "status": "success",
+                "persona": report["persona"],
+                "proposal_id": report["proposal_id"],
+                "decision": report["status"],
+                "dimensions": report["dimensions"],
+                "commit": report["commit"],
+                "reason": report["reason"],
             }
         except Exception as e:
-            logger.error(f"negotiate_update failed: {e}")
-            return {"status": "error", "message": str(e)}
-
-    # ------------------------------------------------------------------
-    # Tool: import_profile
-    # ------------------------------------------------------------------
+            return cast(NegotiateUpdateResult, _error("negotiate_update", e))
 
     @mcp.tool(
         description="Import a personality file (CLAUDE.md, soul.md, etc.) into "
@@ -410,14 +255,10 @@ are git-committed."""
         tags={"behavioral", "import"},
         title="Import Profile",
         annotations=ToolAnnotations(
-            title="Import Profile",
-            readOnlyHint=False,
-            # profile.save() writes unconditionally (os.replace) with no
-            # existence check first, so importing with a persona_name (or a
-            # derived agent_id) that already has a persona file silently
-            # overwrites it.
-            destructiveHint=True,
-            idempotentHint=False,
+            # Overwrites an existing persona file of the same name; the
+            # previous version stays in HELIOS_DIR's git history.
+            title="Import Profile", readOnlyHint=False,
+            destructiveHint=True, idempotentHint=False,
         ),
     )
     async def import_profile(
@@ -428,46 +269,12 @@ are git-committed."""
         ),
         ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> ImportProfileResult:
-        """Parse a personality file and create a new Helios persona \
-with projected distributions."""
         try:
-            from .importer import import_from_markdown
-
             path = Path(source_path).expanduser().resolve()
-            profile = import_from_markdown(path)
-
-            if persona_name:
-                validate_persona_name(persona_name)
-                profile.agent_id = persona_name
-
-            # Save to personas directory
-            personas_dir = helios_dir / "personas"
-            personas_dir.mkdir(parents=True, exist_ok=True)
-            out_path = personas_dir / f"{profile.agent_id}.yaml"
-            profile.save(out_path)
-
-            # Return summary
-            summary: ImportProfileResult = {
-                "status": "success",
-                "persona": profile.agent_id,
-                "source": str(path),
-                "saved_to": str(out_path),
-                "distributions": {},
-            }
-            for dim, dist in profile.distributions.items():
-                summary["distributions"][dim] = {
-                    "dominant": dist.most_likely(),
-                    "entropy": round(dist.normalized_entropy(), 3),
-                }
-
-            return summary
+            return cast(ImportProfileResult,
+                        _ok(service.import_profile(path, persona_name or None)))
         except Exception as e:
-            logger.error(f"import_profile failed: {e}")
-            return {"status": "error", "message": sanitize_error_message(e)}
-
-    # ------------------------------------------------------------------
-    # Tool: export_profile
-    # ------------------------------------------------------------------
+            return cast(ImportProfileResult, _error("import_profile", e))
 
     @mcp.tool(
         description="Export a behavioral profile in various formats "
@@ -475,16 +282,12 @@ with projected distributions."""
         tags={"behavioral", "export"},
         title="Export Profile",
         annotations=ToolAnnotations(
-            title="Export Profile",
-            # Resolves the profile and serializes/returns it — no file or
-            # state is written anywhere in this function.
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
+            title="Export Profile", readOnlyHint=True,
+            destructiveHint=False, idempotentHint=True,
         ),
     )
     async def export_profile(
-        persona_name: str = Field(description="Persona to export"),
+        persona_name: str = Field(default="", description=_PERSONA_HELP),
         format: str = Field(  # noqa: A002 - published MCP export-format parameter name
             default="yaml", description="Export format: yaml, json, or soulspec"
         ),
@@ -494,38 +297,11 @@ with projected distributions."""
         ),
         ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> ExportProfileResult:
-        """Export a behavioral profile with optional dimension filtering."""
         try:
-            from .exporter import export_dimensions, export_soulspec
-            from .hierarchy import IdentityHierarchy
-
-            validate_persona_name(persona_name)
-            hierarchy = IdentityHierarchy(helios_dir)
-            profile = hierarchy.resolve(persona_name)
-
-            if format == "soulspec":
-                return {
-                    "status": "success",
-                    "persona": persona_name,
-                    "format": "soulspec",
-                    "content": export_soulspec(profile),
-                }
-
-            exported = export_dimensions(profile, dimensions)
-            # export_dimensions returns dict[str, Any]; mypy cannot verify a
-            # ** expansion into a TypedDict, so build the result explicitly.
-            # Keys/values are identical to the exported dict's own keys.
-            return {
-                "status": "success",
-                "persona": persona_name,
-                "format": format,
-                "agent_id": exported["agent_id"],
-                "level": exported["level"],
-                "dimensions": exported["dimensions"],
-            }
+            return cast(ExportProfileResult, _ok(service.export_profile(
+                persona_name or None, format, dimensions)))
         except Exception as e:
-            logger.error(f"export_profile failed: {e}")
-            return {"status": "error", "message": sanitize_error_message(e)}
+            return cast(ExportProfileResult, _error("export_profile", e))
 
-    logger.info(f"Helios MCP server created (config: {helios_dir})")
+    logger.info("Helios MCP server created (config: %s)", helios_dir)
     return mcp
