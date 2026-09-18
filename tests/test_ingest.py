@@ -52,6 +52,9 @@ def test_stop_ingest_is_idempotent_and_holds_back_the_open_turn(tmp_path: Path):
     assert all(r.correction_hint == {"communication_register": "terse"} for r in rows[:3])
     stamps = {parse_timestamp(rec["timestamp"]) for rec in b.records if rec.get("timestamp")}
     assert all(r.timestamp in stamps for r in rows)
+    for r in rows:
+        assert r.dim_confidence is not None
+        assert set(r.dim_confidence) == set(r.labels)
 
 
 def test_corrections_move_endorsed_register_toward_terse(tmp_path: Path):

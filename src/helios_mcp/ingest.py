@@ -46,6 +46,7 @@ def heuristic_observation(
         confidence=round(labels.overall_confidence, 4),
         endorsement=verdict.value,
         correction_hint=verdict.correction_hint,
+        dim_confidence=dict(labels.confidence) or None,
     )
 
 
