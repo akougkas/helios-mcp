@@ -23,7 +23,7 @@ MAX_PERSONA_WALK_DEPTH = 64  # bound the upward directory walk
 def validate_persona_name(name: str) -> str | None:
     """Return name if it passes the persona-name whitelist, else None.
 
-    Never raises — callers are hot-path hooks that must never block.
+    Never raises. Callers are hot-path hooks that must never block.
     """
     if not isinstance(name, str):
         return None

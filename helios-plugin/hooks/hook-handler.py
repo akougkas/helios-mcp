@@ -12,8 +12,8 @@ _persona.py agrees with the package's own validator.
 Exit code 0 always (observe-only, never block, never raise past main()).
 
 Privacy contract: never write prompt text, tool_input values, or
-tool_response content to disk. Only derived, bounded features — lengths,
-counts, and small closed-vocabulary categories — cross into HELIOS_DIR.
+tool_response content to disk. Only derived, bounded features cross
+into HELIOS_DIR: lengths, counts, and small closed-vocabulary categories.
 """
 
 import contextlib
@@ -31,7 +31,7 @@ from _persona import resolve_persona  # noqa: E402
 _INGEST_TRIGGER_EVENTS = ("stop", "session-end")
 # Stop runs heuristic-only ingest and blocks this script for up to this
 # long (Claude Code has no timeout cap on Stop hooks; default is 600s).
-# session-end doesn't use this — see _trigger_ingest.
+# session-end doesn't use this; see _trigger_ingest.
 _INGEST_TIMEOUT_SECONDS = 300
 
 _MAX_OBS_BYTES = 5_000_000
@@ -92,13 +92,13 @@ def _looks_denied(raw_json: dict[str, Any]) -> bool:
     """Best-effort permission-denial signal from explicit decision fields.
 
     A denial is the user or the permission system refusing to let a tool
-    run. It is distinct from the tool running and failing (that's
-    is_error below) — conflating the two would feed a failed pytest run
+    run. It is distinct from the tool running and failing, which is
+    is_error below; conflating the two would feed a failed pytest run
     into the same signal as a rejected proposal. Only inspects
     permission-decision-shaped fields; never retains the value itself,
     only the derived boolean. Transcript parsing (observe's ingest
-    pipeline) is the authoritative source for denials — this is a
-    lightweight corroborating signal only.
+    pipeline) is the authoritative source for denials. This is only a
+    lightweight corroborating signal.
     """
     for key in ("permission_decision", "decision"):
         value = raw_json.get(key)
@@ -194,13 +194,13 @@ def _trigger_ingest(
     Runs via `uvx --from ${HELIOS_SOURCE:-helios-mcp}` so a local checkout
     works during development and a published PyPI release works later
     (see .mcp.json). Only fires when there is an actual transcript file to
-    ingest — this also keeps hook-handler.py's own tests fast, since none
+    ingest. That also keeps hook-handler.py's own tests fast, since none
     of them point transcript_path at a real file.
 
     Stop runs heuristic-only ingest and is fast, so it blocks this script
     (which Claude Code already treats as async at the hook level) with a
     bounded wait. session-end passes --final, which additionally runs the
-    Haiku batch labeler over the whole session — observed at 25-55s
+    Haiku batch labeler over the whole session, observed at 25-55s
     against ingest's own 180s internal timeout, well past what a
     SessionEnd hook is allowed to block for (Claude Code caps SessionEnd
     hooks at 60s regardless of configuration). So --final is launched
