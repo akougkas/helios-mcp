@@ -27,6 +27,7 @@ from typing import Any, Protocol
 
 import yaml
 
+from .endorsement import follow_texts
 from .taxonomy import (
     DIMENSION_DESCRIPTIONS,
     STATE_LABELS,
@@ -50,6 +51,8 @@ _NEXT_CHARS = 500
 _MAX_TOOLS_LISTED = 12
 _OFF_VALUES = {"0", "false", "no", "off"}
 _TRAILING_INT = re.compile(r"(\d+)\s*$")
+_APPROVAL_GRADE = 0.75
+_MOVED_ON_GRADE = 0.5
 
 
 class LLMClient(Protocol):
@@ -204,10 +207,36 @@ def _hint_schema() -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
-            d: {"type": "string", "enum": list_states(d)} for d in list_dimensions()
+            d: {
+                "type": "object",
+                "properties": {
+                    "state": {"type": "string", "enum": list_states(d)},
+                    "quote": {"type": "string"},
+                },
+                "required": ["state", "quote"],
+                "additionalProperties": False,
+            }
+            for d in list_dimensions()
         },
         "additionalProperties": False,
     }
+
+
+_QUOTE_TRIM = " \t\n\"'`.,;:!?()[]"
+# A shorter quote ("ok", "no") matches almost any reply and grounds nothing.
+_MIN_QUOTE = 4
+
+
+def _norm(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def grounded(quote: Any, texts: Sequence[str]) -> bool:
+    """Whether ``quote`` appears verbatim, up to case and spacing, in ``texts``."""
+    if not isinstance(quote, str):
+        return False
+    q = _norm(quote).strip(_QUOTE_TRIM)
+    return len(q) >= _MIN_QUOTE and any(q in _norm(t) for t in texts)
 
 
 # ---------------------------------------------------------------------------
@@ -234,9 +263,11 @@ For every turn produce:
    something the agent said or did; otherwise pushback is null.
 2. confidence in [0, 1]: how much evidence the turn carries overall.
 3. endorsement in [-1, 1], judged only from what the user did next:
-   1 explicit approval, wherever it sits in the reply: "thanks", "perfect",
-   "good catch", "your fix is accepted", "agreed, go ahead", even when the
-   same message goes on to the next task; 0.5 the user moved on without
+   1 explicit approval of the turn, wherever it sits in the reply: "thanks",
+   "perfect", "good catch", "your fix is accepted", "agreed, go ahead", even
+   when the same message goes on to the next task. Put the approving words,
+   copied exactly, in approval_quote. A reply that just gives the next task
+   is not approval, however polite; 0.5 the user moved on without
    praising or objecting; 0 no human
    response or a response unrelated to the agent's behavior; -0.5 the outcome
    was wrong but not the behavior; -1 correction, frustration, interrupt or
@@ -265,7 +296,11 @@ For every turn produce:
    Directives for the next step are not hints: "stand down", "is it done?",
    "fix exactly those four tests", "reply 'done'", "reply in one line" for a
    single report, scope rules, and requests about the product being built.
+   For each hint give the state and the quote: the user's exact words that
+   ask for it, copied verbatim from what they said after the turn. If you
+   cannot quote words about how the agent works or talks, there is no hint.
    Most turns have no hint; use an empty object when in doubt.
+5. approval_quote: the approving words for an endorsement of 1, else null.
 
 Dimensions and states:
 {taxonomy}
@@ -281,6 +316,7 @@ def _label_schema() -> dict[str, Any]:
         "anyOf": [{"type": "number", "minimum": -1, "maximum": 1}, {"type": "null"}]
     }
     turn_props["correction_hint"] = _hint_schema()
+    turn_props["approval_quote"] = {"anyOf": [{"type": "string"}, {"type": "null"}]}
     return {
         "type": "object",
         "properties": {
@@ -379,7 +415,9 @@ def batches(
     return out
 
 
-def _parse_turn(item: Any) -> tuple[int, LLMTurnLabel] | None:
+def _parse_turn(
+    item: Any, turns: Sequence[AgentTurn]
+) -> tuple[int, LLMTurnLabel] | None:
     if not isinstance(item, dict):
         return None
     # Models echo the id as "3", 3 or "turn 3"; the trailing integer is the id.
@@ -387,6 +425,9 @@ def _parse_turn(item: Any) -> tuple[int, LLMTurnLabel] | None:
     if match is None:
         return None
     index = int(match.group(1))
+    if not 0 <= index < len(turns):
+        return None
+    said = follow_texts(turns[index])
     labels: dict[str, dict[str, float]] = {}
     for dim in list_dimensions():
         label = normalize_label(dim, item.get(dim))
@@ -402,12 +443,19 @@ def _parse_turn(item: Any) -> tuple[int, LLMTurnLabel] | None:
         if isinstance(end, int | float) and not isinstance(end, bool)
         else None
     )
+    # Hints and approvals must quote the user. Unquoted ones were mostly task
+    # directives read as style requests, and they drive the endorsed posterior.
+    if (endorsement is not None and endorsement >= _APPROVAL_GRADE
+            and not grounded(item.get("approval_quote"), said)):
+        endorsement = _MOVED_ON_GRADE
     raw_hint = item.get("correction_hint")
-    hint = {
-        d: s
-        for d, s in (raw_hint.items() if isinstance(raw_hint, dict) else [])
-        if d in list_dimensions() and s in list_states(d)
-    }
+    hint: dict[str, str] = {}
+    for d, h in raw_hint.items() if isinstance(raw_hint, dict) else []:
+        if not isinstance(h, dict) or d not in list_dimensions():
+            continue
+        state = h.get("state")
+        if state in list_states(d) and grounded(h.get("quote"), said):
+            hint[d] = state
     return index, LLMTurnLabel(labels, confidence, endorsement, hint or None)
 
 
@@ -429,7 +477,7 @@ def label_session(
             continue
         wanted = set(batch)
         for item in data["turns"]:
-            parsed = _parse_turn(item)
+            parsed = _parse_turn(item, turns)
             if parsed is None or parsed[0] not in wanted:
                 continue
             index, label = parsed

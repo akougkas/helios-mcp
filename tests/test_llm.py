@@ -109,7 +109,8 @@ def test_label_session_validates_and_keys_by_turn_id():
         {"id": "turn 0", "epistemic_style": {"confident": 3, "hedging": 1, "admits_ignorance": 0, "speculating": 0},
          "interaction_agency": None, "communication_register": None, "risk_caution": None,
          "confidence": 1.7, "endorsement": -1,
-         "correction_hint": {"communication_register": "terse", "risk_caution": "bogus"}},
+         "correction_hint": {"communication_register": {"state": "terse", "quote": "Too long"},
+                             "risk_caution": {"state": "bogus", "quote": "be terse"}}},
         {"id": "1", "epistemic_style": {"confident": "high"}, "interaction_agency": None,
          "communication_register": None, "risk_caution": None,
          "confidence": 0.4, "endorsement": None, "correction_hint": {}},
@@ -124,6 +125,34 @@ def test_label_session_validates_and_keys_by_turn_id():
     assert first.endorsement == -1.0
     assert first.correction_hint == {"communication_register": "terse"}
     assert "too long, be terse" in client.prompts[0]
+
+
+def test_hints_and_approvals_must_quote_the_user():
+    turns = _session()
+    hint = {"interaction_agency": {"state": "asks_first", "quote": "check with me first"},
+            "communication_register": {"state": "terse", "quote": "be   TERSE."}}
+    reply = {"turns": [
+        {"id": "0", "confidence": 1, "endorsement": 1, "approval_quote": "perfect, thanks",
+         "correction_hint": hint},
+        {"id": "1", "confidence": 1, "endorsement": 1, "approval_quote": None,
+         "correction_hint": {}},
+    ]}
+    b = TranscriptBuilder()
+    b.prompt("fix it")
+    b.say("Fixed the loop bound.")
+    b.prompt("Perfect, thanks. Now the docs")
+    b.say("Docs updated.")
+    b.prompt("update the changelog")
+    b.say("Done.")
+    approved = parse_records(b.records).turns
+    out = label_session(turns, FakeClient([reply]))
+    # Only the quote found in the user's reply survives, and "perfect, thanks"
+    # was never said after turn 0, so its approval falls back to moving on.
+    assert out[turns[0].turn_id].correction_hint == {"communication_register": "terse"}
+    assert out[turns[0].turn_id].endorsement == 0.5
+    out = label_session(approved, FakeClient([reply]))
+    assert out[approved[0].turn_id].endorsement == 1.0
+    assert out[approved[1].turn_id].endorsement == 0.5
 
 
 def test_failed_call_labels_nothing():

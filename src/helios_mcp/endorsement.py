@@ -255,16 +255,21 @@ def opener_hints(turn: AgentTurn) -> dict[str, str]:
     return {}
 
 
-def judge_turn(turn: AgentTurn) -> Endorsement:
-    """Endorsement for one agent turn from everything the user did after it."""
-    follow_texts = [s.text for s in turn.steers]
-    follow_texts += [c.denial_feedback for c in turn.denials if c.denial_feedback]
+def follow_texts(turn: AgentTurn) -> list[str]:
+    """What the user said after the turn: interjections, denial feedback, reply."""
+    texts = [s.text for s in turn.steers]
+    texts += [c.denial_feedback for c in turn.denials if c.denial_feedback]
     nxt = turn.next_input
     if nxt is not None and nxt.kind == "prompt":
-        follow_texts.append(nxt.text)
+        texts.append(nxt.text)
+    return texts
 
+
+def judge_turn(turn: AgentTurn) -> Endorsement:
+    """Endorsement for one agent turn from everything the user did after it."""
+    nxt = turn.next_input
     hints: dict[str, str] = {}
-    for t in follow_texts:
+    for t in follow_texts(turn):
         for dim, state in hints_from_text(t[:600])[0].items():
             hints.setdefault(dim, state)
     for dim, state in opener_hints(turn).items():
