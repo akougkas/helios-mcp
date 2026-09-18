@@ -147,4 +147,6 @@ class IdentityHierarchy:
             last_negotiation=child.last_negotiation,
             created=child.created,
             schema_version=child.schema_version,
+            declared_dimensions=tuple(dict.fromkeys(
+                (*parent.declared_dimensions, *child.declared_dimensions))),
         )

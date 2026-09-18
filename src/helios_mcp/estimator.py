@@ -46,7 +46,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
@@ -175,7 +175,8 @@ class _Tally:
     endorsed_turns: int = 0
 
     def add(self, turns: Iterable[_Turn], marks: Mapping[str, int],
-            config: DriftConfig, llm_labels: bool) -> None:
+            config: DriftConfig, llm_labels: bool,
+            explicit_only: Collection[str] = ()) -> None:
         def weight(obs: TurnObservation, dim: str) -> float:
             return float(obs.confidence_for(dim) ** config.confidence_exponent)
 
@@ -212,7 +213,13 @@ class _Tally:
                     if dim in live:
                         _add(endorsed, dim, {state: 1.0}, config.standing_hint_weight)
                 grade = grade_weight(obs.endorsement, config)
+                approved = (obs.endorsement is not None
+                            and obs.endorsement >= _APPROVED)
                 for dim in (live & obs.labels.keys()) - hints.keys():
+                    if dim in explicit_only and not approved:
+                        # The user declared this dimension, so a turn they
+                        # merely moved on from says nothing new about it.
+                        continue
                     _add(endorsed, dim, obs.labels[dim], grade * weight(obs, dim))
                 continue
 
@@ -253,8 +260,13 @@ def estimate(
     proposals: Iterable[Proposal] = (),
     config: DriftConfig = DEFAULT_CONFIG,
     llm_labels: bool = False,
+    explicit_only: Collection[str] = (),
 ) -> Evidence:
     """Fingerprint and endorsed counts.
+
+    On ``explicit_only`` dimensions, the ones a declared artifact set, an
+    uncorrected turn counts toward endorsed only when the user approved it;
+    corrections, hints and rejections count as everywhere else.
 
     With ``llm_labels``, only turns that have a model label count toward the
     endorsed posterior, positioned at that label's ledger row; heuristic-only
@@ -266,7 +278,7 @@ def estimate(
     marks = accept_watermarks(proposals)
     turns, rows = select_turns(observations)
     tally = _Tally()
-    tally.add(turns, marks, config, llm_labels)
+    tally.add(turns, marks, config, llm_labels, explicit_only)
     return tally.evidence(rows, proposals, marks, config)
 
 
@@ -305,12 +317,14 @@ def estimate_ledger(
     proposals: Iterable[Proposal] = (),
     config: DriftConfig = DEFAULT_CONFIG,
     llm_labels: bool = False,
+    explicit_only: Collection[str] = (),
 ) -> Evidence:
     """``estimate`` over the persona's ledger, extending a saved checkpoint."""
     proposals = list(proposals)
     marks = accept_watermarks(proposals)
+    explicit = sorted(set(explicit_only))
     stamp = {"version": _CHECKPOINT_VERSION, "config": asdict(config),
-             "llm_labels": llm_labels, "marks": marks}
+             "llm_labels": llm_labels, "marks": marks, "explicit_only": explicit}
     data = _load_checkpoint(store, persona, stamp)
     if data is not None:
         start, rows = data["offset"], data["rows"]
@@ -329,10 +343,11 @@ def estimate_ledger(
     if data is not None and any(o.turn_key in seen for o in new):
         # A new row for a turn already counted can change that turn's label,
         # model or position, which an append-only tally cannot express.
-        return _rebuild(store, persona, proposals, marks, config, llm_labels, stamp)
+        return _rebuild(store, persona, proposals, marks, config, llm_labels,
+                        explicit, stamp)
 
     turns, rows = select_turns(new, rows)
-    tally.add(turns, marks, config, llm_labels)
+    tally.add(turns, marks, config, llm_labels, explicit)
     if offset != start:
         seen.update(t.obs.turn_key for t in turns)
         _save_checkpoint(store, persona, stamp, offset, rows, seen, tally)
@@ -341,7 +356,7 @@ def estimate_ledger(
 
 def _rebuild(store: ObservationStore, persona: str, proposals: list[Proposal],
              marks: dict[str, int], config: DriftConfig, llm_labels: bool,
-             stamp: dict[str, Any]) -> Evidence:
+             explicit_only: list[str], stamp: dict[str, Any]) -> Evidence:
     offset = 0
     rows: list[TurnObservation] = []
     for _, end, obs in store.scan(persona):
@@ -350,7 +365,7 @@ def _rebuild(store: ObservationStore, persona: str, proposals: list[Proposal],
             rows.append(obs)
     turns, count = select_turns(rows)
     tally = _Tally()
-    tally.add(turns, marks, config, llm_labels)
+    tally.add(turns, marks, config, llm_labels, explicit_only)
     if offset:
         seen = {t.obs.turn_key for t in turns}
         _save_checkpoint(store, persona, stamp, offset, count, seen, tally)

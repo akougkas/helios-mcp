@@ -64,6 +64,7 @@ class GetDriftReportResult(TypedDict, total=False):
     fingerprint: dict[str, DimensionReport]
     auto_accepted: list[str]
     cooling_down: list[str]
+    explicit_only: list[str]
     message: str
 
 

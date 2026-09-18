@@ -88,6 +88,22 @@ def test_onboard_rerun_keeps_accepted_dimensions(tmp_path, monkeypatch):
     assert after[dim]["terse"] > 0.5
 
 
+def test_onboard_marks_the_dimensions_its_text_addressed(tmp_path, monkeypatch):
+    monkeypatch.setenv("HELIOS_LLM", "0")
+    helios_dir = tmp_path / ".helios"
+    result = onboard(HeliosService(helios_dir), home=_home(tmp_path))
+    declared = result["declared_dimensions"]
+    assert "communication_register" in declared
+    assert "sycophancy" not in declared  # the text says nothing about it
+
+    status = CliRunner().invoke(main, ["--helios-dir", str(helios_dir), "status"])
+    block = status.output.split("\ndeveloper:")[1].split("\n\n")[0]
+    lines = {line.split()[0]: line for line in block.splitlines()
+             if line.startswith("  ")}
+    assert "explicit signals only" in lines["communication_register"]
+    assert "explicit signals only" not in lines["sycophancy"]
+
+
 def test_onboard_includes_active_output_style(tmp_path):
     import json
 

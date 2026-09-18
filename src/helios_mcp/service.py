@@ -49,6 +49,7 @@ class DriftReport(TypedDict):
     fingerprint: dict[str, DimensionReport]
     auto_accepted: list[str]
     cooling_down: list[str]
+    explicit_only: list[str]
 
 
 class ObserveReport(TypedDict):
@@ -225,6 +226,7 @@ class HeliosService:
             "fingerprint": _dimension_reports(evaluation.fingerprint),
             "auto_accepted": evaluation.auto_accepted,
             "cooling_down": evaluation.cooling_down,
+            "explicit_only": list(self.negotiator.explicit_only(persona)),
         }
 
     def accept(self, name: str | None, proposal_id: str,
@@ -252,6 +254,7 @@ class HeliosService:
                                        helios_dir=self.helios_dir)
         persona = validate_persona_name(name or profile.agent_id)
         profile.agent_id = persona
+        profile.declared_dimensions = profile.projected_dimensions()
         out = persona_path(self.helios_dir / "personas", persona, ".yaml")
         profile.save(out)
         commit = git_commit(self.helios_dir, [out],

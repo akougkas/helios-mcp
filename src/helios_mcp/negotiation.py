@@ -82,9 +82,15 @@ class Negotiator:
         profile = self.hierarchy.resolve(persona, include_session=False)
         return {dim: d.to_dict() for dim, d in profile.distributions.items()}
 
+    def explicit_only(self, persona: str) -> tuple[str, ...]:
+        """Dimensions a declared artifact set, moved only by explicit signals."""
+        return self.hierarchy.resolve(
+            persona, include_session=False).declared_dimensions
+
     def evidence(self, persona: str) -> Evidence:
         return estimate_ledger(self.ledger, persona, self.proposals.all(persona),
-                               self.config, llm_labels=llm_enabled(self.helios_dir))
+                               self.config, llm_labels=llm_enabled(self.helios_dir),
+                               explicit_only=self.explicit_only(persona))
 
     def assess(self, persona: str) -> tuple[DriftAssessment, DriftAssessment, Evidence]:
         """Endorsed and fingerprint assessments with the evidence behind them."""

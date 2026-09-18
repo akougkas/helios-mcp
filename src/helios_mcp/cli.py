@@ -97,10 +97,13 @@ def status_command(helios_dir: Path | None) -> None:
         for dim, r in report["endorsed"].items():
             declared, observed = r["dominant_declared"], r["dominant_observed"]
             tier = f", {r['tier']}" if r["tier"] else ""
+            explicit = ("  declared: explicit signals only"
+                        if dim in report["explicit_only"] else "")
             click.echo(
                 f"  {dim:<24} declared {declared} {r['declared'][declared]:.2f} "
                 f"-> observed {observed} {r['posterior_mean'][observed]:.2f}  "
                 f"(JS {r['divergence']:.4f}, credible {r['credibility']:.0%}{tier})"
+                + explicit
             )
 
 

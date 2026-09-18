@@ -54,12 +54,14 @@ def onboard(service: HeliosService, persona: str | None = None,
     path = persona_path(service.helios_dir / "personas", target, "_user.yaml")
     with helios_lock(service.helios_dir):
         distributions = dict(imported.distributions)
+        declared = set(imported.projected_dimensions())
         kept: list[str] = []
         if path.exists():
-            previous = BehavioralProfile.load(path).distributions
+            previous = BehavioralProfile.load(path)
             accepted = accept_watermarks(service.negotiator.proposals.all(target))
-            kept = sorted(d for d in accepted if d in previous)
-            distributions.update({d: previous[d] for d in kept})
+            kept = sorted(d for d in accepted if d in previous.distributions)
+            distributions.update({d: previous.distributions[d] for d in kept})
+            declared |= set(kept) & set(previous.declared_dimensions)
         user = BehavioralProfile(
             agent_id=f"{target}_user",
             level="user",
@@ -68,6 +70,7 @@ def onboard(service: HeliosService, persona: str | None = None,
             specialization_level=3,
             inherit_weight=0.0,
             description=imported.description,
+            declared_dimensions=tuple(d for d in distributions if d in declared),
         )
         user.save(path)
         commit = git_commit(service.helios_dir, [path],
@@ -85,6 +88,7 @@ def onboard(service: HeliosService, persona: str | None = None,
         "rendered_to": str(rendered),
         "commit": commit,
         "kept_accepted": kept,
+        "declared_dimensions": list(user.declared_dimensions),
         "distributions": {
             dim: {"dominant": d.most_likely(),
                   "entropy": round(d.normalized_entropy(), 3)}
