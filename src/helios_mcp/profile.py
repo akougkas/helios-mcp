@@ -29,7 +29,9 @@ class BehavioralProfile:
     through from its parent unchanged. ``inherit_weight``, when set, replaces
     the ``base_importance / specialization_level**2`` formula for this level's
     blend with its parent; ``0.0`` makes the level authoritative for every
-    dimension it declares.
+    dimension it declares. ``declared_dimensions`` names the dimensions a
+    declared artifact (CLAUDE.md, an output style) set at this level; only
+    explicit signals move the endorsed estimate on those.
     """
 
     agent_id: str
@@ -44,6 +46,7 @@ class BehavioralProfile:
     created: str = field(default_factory=lambda: datetime.date.today().isoformat())
     schema_version: str = SCHEMA_VERSION
     inherit_weight: float | None = None
+    declared_dimensions: tuple[str, ...] = ()
 
     @classmethod
     def default_species(cls) -> BehavioralProfile:
@@ -72,6 +75,8 @@ class BehavioralProfile:
             d["last_negotiation"] = self.last_negotiation
         if self.inherit_weight is not None:
             d["inherit_weight"] = self.inherit_weight
+        if self.declared_dimensions:
+            d["declared_dimensions"] = list(self.declared_dimensions)
         return d
 
     @classmethod
@@ -84,6 +89,7 @@ class BehavioralProfile:
             if dim in raw_dists
         }
         weight = data.get("inherit_weight")
+        declared = data.get("declared_dimensions") or []
         return cls(
             agent_id=data.get("agent_id", "unknown"),
             level=data.get("level", "domain"),
@@ -97,6 +103,7 @@ class BehavioralProfile:
             created=data.get("created", datetime.date.today().isoformat()),
             schema_version=data.get("schema_version", SCHEMA_VERSION),
             inherit_weight=None if weight is None else float(weight),
+            declared_dimensions=tuple(d for d in list_dimensions() if d in declared),
         )
 
     @classmethod
@@ -130,3 +137,16 @@ class BehavioralProfile:
                 dim, dict(zip(dist.states, lifted, strict=True))
             )
         atomic_write_yaml(path, self.to_yaml_dict())
+
+    def projected_dimensions(self) -> tuple[str, ...]:
+        """The dimensions an imported profile took from its text.
+
+        The importer fills a dimension the text did not address with the
+        species default, so any other value came from the text. An importer
+        that records coverage itself sets ``declared_dimensions`` instead.
+        """
+        if self.declared_dimensions:
+            return self.declared_dimensions
+        species = self.default_species().distributions
+        return tuple(d for d, dist in self.distributions.items()
+                     if dist.to_dict() != species[d].to_dict())

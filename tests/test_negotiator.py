@@ -209,3 +209,34 @@ def test_a_shift_under_a_held_lead_names_the_state_that_gained():
     text = _shift(r)
     assert text.startswith("'light_structure' has grown from 10%")
     assert "prefer 'prose'" not in text
+
+
+def declare(helios, dims, persona="developer"):
+    from helios_mcp.profile import BehavioralProfile
+
+    user = BehavioralProfile(agent_id=f"{persona}_user", level="user",
+                             distributions={}, parent_id=persona,
+                             specialization_level=3, declared_dimensions=dims)
+    user.save(helios / "personas" / f"{persona}_user.yaml")
+
+
+def test_a_declared_dimension_moves_only_on_explicit_signals(helios):
+    declare(helios, (DIM,))
+    neg = Negotiator(helios)
+    feed(helios, TERSE, 200, endorsement=0.5)  # moved on, never approved
+    passive = neg.evaluate("developer")
+    assert passive.proposal is None and not passive.auto_accepted
+    assert DIM not in passive.evidence.endorsed
+    assert passive.evidence.fingerprint[DIM]["terse"] == pytest.approx(160.0)
+
+    feed(helios, TERSE, 10, start=200, endorsement=-1.0,
+         correction_hint={DIM: "terse"})
+    explicit = neg.evaluate("developer")
+    assert explicit.proposal is not None and DIM in explicit.proposal.changes
+
+
+def test_approved_turns_still_count_on_a_declared_dimension(helios):
+    declare(helios, (DIM,))
+    feed(helios, TERSE, 5, endorsement=1.0)
+    evidence = Negotiator(helios).evidence("developer")
+    assert evidence.endorsed[DIM]["terse"] == pytest.approx(4.0)

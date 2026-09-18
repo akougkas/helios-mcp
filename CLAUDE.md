@@ -107,6 +107,7 @@ All live in `drift.DriftConfig`. Drift runs on the `endorsed` posterior only. Wi
 - Tiers over 1000 seeded samples of P(JS(sample, declared) > 0.0125): a suggestion at >= 0.8, a strong proposal at >= 0.95
 - Auto-accept (silent): P(JS < 0.0125) >= 0.9 and JS(mean, declared) >= 0.004
 - Standing preference (hint on an uncorrected turn): weight 1.0 toward the hinted state
+- Declared dimensions (the ones `init`/`import` took from CLAUDE.md or the output style, recorded as `declared_dimensions` on the profile): uncorrected turns count toward endorsed only when explicitly approved; corrections, hints, standing preferences and rejections count as elsewhere, and the fingerprint is unaffected
 - Unhinted correction: 0.25 weight spread over the complement of the label
 - Rejection: 10 pseudo-counts toward the declared profile, 3-day cooldown per dimension
 - Probability floor on disk and in priors: 0.005
