@@ -225,7 +225,12 @@ For every turn produce:
    for a dimension the turn says nothing about. Spread mass when uncertain;
    put more than 0.8 on one state only for unambiguous evidence.
    Judge structure, narration and sycophancy from the prose the agent wrote,
-   not from tool calls. Label pushback only when the turn's input disputed
+   not from tool calls. Inline code, paths and bold words inside sentences are
+   not structure; plain paragraphs are prose. A closing report of what changed
+   and how it was verified is not a recap; a recap restates what the turn
+   already said, like a summary section. Label sycophancy only when the turn
+   praises or validates the user, or had something to dispute or flag;
+   otherwise it is null. Label pushback only when the turn's input disputed
    something the agent said or did; otherwise pushback is null.
 2. confidence in [0, 1]: how much evidence the turn carries overall.
 3. endorsement in [-1, 1], judged only from what the user did next:
