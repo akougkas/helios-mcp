@@ -67,6 +67,7 @@ class TurnObservation:
     endorsement: float | None = None
     correction_hint: dict[str, str] | None = None
     dim_confidence: dict[str, float] | None = None
+    model: str | None = None  # model id that produced the turn, when known
 
     def __post_init__(self) -> None:
         validate_persona_name(self.persona)
@@ -116,6 +117,7 @@ class TurnObservation:
             endorsement=data.get("endorsement"),
             correction_hint=data.get("correction_hint"),
             dim_confidence=data.get("dim_confidence"),
+            model=data.get("model") or None,
         )
 
 

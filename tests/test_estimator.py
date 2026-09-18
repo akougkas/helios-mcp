@@ -58,6 +58,15 @@ def test_unhinted_correction_moves_down_weighted_mass_away_from_labeled_state():
                         DEFAULT_CONFIG.unhinted_correction_weight)
 
 
+def test_fingerprint_is_split_by_model_and_a_relabel_keeps_the_model():
+    ev = estimate([turn("t1", model="m-a"), turn("t1", "llm", TERSE),
+                   turn("t2", model="m-b"), turn("t3")], config=LINEAR)
+    assert ev.model_turns == {"m-a": 1, "m-b": 1}
+    # t1's llm row carries no model; the turn keeps the one its heuristic row saw.
+    assert ev.fingerprint_by_model["m-a"] == {DIM: {"terse": 1.0}}
+    assert ev.fingerprint_by_model["m-b"] == {DIM: {"thorough": 1.0}}
+
+
 def test_confidence_exponent_softens_the_confidence_discount():
     obs = [turn("t1", confidence=0.25)]
     assert estimate(obs, config=LINEAR).endorsed[DIM]["thorough"] == 0.25
