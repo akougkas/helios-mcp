@@ -134,6 +134,16 @@ def test_import_validates_the_persona_before_reading_the_source(tmp_path):
         service.import_profile(tmp_path / "missing.md", "../escape")
 
 
+def test_cli_status_shows_the_observed_posterior_next_to_the_declared(tmp_path):
+    HeliosService(tmp_path).record(terse_turns(60), "developer")
+    result = CliRunner().invoke(main, ["--helios-dir", str(tmp_path), "status"])
+    assert result.exit_code == 0, result.output
+    line = next(ln for ln in result.output.splitlines() if DIM in ln)
+    assert "declared moderate" in line
+    assert "-> observed terse" in line
+    assert "strong" in line
+
+
 def test_cli_negotiate_accepts_pending_proposal(tmp_path):
     HeliosService(tmp_path).record(terse_turns(60), "developer")
     runner = CliRunner()

@@ -95,10 +95,12 @@ def status_command(helios_dir: Path | None) -> None:
                    if report["proposal_id"] else "none")
         click.echo(f"\n{persona}: {report['turns']} turns, pending proposal: {pending}")
         for dim, r in report["endorsed"].items():
+            declared, observed = r["dominant_declared"], r["dominant_observed"]
+            tier = f", {r['tier']}" if r["tier"] else ""
             click.echo(
-                f"  {dim:<24} {r['dominant_declared']} "
-                f"({r['declared'][r['dominant_declared']]:.2f})  "
-                f"JS {r['divergence']:.4f}  credible {r['credibility']:.0%}"
+                f"  {dim:<24} declared {declared} {r['declared'][declared]:.2f} "
+                f"-> observed {observed} {r['posterior_mean'][observed]:.2f}  "
+                f"(JS {r['divergence']:.4f}, credible {r['credibility']:.0%}{tier})"
             )
 
 
