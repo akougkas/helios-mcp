@@ -19,3 +19,5 @@ def temp_helios_dir():
 def _no_model_calls(monkeypatch):
     """Tests never spawn the model CLI; tests that exercise it inject a fake client."""
     monkeypatch.setenv("HELIOS_LLM", "0")
+    # A lab shell's trust setting must not leak into provenance tests.
+    monkeypatch.delenv("HELIOS_TRUST_HEADLESS", raising=False)

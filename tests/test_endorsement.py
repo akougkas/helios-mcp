@@ -144,6 +144,26 @@ def test_hints_for_undefined_dimensions_are_dropped(monkeypatch):
     )
 
 
+def test_trust_headless_lifts_only_the_headless_signal(monkeypatch):
+    def kind(**provenance):
+        b = TranscriptBuilder()
+        b.prompt("refactor the parser", **provenance)
+        b.say("Here is a long walkthrough of every change.")
+        b.prompt("no, that's wrong. too verbose, be brief", **provenance)
+        return judge_turn(parse_records(b.records).turns[0]).kind
+
+    headless = {"entrypoint": "sdk-cli", "promptSource": "sdk"}
+    monkeypatch.delenv("HELIOS_TRUST_HEADLESS", raising=False)
+    assert kind(**headless) == "neutral"
+    monkeypatch.setenv("HELIOS_TRUST_HEADLESS", "1")
+    assert kind(**headless) == "corrected"
+    for provenance in ({"origin": {"kind": "coordinator"}},
+                       {"scheduledTaskId": "cron-1"},
+                       {"promptSource": "system"},
+                       {**headless, "scheduledTaskId": "cron-1"}):
+        assert kind(**provenance) == "neutral", provenance
+
+
 def test_machine_sent_input_is_neutral_and_carries_no_hints():
     # Orchestrator, headless and scheduled prompts are not the person reacting,
     # however corrective or stylistic their words are.
