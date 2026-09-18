@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
+from typing import NamedTuple
 
 from .distribution import BehavioralDistribution
 from .llm import LLMClient, build_taxonomy_description, projection_schema
@@ -47,8 +49,13 @@ _SYSTEM_PROMPT = (
     "forks\") is a minority state; the default the text implies for everything "
     "else is the majority\n"
     "\n"
-    "Respond with ONLY a JSON object mapping every dimension name to an object "
-    "of state probabilities.\n"
+    "- List in \"addressed\" only the dimensions the text actually speaks "
+    "to, directly or by clear implication. A dimension the text says nothing "
+    "about is not addressed, even though it still gets a distribution\n"
+    "\n"
+    "Respond with ONLY a JSON object with an \"addressed\" array of dimension "
+    "names and every dimension name mapped to an object of state "
+    "probabilities.\n"
     "\n"
     "No explanation. No markdown. Just the JSON object."
 )
@@ -106,6 +113,11 @@ def parse_projection_response(response_text: str) -> dict[str, dict[str, float]]
 
     if not isinstance(data, dict):
         raise ValueError(f"Expected a JSON object, got {type(data).__name__}")
+    addressed = data.pop("addressed", None)
+    if addressed is not None and not (
+        isinstance(addressed, list) and all(isinstance(d, str) for d in addressed)
+    ):
+        raise ValueError("addressed must be a list of dimension names")
 
     # Dimensions the reply omits fall back to species defaults later, but a
     # reply that covers none of them carries no projection at all.
@@ -131,7 +143,21 @@ def parse_projection_response(response_text: str) -> dict[str, dict[str, float]]
             if val < 0:
                 raise ValueError(f"State {dim}.{state} is negative: {val}")
 
+    if addressed is not None:
+        data["addressed"] = addressed
     return data
+
+
+def addressed_dimensions(raw: Mapping[str, object]) -> set[str]:
+    """The dimensions a parsed reply says its text speaks to.
+
+    A reply without an ``addressed`` list counts every dimension it gave.
+    """
+    given = {dim for dim in list_dimensions() if dim in raw}
+    listed = raw.get("addressed")
+    if not isinstance(listed, list):
+        return given
+    return given & set(listed)
 
 
 def validate_and_normalize(
@@ -179,10 +205,20 @@ def validate_and_normalize(
 PROJECTION_SAMPLES = 3
 
 
+class Projection(NamedTuple):
+    """Distributions for every dimension, and the ones the text addressed.
+
+    An unaddressed dimension holds the species default.
+    """
+
+    distributions: dict[str, BehavioralDistribution]
+    addressed: tuple[str, ...]
+
+
 def _project_once(
     system: str, user: str, client: LLMClient
-) -> dict[str, BehavioralDistribution] | None:
-    """One projection, holding only the dimensions the model actually gave."""
+) -> tuple[dict[str, BehavioralDistribution], set[str]] | None:
+    """One projection: the dimensions the model gave, and those it addressed."""
     data = client.complete_json(system, user, projection_schema())
     if data is None:
         return None
@@ -191,13 +227,20 @@ def _project_once(
     except ValueError:
         return None
     full = validate_and_normalize(raw)
-    return {dim: dist for dim, dist in full.items() if dim in raw}
+    given = {dim: dist for dim, dist in full.items() if dim in raw}
+    return given, addressed_dimensions(raw)
 
 
 def project_with_llm(
     text_blocks: list[str], client: LLMClient, samples: int = PROJECTION_SAMPLES
-) -> dict[str, BehavioralDistribution] | None:
-    """Mean of ``samples`` model projections, or None if every call failed."""
+) -> Projection | None:
+    """Mean of ``samples`` model projections, or None if every call failed.
+
+    A dimension counts as addressed when at least half the successful runs
+    say so, and its
+    distribution is the mean of those runs. Any other dimension takes the
+    species default, not the spread the model gives for text that is silent.
+    """
     if not any(block.strip() for block in text_blocks):
         return None
     system, user = build_projection_prompt(text_blocks)
@@ -209,18 +252,19 @@ def project_with_llm(
         ]
     if not runs:
         return None
-    # A dimension one run omitted is averaged over the runs that gave it, so
-    # the species default does not dilute it. Only a dimension no run gave
-    # takes the default.
+    # A dimension one run omitted is averaged over the runs that addressed
+    # it, so the species default does not dilute it.
     species = BehavioralProfile.default_species().distributions
     out: dict[str, BehavioralDistribution] = {}
+    addressed: list[str] = []
     for dim in list_dimensions():
-        given = [run[dim] for run in runs if dim in run]
-        if not given:
+        given = [dists[dim] for dists, said in runs if dim in dists and dim in said]
+        if 2 * len(given) < len(runs):
             out[dim] = species[dim]
             continue
+        addressed.append(dim)
         out[dim] = BehavioralDistribution(dim, {
             state: sum(d[state] for d in given) / len(given)
             for state in list_states(dim)
         })
-    return out
+    return Projection(out, tuple(addressed))
