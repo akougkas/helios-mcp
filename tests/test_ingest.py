@@ -102,21 +102,27 @@ def test_missing_or_truncated_transcripts(tmp_path: Path):
     assert ingest_session(helios, "dev", path, "s1", final=True) == 1
 
 
-def test_message_path_is_idempotent_when_the_conversation_is_resent(tmp_path: Path):
+def test_message_path_records_the_reply_when_the_conversation_is_resent(tmp_path: Path):
     store = ObservationStore(tmp_path)
     short = [
         {"role": "user", "content": "explain the bug"},
         {"role": "assistant", "content": LONG},
     ]
-    longer = [*short, {"role": "user", "content": "shorter please"},
-              {"role": "assistant", "content": "Off-by-one in the loop."}]
-    first = observations_from_messages(persona="dev", messages=short)
-    assert store.append(first) == 1
-    again = observations_from_messages(persona="dev", messages=longer)
-    assert again[0].turn_id == first[0].turn_id
-    assert again[0].correction_hint == {"communication_register": "terse"}
-    assert store.append(again) == 1
-    assert {o.source for o in again} == {"mcp"}
+    corrected = [*short, {"role": "user", "content": "no, too long. be terse"}]
+    longer = [*corrected, {"role": "assistant", "content": "Off-by-one in the loop."},
+              {"role": "user", "content": "thanks"}]
+
+    # The unanswered turn waits for its reply instead of being frozen without one.
+    assert store.append(observations_from_messages(persona="dev", messages=short)) == 0
+    assert store.append(observations_from_messages(persona="dev", messages=corrected)) == 1
+    assert store.append(observations_from_messages(persona="dev", messages=longer)) == 1
+    assert store.append(observations_from_messages(persona="dev", messages=longer)) == 0
+
+    first, second = store.iter("dev")
+    assert first.endorsement == -1.0
+    assert first.correction_hint == {"communication_register": "terse"}
+    assert second.endorsement == 1.0
+    assert {first.source, second.source} == {"mcp"}
 
 
 class CountingClient:

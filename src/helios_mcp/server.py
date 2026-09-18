@@ -170,7 +170,9 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
     )
     async def observe_interaction(
         messages: list[dict[str, Any]] = Field(
-            description="Conversation messages (role+content dicts)"
+            description="Conversation messages (role+content dicts). An "
+            "assistant turn is recorded once a user message follows it, so "
+            "re-send the growing conversation with the same session_id"
         ),
         persona_name: str = Field(default="", description=_PERSONA_HELP),
         session_id: str = Field(

@@ -210,10 +210,17 @@ def turns_from_messages(
 def observations_from_messages(
     *, persona: str, messages: Sequence[dict[str, Any]], session_id: str | None = None
 ) -> list[TurnObservation]:
-    """Observations for the ``observe_interaction`` tool, one per assistant turn."""
+    """Observations for the ``observe_interaction`` tool, one per answered turn.
+
+    A trailing assistant turn nobody has replied to yet is held back, as the
+    transcript path does: its row would be final, so the reply that arrives
+    when the client re-sends the longer conversation could never land.
+    """
     sid = session_id or "mcp"
     out: list[TurnObservation] = []
     for turn in turns_from_messages(messages, sid):
+        if turn.next_input is None:
+            continue
         obs = heuristic_observation(persona, sid, turn, source="mcp")
         if obs is not None:
             out.append(obs)
