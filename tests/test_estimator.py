@@ -160,6 +160,16 @@ def test_settled_rows_of_a_resumed_turn_replace_its_open_rows():
     assert ev.endorsed[DIM] == {"terse": 1.0}
 
 
+def test_reply_to_a_resumed_turn_counts_from_its_own_row_after_an_accept():
+    # The session ended on t1 and an accept landed at row 2; the reply after the
+    # resume (a correction) is newer than the accept even though its open row
+    # is not.
+    ledger = [turn("t0"), turn("t1~open", endorsement=None),
+              turn("t1", endorsement=-1.0, correction_hint={DIM: "terse"})]
+    ev = estimate(ledger, [proposal("accepted", 2)], config=LINEAR)
+    assert ev.endorsed[DIM] == {"terse": 1.0}
+
+
 @pytest.mark.parametrize("llm", [False, True])
 def test_ledger_checkpoint_always_equals_a_full_estimate(tmp_path, monkeypatch, llm):
     store = ObservationStore(tmp_path)

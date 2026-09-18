@@ -120,6 +120,17 @@ def test_decide_refuses_non_pending_and_unknown(tmp_path):
         store.decide("dev", "missing", "accepted")
 
 
+def test_an_unreadable_proposal_file_is_moved_aside_not_overwritten(tmp_path):
+    store = ProposalStore(tmp_path)
+    store.path("dev").parent.mkdir(parents=True)
+    store.path("dev").write_text("garbage")
+    assert store.all("dev") == []  # reads degrade to empty
+    fresh = store.create("dev", change(), observation_count=1)
+    assert store.all("dev") == [fresh]
+    aside = list(store.path("dev").parent.glob("dev.json.corrupt-*"))
+    assert [a.read_text() for a in aside] == ["garbage"]
+
+
 def test_key_index_survives_rows_written_behind_its_back(tmp_path):
     store = ObservationStore(tmp_path)
     store.append([obs("t1")])

@@ -142,10 +142,11 @@ class HeliosService:
     def context(self, name: str | None, model: str | None = None) -> dict[str, Any]:
         persona = self.persona(name)
         profile = self.negotiator.hierarchy.resolve(persona)
+        evidence = self.negotiator.evidence(persona)
         return {
             "persona": persona,
-            "behavioral_context": self.render_text(persona, model),
-            "observation_count": self.ledger.count(persona),
+            "behavioral_context": self.render_text(persona, model, evidence),
+            "observation_count": evidence.turns,
             "specialization_level": profile.specialization_level,
         }
 

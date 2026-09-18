@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .atomic_ops import git_commit
+from .atomic_ops import git_commit, helios_lock
 from .distribution import BehavioralDistribution
 from .drift import (
     DEFAULT_CONFIG,
@@ -115,6 +115,13 @@ class Negotiator:
     def evaluate(self, persona: str, auto_accept: bool = True,
                  now: float | None = None) -> Evaluation:
         """Assess drift, apply auto-accepts, and reconcile the pending proposal."""
+        # Under the lock, an auto-accept is decided on the evidence and profile
+        # it is written over, and cannot interleave with a user's decision.
+        with helios_lock(self.helios_dir):
+            return self._evaluate(persona, auto_accept, now)
+
+    def _evaluate(self, persona: str, auto_accept: bool,
+                  now: float | None) -> Evaluation:
         now = time.time() if now is None else now
         endorsed, fingerprint, evidence = self.assess(persona)
 
@@ -148,20 +155,25 @@ class Negotiator:
 
     def accept(self, persona: str, proposal_id: str,
                dimensions: list[str] | None = None) -> Decision:
-        decided = self.proposals.decide(persona, proposal_id, "accepted", dimensions)
-        path, sha = self._apply(persona, decided, list(decided.decided_dimensions))
+        with helios_lock(self.helios_dir):
+            decided = self.proposals.decide(persona, proposal_id, "accepted",
+                                            dimensions)
+            path, sha = self._apply(persona, decided,
+                                    list(decided.decided_dimensions))
         return Decision(decided, sha, path)
 
     def reject(self, persona: str, proposal_id: str, reason: str = "",
                dimensions: list[str] | None = None) -> Decision:
-        decided = self.proposals.decide(persona, proposal_id, "rejected", dimensions,
-                                        reason=reason or "rejected by user")
-        sha = git_commit(
-            self.helios_dir, [self.proposals.path(persona)],
-            f"{persona}: rejected {', '.join(decided.decided_dimensions)} "
-            f"(proposal {decided.id})"
-            + (f"\n\n{decided.reason}" if decided.reason else ""),
-        )
+        with helios_lock(self.helios_dir):
+            decided = self.proposals.decide(persona, proposal_id, "rejected",
+                                            dimensions,
+                                            reason=reason or "rejected by user")
+            sha = git_commit(
+                self.helios_dir, [self.proposals.path(persona)],
+                f"{persona}: rejected {', '.join(decided.decided_dimensions)} "
+                f"(proposal {decided.id})"
+                + (f"\n\n{decided.reason}" if decided.reason else ""),
+            )
         return Decision(decided, sha)
 
     # ------------------------------------------------------------------
@@ -192,6 +204,11 @@ class Negotiator:
     def _apply(self, persona: str, proposal: Proposal,
                dimensions: list[str]) -> tuple[Path, str | None]:
         """Write targets to the user level and commit."""
+        with helios_lock(self.helios_dir):
+            return self._apply_locked(persona, proposal, dimensions)
+
+    def _apply_locked(self, persona: str, proposal: Proposal,
+                      dimensions: list[str]) -> tuple[Path, str | None]:
         path = persona_path(self.helios_dir / "personas", persona, "_user.yaml")
         if path.exists():
             user = BehavioralProfile.load(path)
@@ -225,25 +242,31 @@ class Negotiator:
         return path, sha
 
 
+def _shift(r: DimensionDrift) -> str:
+    """What moved, in words: the new leading state, or, when the lead held,
+    the state that gained the most mass."""
+    declared = max(r.declared, key=r.declared.__getitem__)
+    observed = max(r.posterior_mean, key=r.posterior_mean.__getitem__)
+    if observed != declared:
+        return (f"you seem to prefer '{observed}' ({r.posterior_mean[observed]:.0%}) "
+                f"over the profile's '{declared}' ({r.declared[declared]:.0%})")
+    gained = max(r.posterior_mean,
+                 key=lambda s: r.posterior_mean[s] - r.declared.get(s, 0.0))
+    return (f"'{gained}' has grown from {r.declared.get(gained, 0.0):.0%} in the "
+            f"profile to {r.posterior_mean[gained]:.0%}, while '{declared}' still "
+            f"leads at {r.posterior_mean[declared]:.0%} "
+            f"(the profile has {r.declared[declared]:.0%})")
+
+
 def describe(evaluation: Evaluation) -> tuple[str, dict[str, str]]:
     """Plain-language summary of endorsed drift, plus one line per dimension."""
     per_dim: dict[str, str] = {}
     for dim, r in evaluation.endorsed.dimensions.items():
-        declared = max(r.declared, key=r.declared.__getitem__)
-        observed = max(r.posterior_mean, key=r.posterior_mean.__getitem__)
         if r.tier == "strong":
-            per_dim[dim] = (
-                f"Drifted: your preferred '{observed}' is now at "
-                f"{r.posterior_mean[observed]:.0%}, the profile says '{declared}' "
-                f"at {r.declared[declared]:.0%} ({r.credibility:.0%} credible)."
-            )
+            per_dim[dim] = f"Drifted: {_shift(r)}; {r.credibility:.0%} credible."
         elif r.tier == "suggestion":
-            per_dim[dim] = (
-                f"Possibly shifting: you may prefer '{observed}' "
-                f"({r.posterior_mean[observed]:.0%}) over the profile's "
-                f"'{declared}' ({r.declared[declared]:.0%}); "
-                f"{r.credibility:.0%} credible so far."
-            )
+            per_dim[dim] = (f"Possibly shifting: {_shift(r)}; "
+                            f"{r.credibility:.0%} credible so far.")
         elif r.evidence == 0:
             per_dim[dim] = "No evidence yet."
         else:

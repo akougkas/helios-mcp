@@ -108,6 +108,8 @@ def select_turns(observations: Iterable[TurnObservation], start_row: int = 0,
 
     A turn keeps the ledger position of its first row, so a later relabel from
     a higher-precedence source does not make an already absorbed turn look new.
+    The exception is a settled row replacing an open one: the open row carried
+    no reply, so nothing of it was absorbed, and the reply is as new as its row.
     Rows are numbered from ``start_row``, and the count returned includes it.
     """
     source_rank = {s: i for i, s in enumerate(SOURCES)}
@@ -127,7 +129,9 @@ def select_turns(observations: Iterable[TurnObservation], start_row: int = 0,
         if current is None:
             chosen[key] = _Turn(row, obs, llm_row, obs.model)
         elif rank(obs) < rank(current.obs):
-            chosen[key] = _Turn(current.first_row, obs,
+            settles = (is_open_turn(current.obs.turn_id)
+                       and not is_open_turn(obs.turn_id))
+            chosen[key] = _Turn(row if settles else current.first_row, obs,
                                 current.llm_row if llm_row is None else llm_row,
                                 current.model or obs.model)
         elif current.model is None and obs.model is not None:
