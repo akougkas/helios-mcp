@@ -107,8 +107,8 @@ def test_empty_turn_omits_dimensions():
     assert classify_turn(_turn()).labels == {}
 
 
-# Manner dimensions. The scorers return raw evidence counts, so the direction
-# checks below don't depend on the taxonomy defining the dimension yet.
+# Manner dimensions. The scorers return raw evidence counts, which is what the
+# direction checks below compare.
 
 def _top(counts: dict[str, float]) -> str:
     return max(counts, key=lambda k: counts[k])
