@@ -9,11 +9,12 @@ import json
 import pytest
 
 from helios_mcp.distribution import BehavioralDistribution
+from helios_mcp.importer import import_from_text
+from helios_mcp.llm import build_taxonomy_description
 from helios_mcp.projector import (
     build_projection_prompt,
-    build_taxonomy_description,
     parse_projection_response,
-    project_to_distributions,
+    project_with_llm,
     validate_and_normalize,
 )
 from helios_mcp.taxonomy import list_dimensions, list_states
@@ -235,34 +236,37 @@ class TestValidateAndNormalize:
 
 
 # ---------------------------------------------------------------------------
-# project_to_distributions
+# project_with_llm and the import fallback
 # ---------------------------------------------------------------------------
 
 
-class TestProjectToDistributions:
-    def test_with_llm_response(self):
-        dists = project_to_distributions(["Be direct."], llm_response=_valid_response())
-        assert set(dists.keys()) == set(list_dimensions())
+class FakeClient:
+    def __init__(self, reply):
+        self.reply = reply
+        self.calls = []
+
+    def complete_json(self, system, prompt, schema):
+        self.calls.append((system, prompt, schema))
+        return self.reply
+
+
+class TestProjectWithLLM:
+    def test_structured_reply_becomes_distributions(self):
+        client = FakeClient(json.loads(_valid_response()))
+        dists = project_with_llm(["Be direct."], client)
+        assert dists is not None
         assert dists["epistemic_style"]["confident"] > 0.5
+        system, prompt, schema = client.calls[0]
+        assert "Be direct." in prompt
+        assert set(schema["required"]) == set(list_dimensions())
 
-    def test_keyword_fallback(self):
-        dists = project_to_distributions(["Be direct and concise."])
-        assert set(dists.keys()) == set(list_dimensions())
-        for _dim, dist in dists.items():
-            total = sum(dist.probs)
-            assert abs(total - 1.0) < 1e-6
+    def test_failed_or_malformed_reply_returns_none(self):
+        assert project_with_llm(["x"], FakeClient(None)) is None
+        assert project_with_llm(["x"], FakeClient({"epistemic_style": {}})) is None
 
-    def test_llm_response_with_fences(self):
-        fenced = f"```json\n{_valid_response()}\n```"
-        dists = project_to_distributions(["test"], llm_response=fenced)
-        assert "epistemic_style" in dists
-
-    def test_invalid_llm_response_raises(self):
-        with pytest.raises(ValueError):
-            project_to_distributions(["test"], llm_response="garbage")
-
-    def test_none_response_uses_fallback(self):
-        dists = project_to_distributions(
-            ["Be thorough and comprehensive."], llm_response=None
-        )
-        assert dists["communication_register"]["thorough"] > 0.2
+    def test_import_uses_client_and_falls_back_to_keywords(self):
+        text = "# Style\nBe thorough and comprehensive in every answer."
+        modeled = import_from_text(text, client=FakeClient(json.loads(_valid_response())))
+        assert modeled.distributions["communication_register"]["terse"] == pytest.approx(0.35, abs=0.01)
+        fallback = import_from_text(text, client=FakeClient(None))
+        assert fallback.distributions["communication_register"]["thorough"] > 0.2

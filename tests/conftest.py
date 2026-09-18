@@ -14,3 +14,8 @@ def temp_helios_dir():
         helios_path.mkdir()
         yield helios_path
 
+
+@pytest.fixture(autouse=True)
+def _no_model_calls(monkeypatch):
+    """Tests never spawn the model CLI; tests that exercise it inject a fake client."""
+    monkeypatch.setenv("HELIOS_LLM", "0")
