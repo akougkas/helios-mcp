@@ -5,9 +5,11 @@ MCP config, skill definition, and agent definition.
 """
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
+from packaging.version import Version
 
 REPO_ROOT = Path(__file__).parent.parent
 PLUGIN_DIR = REPO_ROOT / "helios-plugin"
@@ -17,6 +19,23 @@ SKILL_DIR = REPO_ROOT / "helios-skill"
 # fixture below (manifest, hooks, skill_content, ...) reads the same paths
 # and fails with a clear error if they're missing, so a dedicated
 # existence-only test would just be a slower, less informative duplicate.
+
+
+def _pyproject_version_as_manifest_version() -> str:
+    """pyproject.toml is the single source of truth for the package
+    version (see helios_mcp/__init__.py's _get_version). JSON plugin
+    manifests can't import that at load time, so this converts PEP 440
+    (what pyproject.toml uses, e.g. "0.4.0b2") to the dotted pre-release
+    form the manifests use (e.g. "0.4.0-beta.2"), for tests to assert the
+    two stay in sync instead of drifting silently."""
+    data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    v = Version(data["project"]["version"])
+    base = ".".join(str(p) for p in v.release)
+    if v.pre is None:
+        return base
+    letter, number = v.pre
+    word = {"a": "alpha", "b": "beta", "rc": "rc"}.get(letter, letter)
+    return f"{base}-{word}.{number}"
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +54,9 @@ class TestPluginManifest:
 
     def test_has_version(self, manifest):
         assert "version" in manifest
+
+    def test_version_matches_pyproject(self, manifest):
+        assert manifest["version"] == _pyproject_version_as_manifest_version()
 
     def test_has_description(self, manifest):
         assert len(manifest["description"]) > 10
@@ -126,7 +148,7 @@ class TestHooksConfig:
 
     def test_capture_hooks_are_async(self, hooks):
         """Every hook that invokes hook-handler.py (observation capture)
-        must be async — it must never block the user's session. The
+        must be async. It must never block the user's session. The
         SessionStart context-injection hook is the one deliberate
         exception: Claude Code only reads a hook's stdout as context if
         it waits for that hook to finish, so it has to be synchronous."""
@@ -197,7 +219,7 @@ class TestMCPConfig:
 
     def test_uses_mcp_servers_envelope(self, mcp):
         """A plugin's .mcp.json must be {"mcpServers": {...}}, not a flat
-        {"helios": {...}} — the flat shape isn't a valid server
+        {"helios": {...}}. The flat shape isn't a valid server
         registration and Claude Code silently fails to load it."""
         assert "mcpServers" in mcp
         assert "helios" not in mcp
@@ -221,7 +243,7 @@ class TestMCPConfig:
 
 class TestMarketplaceManifest:
     """The manifest lives at REPO_ROOT/.claude-plugin/marketplace.json, not
-    under a nested marketplace/ directory — a marketplace plugin's `source`
+    under a nested marketplace/ directory. A marketplace plugin's `source`
     must resolve inside the marketplace's own root, so the root has to be
     the ancestor that actually contains helios-plugin/. A source that
     escapes it (a `../` path or a symlink to one) is rejected at install;
@@ -232,6 +254,10 @@ class TestMarketplaceManifest:
     def manifest(self):
         path = REPO_ROOT / ".claude-plugin" / "marketplace.json"
         return json.loads(path.read_text())
+
+    def test_helios_entry_version_matches_pyproject(self, manifest):
+        entry = next(p for p in manifest["plugins"] if p["name"] == "helios")
+        assert entry["version"] == _pyproject_version_as_manifest_version()
 
     def test_helios_plugin_source_stays_inside_marketplace_root(self, manifest):
         entry = next(p for p in manifest["plugins"] if p["name"] == "helios")
@@ -244,9 +270,9 @@ class TestMarketplaceManifest:
 
     def test_source_is_not_a_symlink(self, manifest):
         """A relative source is still rejected if it traverses a symlink
-        that itself escapes the marketplace root — make sure this isn't a
-        symlink to begin with, not just a plain directory that happens to
-        resolve in-bounds today."""
+        that itself escapes the marketplace root, so this checks that it
+        isn't a symlink to begin with, not just a plain directory that
+        happens to resolve in-bounds today."""
         entry = next(p for p in manifest["plugins"] if p["name"] == "helios")
         assert not (REPO_ROOT / entry["source"]).is_symlink()
 

@@ -1,6 +1,6 @@
 ---
 name: helios-observer
-description: Behavioral analysis agent for Helios. Spawn it to interpret accumulated observations beyond a simple drift report — stable vs evolving traits, why drift might be happening, and whether a profile's dimensions have enough observation coverage. Read-only: it never modifies a profile itself.
+description: Goes deeper than a drift report to interpret what Helios has learned about your preferences. Spawn it to separate stable traits from ones still evolving, explain why drift might be happening, and flag dimensions with too little observation coverage to trust yet. Read-only: it never modifies a profile itself.
 ---
 
 # Helios Observer Agent
