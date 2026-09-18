@@ -1,9 +1,10 @@
 # Helios MCP
 
-**A behavioral genome for AI agents** — a Model Context Protocol (MCP) server that
-represents an agent's personality as probability distributions, measures how far
-observed behavior drifts from the declared profile using KL-divergence, and asks
-before committing a change.
+**A behavioral genome for AI agents.** Helios is a Model Context Protocol (MCP)
+server that represents an agent's personality as probability distributions,
+measures how far observed behavior drifts from the declared profile using a
+Dirichlet posterior and Jensen-Shannon divergence, and asks before committing
+a change.
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -14,14 +15,14 @@ before committing a change.
 
 Every AI conversation starts from zero. You re-explain how you like to work,
 your AI has no memory of your preferences, and there is no principled way to
-say "this agent's behavior has drifted from what I asked for" — because
+say "this agent's behavior has drifted from what I asked for." That's because
 "behavior" is usually just prose in a `CLAUDE.md` file, not something you can
 measure.
 
 ## The model
 
-Helios represents behavior along four fixed dimensions, defined in
-[`src/helios_mcp/taxonomy.py`](src/helios_mcp/taxonomy.py):
+Helios represents behavior along nine fixed dimensions, defined in
+[`src/helios_mcp/taxonomy.py`](src/helios_mcp/taxonomy.py). Four cover stance:
 
 | Dimension | What it captures | States |
 |---|---|---|
@@ -30,33 +31,45 @@ Helios represents behavior along four fixed dimensions, defined in
 | `communication_register` | formality and density of output | terse, moderate, thorough, technical_dense, plain_accessible |
 | `risk_caution` | how it weighs safety vs. speed | acts_immediately, checks_before_acting, warns_frequently, refuses_ambiguity |
 
-Each dimension is not a label or a scalar — it's a `BehavioralDistribution`
+Five more, orthogonal to stance, cover manner:
+
+| Dimension | What it captures | States |
+|---|---|---|
+| `structure` | prose versus headers and bullets | prose, light_structure, heavy_structure |
+| `sycophancy` | praise and validation versus candor | candid, neutral, flattering |
+| `narration` | announcing, recapping, closing pleasantries | silent_action, brief_signposting, narrates_and_recaps |
+| `specificity` | concrete references versus adjectives | concrete, mixed, vague |
+| `pushback` | holding a position versus giving in (labeled only when the user pushed back) | holds_position, concedes_with_reason, capitulates |
+
+Each dimension is not a label or a scalar. It's a `BehavioralDistribution`
 ([`distribution.py`](src/helios_mcp/distribution.py)): a probability over
 that dimension's discrete states, always summing to 1.0. A persona that is
 "mostly terse but sometimes thorough" is `{terse: 0.6, thorough: 0.3, ...}`,
 not a single string.
 
-Representing behavior this way makes **KL-divergence** the natural way to
-measure drift: `D_KL(observed || declared) = Σ p(x) · log(p(x)/q(x))` is the
-standard measure of how much information is lost when one distribution is
-used to approximate another. It's always ≥ 0, it's 0 only when the two
-distributions are identical, and — unlike a diff on free text — it gives a
-single comparable number per dimension and an aggregate total, which is what
-`DriftDetector` needs to decide whether behavior has actually changed or is
-just noise.
+Helios keeps two such distributions per dimension per persona: a `fingerprint`
+(what the agent actually did, across every turn, diagnostics only) and an
+`endorsed` posterior (the style the user endorses, built from a Dirichlet
+prior centered on the declared profile plus evidence from observed turns,
+weighted up for explicit signals like corrections and standing preferences
+and down for a turn the user just moved past). Drift and negotiation run on
+`endorsed` only. Measuring the gap as **Jensen-Shannon divergence** between
+the posterior mean and the declared profile gives a single comparable number
+per dimension, symmetric and bounded by `ln 2`, which is what `drift.py` and
+`negotiation.py` need to decide whether behavior has actually changed or is
+just noise, and whether a proposal is a mild suggestion or a strong one.
 
 ### Identity hierarchy
 
-Profiles resolve through four levels — species → domain → user → session
-(`IdentityHierarchy` in [`hierarchy.py`](src/helios_mcp/hierarchy.py)):
-a species-level base blends with an optional domain persona, then an
+Profiles resolve through four levels: species, domain, user, session
+(`IdentityHierarchy` in [`hierarchy.py`](src/helios_mcp/hierarchy.py)).
+A species-level base blends with an optional domain persona, then an
 optional per-user adaptation, then an optional per-session override. Each
-blend step is a **KL-minimizing mixture**, `M(x) = w · parent(x) + (1-w) · child(x)`,
-where the weight comes from
-[`inheritance.py`](src/helios_mcp/inheritance.py):
+blend step is a mixture, `M(x) = w · parent(x) + (1-w) · child(x)`, where the
+weight is:
 
 ```
-weight = base_importance / (specialization_level ** 2)
+weight = parent.base_importance / (child.specialization_level ** 2)
 ```
 
 Higher `base_importance` or lower `specialization_level` pulls the result
@@ -64,17 +77,20 @@ toward the parent; a highly specialized child dominates.
 
 ### Drift and negotiation
 
-[`drift.py`](src/helios_mcp/drift.py)'s `DriftDetector` sums per-dimension KL
-divergence between what was observed and what's declared. Drift is only
-actionable once there's enough signal: a minimum of **20 observations**, a
-**per-dimension threshold of 0.10**, and a **total threshold of 0.30**. Below
-`0.05` per dimension the change is small enough to consider auto-acceptable;
-above the thresholds, [`negotiation.py`](src/helios_mcp/negotiation.py)'s
-`NegotiationEngine` writes a natural-language summary of what changed and
-proposes a concrete replacement profile. Nothing is written until a human (or
-the calling agent, on the human's behalf) accepts it — `apply_update()` then
-writes the persona YAML and commits it to git so every behavioral change has
-a history and can be rolled back.
+[`drift.py`](src/helios_mcp/drift.py) measures, per dimension, the Jensen-Shannon
+divergence between the endorsed posterior mean and the declared profile, plus
+a credibility check via seeded Dirichlet sampling. A dimension can surface as
+a **suggestion** (lower credibility bar) or a **strong proposal** (higher bar),
+phrased as suggestions either way so a plain "no" is a complete answer. A
+small, well-supported move auto-accepts silently; a bigger one goes through
+[`negotiation.py`](src/helios_mcp/negotiation.py), which persists a proposal
+with an id, writes a natural-language summary, and waits. Nothing is written
+until a human (or the calling agent, on the human's behalf) accepts it by that
+id, at which point the target profile is written to the persona's user-level
+YAML and committed to git so every behavioral change has a history and can be
+rolled back. A rejection is recorded too, with a cooldown per dimension so a
+declined proposal doesn't re-fire immediately. Exact thresholds live in
+`drift.DriftConfig` and are documented in [`CLAUDE.md`](CLAUDE.md#key-thresholds).
 
 ## MCP tools
 
@@ -85,9 +101,9 @@ exactly **7 tools**, all registered with `@mcp.tool`:
 |---|---|---|
 | `list_personas` | — | Lists persona names found under `~/.helios/personas/*.yaml`. |
 | `get_behavioral_context` | `persona_name` | Resolves the 4-level hierarchy for the persona and renders it as system-prompt text. |
-| `observe_interaction` | `persona_name`, `messages` | Feeds conversation messages into the observer, updates the accumulated distributions, and reports current drift and whether negotiation is recommended. |
-| `get_drift_report` | `persona_name` | Computes drift against the declared profile and returns a natural-language summary plus per-dimension detail (requires prior observations). |
-| `negotiate_update` | `persona_name`, `decision` (`accept`/`reject`), `reason`, `accepted_dimensions` | Applies an accepted drift proposal (writes the persona YAML and git-commits it) or records a rejection. |
+| `observe_interaction` | `persona_name`, `messages`, `session_id` | Turns conversation messages into observations, appends them to the persona's ledger, and reports current drift and whether negotiation is recommended. |
+| `get_drift_report` | `persona_name` | Computes endorsed drift against the declared profile: a natural-language summary, per-dimension detail, fingerprint diagnostics, and the id of any pending proposal with its tier (suggestion/strong). |
+| `negotiate_update` | `proposal_id`, `decision` (`accept`/`reject`), `persona_name`, `reason`, `accepted_dimensions` | Accepts a proposal by id (writes the persona's user-level YAML and git-commits it) or records a rejection with a per-dimension cooldown. |
 | `import_profile` | `source_path`, `persona_name` | Parses a personality file (e.g. `CLAUDE.md`) and creates a new persona with projected distributions. |
 | `export_profile` | `persona_name`, `format` (`yaml`/`json`/`soulspec`), `dimensions` | Exports a resolved profile, optionally filtered to specific dimensions. |
 
@@ -95,12 +111,12 @@ exactly **7 tools**, all registered with `@mcp.tool`:
 
 Helios ships on three surfaces:
 
-- **Claude Code plugin** — [`helios-plugin/`](helios-plugin/): bundles the
+- **Claude Code plugin**: [`helios-plugin/`](helios-plugin/) bundles the
   MCP server config (`.mcp.json`), observation hooks (`hooks/`), a skill
   (`skills/helios/SKILL.md`), and an observer agent (`agents/`).
-- **Standalone skill** — [`helios-skill/`](helios-skill/): just the MCP
+- **Standalone skill**: [`helios-skill/`](helios-skill/) has just the MCP
   config and `SKILL.md`, for lighter-weight adoption without the hooks.
-- **Marketplace entry** — [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json):
+- **Marketplace entry**: [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)
   lists `helios-plugin/` as an installable plugin. The manifest lives at the
   repo root, not in a nested `marketplace/` directory, because a marketplace
   plugin `source` must resolve inside the marketplace's own root. A source
@@ -111,29 +127,30 @@ The package also installs a console script: `helios-mcp = helios_mcp.cli:main`.
 
 ## Install and run
 
-Requires Python ≥ 3.13, managed with [uv](https://docs.astral.sh/uv/).
+Requires Python ≥ 3.13, managed with [uv](https://docs.astral.sh/uv/). Not on
+PyPI yet, so install from a local checkout.
 
 ```bash
 git clone https://github.com/akougkas/helios-mcp
 cd helios-mcp
 uv sync
 uv run helios-mcp --verbose   # starts the MCP server over stdio
+uv run helios-mcp init        # onboard: import CLAUDE.md + the active output style
 ```
 
 On first run, `helios-mcp` bootstraps `~/.helios/` (or `$HELIOS_DIR`): it
 creates `base/`, `personas/`, `learned/`, `temporary/`, initializes a git
-repo there, copies the default species profile and `developer`/`researcher`/
-`writer` domain personas, and adds a `welcome` persona.
+repo there, and copies the default species profile and `developer`/
+`researcher`/`writer` domain personas. `helios-mcp init` goes further: it
+imports the active `CLAUDE.md` and output style into a persona's user level
+as the authoritative starting profile and sets it as the default.
 
-To wire it into an MCP client, point it at the console script, e.g. in
-`.mcp.json`:
+Both delivery surfaces below ship a `.mcp.json` that resolves the server via
+`uvx --from "${HELIOS_SOURCE:-helios-mcp}" helios-mcp`. Point `HELIOS_SOURCE`
+at a local checkout to use it before it's published:
 
-```json
-{
-  "mcpServers": {
-    "helios": { "command": "uvx", "args": ["helios-mcp"] }
-  }
-}
+```bash
+export HELIOS_SOURCE=/path/to/helios-mcp
 ```
 
 ### CLI
@@ -141,23 +158,29 @@ To wire it into an MCP client, point it at the console script, e.g. in
 Beyond running the server, `helios-mcp` has subcommands:
 
 ```bash
-uv run helios-mcp status                 # print resolved profiles for all personas
+uv run helios-mcp init [persona] --home PATH --project-dir PATH
+                                          # onboard: import CLAUDE.md + the active output
+                                          # style into persona's user level, set default
+uv run helios-mcp status                 # print resolved profiles, evidence, pending proposals
 uv run helios-mcp negotiate <persona>    # show a drift report and accept/reject it
+uv run helios-mcp persona default [name] # show, or set, the default persona
+uv run helios-mcp render [persona]       # write rendered/<persona>.md (SessionStart context)
 uv run helios-mcp export <persona> --format yaml|json|soulspec
 uv run helios-mcp import <path> --persona NAME
-uv run helios-mcp hook <event-type>      # internal: consumes Claude Code hook events on stdin
+uv run helios-mcp ingest --persona NAME --session-id ID --transcript PATH [--final]
+                                          # internal: labels a transcript into the ledger, run by the plugin's hooks
 ```
 
 ## Project status
 
 The behavioral math is solid: taxonomy, distributions, hierarchy blending,
-drift detection, and negotiation are implemented and covered by an extensive
-test suite (see the [CI workflow](.github/workflows/ci.yml) for the current
-pass/fail state — trust that badge over any number quoted in prose, since
-hardcoded counts go stale). The package is at `0.4.0b1` and classified as
-alpha; the protocol surface (hook coverage, import/export formats, plugin
-packaging) is still being modernized. See [`PLAN.md`](PLAN.md) for the
-current forward-looking plan and what's left before a stable release.
+Dirichlet/JS drift, and negotiation are implemented and covered by an
+extensive test suite (see the [CI workflow](.github/workflows/ci.yml) for the
+current pass/fail state, since a hardcoded count in prose goes stale). Hook
+capture, transcript labeling, declared-artifact import, and plugin packaging
+are wired end to end. The package is at `0.4.0b2` and classified as alpha:
+per-model fingerprinting and ledger scaling for long-running personas are
+still open, and it's not yet on PyPI or the Anthropic plugin marketplace.
 
 ## Development
 
@@ -167,4 +190,4 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, running tests
 
 ## License
 
-MIT © 2025 Anthony Kougkas — see [`LICENSE`](LICENSE).
+MIT © 2025 Anthony Kougkas. See [`LICENSE`](LICENSE).
