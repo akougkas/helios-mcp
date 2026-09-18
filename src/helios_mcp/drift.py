@@ -56,6 +56,11 @@ class DriftConfig:
     below the proposal threshold is eventually absorbed silently instead of
     sitting in a dead zone; ``auto_accept_min_change`` keeps stationary noise to
     about one silent update per dimension per 800 turns.
+
+    The simulation counts every turn as an approval. On the founder's
+    model-labeled corpus, where passive turns weigh ``moved_on_weight``,
+    stationary sessions in random order raise a suggestion in 2% of runs and
+    a strong proposal in none; a suggestion level of 0.7 raises that to 23%.
     """
 
     prior_strength: float = 25.0
