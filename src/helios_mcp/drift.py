@@ -59,6 +59,8 @@ class DriftConfig:
     auto_accept_min_change: float = 0.004
     rejection_strength: float = 10.0
     standing_hint_weight: float = 1.0
+    unhinted_correction_weight: float = 0.25
+    confidence_exponent: float = 0.5
     samples: int = 1000
     seed: int = 0
     min_prob: float = 0.005
