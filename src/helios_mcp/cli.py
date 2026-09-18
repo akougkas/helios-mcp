@@ -218,6 +218,33 @@ def export_command(persona: str | None, fmt: str, dims: str | None,
         click.echo(yaml.safe_dump(exported, default_flow_style=False, sort_keys=False))
 
 
+@main.command("init")
+@click.argument("persona", required=False)
+@click.option("--source", type=click.Path(path_type=Path), default=None,
+              help="Personality file to import (default: ~/.claude/CLAUDE.md)")
+@helios_dir_option
+def init_command(persona: str | None, source: Path | None,
+                 helios_dir: Path | None) -> None:
+    """Bootstrap Helios and onboard PERSONA (default: developer) from CLAUDE.md.
+
+    Imports the source file into PERSONA's user level as authoritative, sets
+    it as the default persona, and renders its context. Safe to rerun.
+    """
+    from .onboard import onboard
+
+    try:
+        result = onboard(_service(helios_dir), persona, source)
+    except (ValueError, SecurityError, FileNotFoundError) as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"Persona: {result['persona']} (default)")
+    click.echo(f"Imported from: {result['source']}")
+    for dim, summary in result["distributions"].items():
+        click.echo(f"  {dim:<24} {summary['dominant']} "
+                   f"(entropy {summary['entropy']:.2f})")
+    click.echo(f"Saved to: {result['saved_to']}")
+    click.echo(f"Rendered to: {result['rendered_to']}")
+
+
 @main.command("import")
 @click.argument("path", type=click.Path(exists=True, path_type=Path))
 @click.option("--persona", default=None,
