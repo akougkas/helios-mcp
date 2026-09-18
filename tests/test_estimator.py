@@ -2,6 +2,7 @@
 
 import math
 
+from helios_mcp.drift import DEFAULT_CONFIG
 from helios_mcp.estimator import estimate
 from helios_mcp.store import Proposal, ProposedChange, TurnObservation
 
@@ -70,12 +71,12 @@ def test_rejection_adds_pseudo_counts_toward_declared_until_a_later_accept():
     assert "moderate" not in ev.endorsed.get(DIM, {})
 
 
-def test_standing_preference_counts_toward_hint_at_reduced_weight():
+def test_standing_preference_counts_toward_hint_in_place_of_label():
     ev = estimate([TurnObservation(
         persona="dev", session_id="s", turn_id="t1", timestamp=0, source="llm",
         labels={DIM: THOROUGH, "risk_caution": {"acts_immediately": 1.0}},
         endorsement=0.5, correction_hint={DIM: "terse"})])
-    assert ev.endorsed[DIM] == {"terse": 0.5}
+    assert ev.endorsed[DIM] == {"terse": DEFAULT_CONFIG.standing_hint_weight}
     assert ev.endorsed["risk_caution"] == {"acts_immediately": 1.0}
 
 

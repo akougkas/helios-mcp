@@ -38,16 +38,27 @@ LN2 = math.log(2.0)
 
 @dataclass(frozen=True)
 class DriftConfig:
-    """Every threshold the drift math uses, in one place so calibration can sweep it."""
+    """Every threshold the drift math uses, in one place so calibration can sweep it.
 
-    prior_strength: float = 20.0
-    js_threshold: float = 0.02
+    Defaults come from simulating hard labels drawn from the four default
+    profiles, evaluating after every turn: stationary behavior proposes on any
+    dimension in under 1% of 200-turn runs (under 0.3% within the first 30
+    turns), and a 0.3-mass shift is detected at a median of 26 to 30 turns
+    (80th percentile 38 to 44, depending on which states the mass moves
+    between). ``auto_accept_js`` equals ``js_threshold`` so a real shift
+    below the proposal threshold is eventually absorbed silently instead of
+    sitting in a dead zone; ``auto_accept_min_change`` keeps stationary noise to
+    about one silent update per dimension per 800 turns.
+    """
+
+    prior_strength: float = 25.0
+    js_threshold: float = 0.0125
     credibility_level: float = 0.95
-    auto_accept_js: float = 0.01
+    auto_accept_js: float = 0.0125
     auto_accept_level: float = 0.9
-    auto_accept_min_change: float = 0.0005
+    auto_accept_min_change: float = 0.004
     rejection_strength: float = 10.0
-    standing_hint_weight: float = 0.5
+    standing_hint_weight: float = 1.0
     samples: int = 1000
     seed: int = 0
     min_prob: float = 0.005

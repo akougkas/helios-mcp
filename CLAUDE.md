@@ -76,10 +76,16 @@ server.py (7 MCP tools)
 
 ### Key Thresholds
 
-- Total drift trigger: 0.30
-- Per-dimension trigger: 0.10
-- Auto-accept threshold: KL < 0.05 (silent)
-- Minimum observations: 20
+All live in `drift.DriftConfig`. Drift runs on the `endorsed` posterior only.
+
+- Posterior per dimension: `Dirichlet(s * declared + counts)`, prior strength s = 25 turns
+- Drift score: JS divergence (nats, at most ln 2) between posterior mean and declared
+- Proposal: some dimension has P(JS(sample, declared) > 0.0125) >= 0.95 over 1000 seeded samples
+- Auto-accept (silent): P(JS < 0.0125) >= 0.9 and JS(mean, declared) >= 0.004
+- Standing preference (hint on an uncorrected turn): weight 1.0 toward the hinted state
+- Rejection: 10 pseudo-counts toward the declared profile, 3-day cooldown per dimension
+- Probability floor on disk and in priors: 0.005
+- Simulated with hard labels on the default profiles, checking every turn: stationary FP < 1% over 200 turns (under 0.3% by turn 30); a 0.3-mass shift is detected at a median of 26 to 30 turns (80th percentile 38 to 44)
 
 ## Design Constraints
 

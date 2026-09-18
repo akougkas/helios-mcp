@@ -72,7 +72,7 @@ def test_sustained_shift_drifts_and_target_is_posterior_mean():
 
 
 def test_small_but_well_supported_move_auto_accepts():
-    nudged = {"terse": 0.23, "moderate": 0.42, "thorough": 0.2,
+    nudged = {"terse": 0.3, "moderate": 0.35, "thorough": 0.2,
               "technical_dense": 0.1, "plain_accessible": 0.05}
     r = assess_dimension(DIM, DECLARED, scaled(nudged, 2000))
     assert r.auto_accept and not r.drifted
@@ -83,3 +83,27 @@ def test_assessment_is_deterministic_and_covers_declared_dims():
     counts = {DIM: scaled(DECLARED, 30)}
     assert assess(declared, counts) == assess(declared, counts)
     assert set(assess(declared, counts).dimensions) == {DIM}
+
+
+def _simulate(true, seed, turns, every=5):
+    """First turn at which the calibrated defaults flag drift, or None."""
+    import random
+
+    rng = random.Random(seed)
+    counts: dict[str, float] = {}
+    for t in range(1, turns + 1):
+        state = rng.choices(list(true), weights=list(true.values()))[0]
+        counts[state] = counts.get(state, 0) + 1
+        if t % every == 0 and assess_dimension(DIM, DECLARED, counts).drifted:
+            return t
+    return None
+
+
+def test_calibrated_defaults_hold_on_stationary_behavior():
+    assert all(_simulate(DECLARED, seed, 200) is None for seed in range(5))
+
+
+def test_calibrated_defaults_detect_a_03_mass_shift_early():
+    shifted = dict(DECLARED, moderate=0.15, terse=0.5)
+    detected = [_simulate(shifted, seed, 200) for seed in range(5)]
+    assert all(t is not None and t <= 80 for t in detected)

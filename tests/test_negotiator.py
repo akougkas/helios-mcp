@@ -101,8 +101,8 @@ def test_small_well_supported_move_auto_accepts_and_commits(helios):
     neg = Negotiator(helios)
     declared = neg.declared("developer")[DIM]
     nudged = dict(declared)
-    nudged["terse"] += 0.03
-    nudged["moderate"] -= 0.03
+    nudged["terse"] += 0.1
+    nudged["moderate"] -= 0.1
     feed(helios, nudged, 2000)
     ev = neg.evaluate("developer")
     assert ev.auto_accepted == [DIM]
