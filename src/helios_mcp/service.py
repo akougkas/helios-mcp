@@ -14,6 +14,7 @@ from typing import Any, TypedDict
 from .atomic_ops import atomic_write_text, git_commit
 from .bootstrap import BootstrapManager
 from .drift import DEFAULT_CONFIG, DriftAssessment, DriftConfig
+from .estimator import Evidence
 from .negotiation import Evaluation, Negotiator, describe
 from .renderer import BehavioralRenderer
 from .security import SecurityError, persona_path, validate_persona_name
@@ -138,22 +139,35 @@ class HeliosService:
             if not p.stem.endswith("_user")
         )
 
-    def context(self, name: str | None) -> dict[str, Any]:
+    def context(self, name: str | None, model: str | None = None) -> dict[str, Any]:
         persona = self.persona(name)
         profile = self.negotiator.hierarchy.resolve(persona)
         return {
             "persona": persona,
-            "behavioral_context": BehavioralRenderer().render(profile, persona),
+            "behavioral_context": self.render_text(persona, model),
             "observation_count": self.ledger.count(persona),
             "specialization_level": profile.specialization_level,
         }
 
-    def render(self, name: str | None) -> Path:
-        """Write ``rendered/<persona>.md`` for the SessionStart hook."""
+    def render_text(self, name: str | None, model: str | None = None,
+                    evidence: Evidence | None = None) -> str:
+        """The context text, with counter-tendency blocks for ``model`` or,
+        when it is unknown, for the most observed models."""
         persona = self.persona(name)
         profile = self.negotiator.hierarchy.resolve(persona)
+        fingerprints = [(m, a) for m, _, a in
+                        self.negotiator.model_fingerprints(persona, evidence)]
+        return BehavioralRenderer().render(profile, persona, fingerprints, model)
+
+    def render(self, name: str | None, evidence: Evidence | None = None) -> Path:
+        """Write ``rendered/<persona>.md`` for the SessionStart hook.
+
+        The hook does not know which model the session will run, so the file
+        carries the blocks for the most observed models.
+        """
+        persona = self.persona(name)
         path = persona_path(self.helios_dir / "rendered", persona, ".md")
-        atomic_write_text(path, BehavioralRenderer().render(profile, persona) + "\n")
+        atomic_write_text(path, self.render_text(persona, evidence=evidence) + "\n")
         return path
 
     # -- observation ---------------------------------------------------
@@ -231,6 +245,8 @@ class HeliosService:
                        fmt: str = "auto") -> dict[str, Any]:
         from .importer import import_from_markdown
 
+        if name:
+            validate_persona_name(name)
         profile = import_from_markdown(source, format=fmt)
         persona = validate_persona_name(name or profile.agent_id)
         profile.agent_id = persona
@@ -271,8 +287,8 @@ class HeliosService:
 
     def _evaluate(self, persona: str) -> Evaluation:
         evaluation = self.negotiator.evaluate(persona)
-        if evaluation.auto_accepted:
-            self.render(persona)
+        # New turns move the per-model fingerprints even when the profile holds.
+        self.render(persona, evaluation.evidence)
         return evaluation
 
     @staticmethod
