@@ -110,12 +110,20 @@ def ingest_session(
         if obs is not None:
             observations.append(obs)
 
+    store = ObservationStore(helios_dir)
     if final:
-        if client is None:
+        # SessionEnd fires again when a session is resumed; only turns the
+        # model has not labeled yet go back to it.
+        done = {
+            obs.turn_id for obs in store.iter(persona)
+            if obs.source == "llm" and obs.session_id == session_id
+        }
+        pending = [t for t in turns if t.turn_id not in done]
+        if pending and client is None:
             client = default_client(helios_dir)
-        if client is not None:
-            labels = label_session(turns, client)
-            for turn in turns:
+        if pending and client is not None:
+            labels = label_session(pending, client)
+            for turn in pending:
                 label = labels.get(turn.turn_id)
                 if label is None:
                     continue
@@ -123,7 +131,7 @@ def ingest_session(
                 if obs is not None:
                     observations.append(obs)
 
-    return ObservationStore(helios_dir).append(observations)
+    return store.append(observations)
 
 
 # ---------------------------------------------------------------------------
