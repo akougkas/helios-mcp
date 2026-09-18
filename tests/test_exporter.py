@@ -13,7 +13,7 @@ from helios_mcp.exporter import (
     export_soulspec,
 )
 from helios_mcp.profile import BehavioralProfile
-from helios_mcp.taxonomy import list_dimensions, list_states
+from helios_mcp.taxonomy import list_states
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -214,7 +214,8 @@ class TestRoundTrip:
         profile = _make_profile()
         exported = export_dimensions(profile)
 
-        for dim in list_dimensions():
+        assert set(exported["dimensions"]) == set(profile.distributions)
+        for dim in profile.distributions:
             dim_data = exported["dimensions"][dim]
             original_dist = profile.distributions[dim]
             assert dim_data["dominant_state"] == original_dist.most_likely()

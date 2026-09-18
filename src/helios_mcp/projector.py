@@ -15,6 +15,7 @@ import re
 
 from .distribution import BehavioralDistribution
 from .llm import LLMClient, build_taxonomy_description, projection_schema
+from .profile import BehavioralProfile
 from .taxonomy import list_dimensions, list_states
 
 # ---------------------------------------------------------------------------
@@ -110,10 +111,12 @@ def parse_projection_response(response_text: str) -> dict[str, dict[str, float]]
     if not isinstance(data, dict):
         raise ValueError(f"Expected a JSON object, got {type(data).__name__}")
 
-    # Validate structure
-    for dim in list_dimensions():
-        if dim not in data:
-            raise ValueError(f"Missing dimension: {dim}")
+    # Dimensions the reply omits fall back to species defaults later, but a
+    # reply that covers none of them carries no projection at all.
+    present = [dim for dim in list_dimensions() if dim in data]
+    if not present:
+        raise ValueError("Reply covers no known dimension")
+    for dim in present:
         if not isinstance(data[dim], dict):
             raise ValueError(
                 f"Dimension {dim} must be a dict, got {type(data[dim]).__name__}"
@@ -141,7 +144,8 @@ def validate_and_normalize(
     """Validate and normalize raw projection data into BehavioralDistribution objects.
 
     Normalizes each dimension's probabilities to sum to exactly 1.0
-    and enforces minimum probability for all states.
+    and enforces minimum probability for all states. Dimensions missing from
+    ``raw`` take the species default.
 
     Args:
         raw: Dict mapping dimension → state → probability.
@@ -151,8 +155,12 @@ def validate_and_normalize(
     """
     dists: dict[str, BehavioralDistribution] = {}
     min_prob = 0.001  # floor to prevent zero mass
+    species = BehavioralProfile.default_species().distributions
 
     for dim in list_dimensions():
+        if dim not in raw:
+            dists[dim] = species[dim]
+            continue
         states = list_states(dim)
         weights = {}
         for state in states:
