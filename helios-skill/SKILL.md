@@ -1,9 +1,9 @@
 ---
 name: helios
 description: Learns your preferences for how an agent should communicate, act, and take risks. Negotiates an update with you when observed behavior drifts from what's declared.
-argument-hint: "[status|drift|negotiate|import|export]"
+argument-hint: "[init|status|drift|negotiate|import|export]"
 user-invocable: true
-allowed-tools: "mcp__helios__list_personas,mcp__helios__get_behavioral_context,mcp__helios__observe_interaction,mcp__helios__get_drift_report,mcp__helios__negotiate_update,mcp__helios__import_profile,mcp__helios__export_profile"
+allowed-tools: "mcp__helios__list_personas,mcp__helios__get_behavioral_context,mcp__helios__observe_interaction,mcp__helios__get_drift_report,mcp__helios__negotiate_update,mcp__helios__import_profile,mcp__helios__export_profile,Bash"
 ---
 
 # Helios Behavioral Science
@@ -14,11 +14,22 @@ Helios observes your behavioral patterns and helps your agent learn your prefere
 
 Route based on $ARGUMENTS:
 
+- `/helios init [persona]` — bootstrap Helios and onboard from `~/.claude/CLAUDE.md`
 - `/helios` or `/helios status` — show current behavioral profile
 - `/helios drift` — check for behavioral drift
 - `/helios negotiate` — review and accept/reject proposed changes
 - `/helios import <path>` — import a personality file into Helios
 - `/helios export [format]` — export behavioral profile (yaml, json, soulspec)
+
+## Init
+
+When the user runs `/helios init`, or asks to (re)onboard from `~/.claude/CLAUDE.md`: run the CLI directly. There's no MCP tool for this — it also sets the default persona, a filesystem-level change no MCP tool exposes.
+
+```bash
+helios-mcp init [persona]
+```
+
+Omit `[persona]` to reuse the already-configured default, or `developer` on a fresh install. Imports `~/.claude/CLAUDE.md` into that persona's user level as the authoritative source and makes it the default persona. Idempotent — rerunning overwrites the persona's user-level profile instead of duplicating it.
 
 ## Session Start
 
@@ -53,7 +64,9 @@ The response includes a `proposal_id`. Hold onto it — `negotiate_update` needs
 
 ## Negotiation
 
-When presenting a drift report, explain what changed in plain language. Ask the user if they want to accept the observed behavior as their new profile. Use the `proposal_id` from `get_drift_report`, not a persona name alone — a stale or wrong id is rejected rather than silently applied to whatever the current proposal happens to be.
+Present a drift report as a suggestion, not a verdict: "it looks like you've been running more `<state>` than your declared profile says — want me to update that?" rather than an assertion that the profile is wrong. Use the `proposal_id` from `get_drift_report`, not a persona name alone — a stale or wrong id is rejected rather than silently applied to whatever the current proposal happens to be.
+
+A plain "no" is a complete answer. Reject it immediately: don't ask why, don't re-present the same proposal again later in the same session, and don't fall back to a partial accept the user didn't ask for. A rejection is itself useful evidence — record it and move on.
 
 If the user accepts:
 ```
@@ -61,7 +74,7 @@ Tool: negotiate_update
 Args: { "proposal_id": "<id from get_drift_report>", "decision": "accept" }
 ```
 
-If the user rejects:
+If the user rejects, a bare "no" included — pass whatever reason is available, or omit it:
 ```
 Tool: negotiate_update
 Args: { "proposal_id": "<id from get_drift_report>", "decision": "reject", "reason": "..." }
