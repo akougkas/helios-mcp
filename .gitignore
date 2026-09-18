@@ -42,3 +42,10 @@ scratch/
 *.debug
 *.lock
 !uv.lock
+
+.clio-coder/
+
+# Session and process artifacts, not distributable source
+SESSION_PROMPT.md
+ai-docs/
+.claude/
