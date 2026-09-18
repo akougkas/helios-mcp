@@ -79,6 +79,7 @@ class AgentTurn:
     end_timestamp: float = 0.0
     next_input: UserInput | None = None
     opens_session: bool = False
+    model: str | None = None  # first real model id that produced the turn
 
     @property
     def text(self) -> str:
@@ -226,6 +227,10 @@ class _Builder:
             self.pending_prompt = None
         turn = self.current
         turn.end_timestamp = max(turn.end_timestamp, ts)
+        message = rec.get("message")
+        model = message.get("model") if isinstance(message, dict) else None
+        if turn.model is None and isinstance(model, str) and model != "<synthetic>":
+            turn.model = model
         for block in _content_blocks(rec.get("message")):
             btype = block.get("type")
             if btype == "text":

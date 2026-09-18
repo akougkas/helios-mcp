@@ -33,6 +33,7 @@ def test_split_assistant_records_fold_into_one_turn_per_prompt(tmp_path: Path):
     assert second.next_input is None
     assert first.turn_id != second.turn_id
     assert first.timestamp == parse_timestamp(b.records[2]["timestamp"])
+    assert first.model == "claude-test"
 
 
 def test_turn_ids_are_stable_across_reparses(tmp_path: Path):
