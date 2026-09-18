@@ -77,6 +77,7 @@ class AgentTurn:
     interrupted: bool = False
     end_timestamp: float = 0.0
     next_input: UserInput | None = None
+    opens_session: bool = False
 
     @property
     def text(self) -> str:
@@ -219,6 +220,7 @@ class _Builder:
                 session_id=self.session_id,
                 timestamp=ts,
                 prompt=self.pending_prompt,
+                opens_session=not self.turns,
             )
             self.pending_prompt = None
         turn = self.current

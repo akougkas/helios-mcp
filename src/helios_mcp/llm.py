@@ -223,11 +223,17 @@ For every turn produce:
    response or a response unrelated to the agent's behavior; -0.5 the outcome
    was wrong but not the behavior; -1 correction, frustration, interrupt or
    denied tool call. null when nothing followed.
-4. correction_hint: for each dimension where the user asked for a different
-   style (for example "shorter" means communication_register terse, "stop
-   asking, just do it" means interaction_agency assumes_and_acts), the state
-   they asked for. Empty object when they did not. Requests about the product
-   being built are not style requests.
+   A style request that contradicts what the agent just did ("ask me before
+   deleting" right after a deletion) is a correction, -1. The same request
+   when the agent already behaved that way is a standing preference, 0.
+4. correction_hint: for each dimension where the user asked for a style (for
+   example "shorter" means communication_register terse, "stop asking, just
+   do it" means interaction_agency assumes_and_acts, "check with me before
+   changing files" means interaction_agency asks_first and risk_caution
+   checks_before_acting), the state they asked for. For the turn marked as
+   the session opener, also include standing requests made in its own input.
+   Empty object when there are none. Requests about the product being built
+   are not style requests.
 
 Dimensions and states:
 {taxonomy}
@@ -300,7 +306,7 @@ def _tool_summary(turn: AgentTurn) -> list[str]:
 
 def render_turn(turn: AgentTurn, index: int) -> str:
     """Compact text rendering of one turn for the labeling prompt."""
-    parts = [f"### turn {index}"]
+    parts = [f"### turn {index}" + (" (session opener)" if turn.opens_session else "")]
     if turn.prompt is not None:
         prompt = _clip(turn.prompt.text, _PROMPT_CHARS)
         parts.append(f"input ({turn.prompt.kind}): {prompt}")

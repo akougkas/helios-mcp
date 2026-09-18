@@ -24,7 +24,12 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+from .classify import classify_turn
 from .transcript import AgentTurn
+
+# A requested state holding less than this much of the turn's own label means
+# the request contradicts what the agent just did.
+_CONTRADICTION = 0.3
 
 Kind = Literal[
     "endorsed", "continued", "neutral", "failed", "corrected",
@@ -76,22 +81,29 @@ _HINT_RULES: tuple[_HintRule, ...] = (
           _REG, "technical_dense", False),
     _rule(r"\b(?:just do it|stop asking|don'?t ask|no need to ask|"
           r"(?:you )?(?:do not|don't) need to ask|what are you waiting for|"
-          r"why are you (?:asking|waiting)|without asking me)\b",
+          r"why are you (?:asking|waiting))\b",
           _AGENCY, "assumes_and_acts", True),
     _rule(r"\b(?:do it yourself|take control|i trust you|your call)\b",
           _AGENCY, "assumes_and_acts", False),
-    _rule(r"\b(?:ask (?:me )?(?:first|before)|check with me|"
-          r"you should have asked|without (?:asking|checking with) me first|"
-          r"don'?t do anything (?:without|until))\b", _AGENCY, "asks_first", True),
+    _rule(r"\b(?:you should have (?:asked|checked)|why didn'?t you (?:ask|check)|"
+          r"without (?:asking|checking with) me(?: first)?)\b",
+          _AGENCY, "asks_first", True),
+    _rule(r"\b(?:ask (?:me )?(?:first|before)|check with me|confirm with me|"
+          r"don'?t do anything (?:without|until))\b", _AGENCY, "asks_first", False),
     _rule(r"\b(?:give me (?:some |a few )?options|what are (?:my|the) options|"
           r"pros and cons|alternatives\?)", _AGENCY, "offers_options", False),
     _rule(r"\b(?:you decide|use your (?:own )?judgment|up to you)\b",
           _AGENCY, "decides_unilaterally", False),
     _rule(r"\b(?:let me decide|i(?:'ll| will) decide|my call|do as i say|"
           r"you will do as i say)\b", _AGENCY, "defers_to_user", True),
+    _rule(r"\b(?:did you (?:test|check|verify)|you broke)\b",
+          _RISK, "checks_before_acting", True),
     _rule(r"\b(?:be careful|double[- ]check|verify (?:first|before)|"
-          r"test (?:it )?before|did you (?:test|check|verify)|check first|"
-          r"you broke)\b", _RISK, "checks_before_acting", True),
+          r"test (?:it )?before|check first|"
+          r"(?:check with me|ask(?: me)?|confirm(?: with me)?)(?: first)? before "
+          r"(?:you |i |we )?(?:chang|edit|delet|modif|touch|writ|remov|run|"
+          r"commit|push|deploy))",
+          _RISK, "checks_before_acting", False),
     _rule(r"\b(?:stop warning|skip the (?:caveats|warnings)|too cautious|"
           r"stop being (?:so )?careful|move faster)\b",
           _RISK, "acts_immediately", True),
@@ -161,6 +173,10 @@ def judge_text(text: str) -> Endorsement:
 
 def judge_turn(turn: AgentTurn) -> Endorsement:
     """Endorsement for one agent turn from everything the user did after it."""
+    # A session opener states standing preferences for everything after it.
+    opener_hints: dict[str, str] = {}
+    if turn.opens_session and turn.prompt is not None and turn.prompt.kind == "prompt":
+        opener_hints = hints_from_text(turn.prompt.text[:600])[0]
     follow_texts = [s.text for s in turn.steers]
     follow_texts += [c.denial_feedback for c in turn.denials if c.denial_feedback]
     nxt = turn.next_input
@@ -171,6 +187,8 @@ def judge_turn(turn: AgentTurn) -> Endorsement:
     for t in follow_texts:
         for dim, state in hints_from_text(t[:600])[0].items():
             hints.setdefault(dim, state)
+    for dim, state in opener_hints.items():
+        hints.setdefault(dim, state)
     hint = hints or None
 
     if turn.interrupted:
@@ -180,10 +198,29 @@ def judge_turn(turn: AgentTurn) -> Endorsement:
     steer_verdicts = [judge_text(s.text) for s in turn.steers]
     if any(v.kind == "corrected" for v in steer_verdicts):
         return Endorsement(-1.0, "corrected", hint)
+    if any(v.kind == "neutral" and _contradicts(turn, v.correction_hint)
+           for v in steer_verdicts):
+        return Endorsement(-1.0, "corrected", hint)
 
     if nxt is None:
         return Endorsement(None, "none", hint)
     if nxt.kind != "prompt":
         return Endorsement(0.0, "neutral", hint)
     verdict = judge_text(nxt.text)
+    if verdict.kind == "neutral" and _contradicts(turn, verdict.correction_hint):
+        # "Ask me before deleting anything" right after a deletion is a
+        # correction; the same words in a fresh task are a standing preference.
+        return Endorsement(-1.0, "corrected", hint)
     return Endorsement(verdict.value, verdict.kind, hint)
+
+
+def _contradicts(turn: AgentTurn, requested: dict[str, str] | None) -> bool:
+    """Whether the turn visibly did something other than what was requested."""
+    if not requested:
+        return False
+    labels = classify_turn(turn).labels
+    for dim, state in requested.items():
+        label = labels.get(dim)
+        if label is not None and label.get(state, 0.0) < _CONTRADICTION:
+            return True
+    return False

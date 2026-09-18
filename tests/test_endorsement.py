@@ -19,7 +19,7 @@ from .transcript_fixtures import TranscriptBuilder
         ("too long, be terse", -1.0, {"communication_register": "terse"}),
         ("no, that's not what I asked for", -1.0, None),
         ("what are you waiting for? proceed", -1.0, {"interaction_agency": "assumes_and_acts"}),
-        ("ask me first before you delete anything", -1.0, {"interaction_agency": "asks_first"}),
+        ("ask me first before you delete anything", 0.0, {"interaction_agency": "asks_first", "risk_caution": "checks_before_acting"}),
         ("i am entirely lost", -1.0, {"communication_register": "plain_accessible"}),
         ("still failing with the same error", 0.0, None),
         ("check the logs and report briefly", 0.0, {"communication_register": "terse"}),
@@ -72,3 +72,39 @@ def test_corrective_steer_marks_the_running_turn():
     verdict = judge_turn(parse_records(b.records).turns[0])
     assert verdict.value == -1.0
     assert verdict.correction_hint == {"communication_register": "terse"}
+
+
+def test_cautious_opener_is_a_standing_preference():
+    phrase = "check with me before changing files"
+    wanted = {"interaction_agency": "asks_first", "risk_caution": "checks_before_acting"}
+    verdict = judge_text(phrase)
+    assert (verdict.value, verdict.kind) == (0.0, "neutral")
+    assert verdict.correction_hint == wanted
+
+    b = TranscriptBuilder()
+    b.prompt(phrase + ". Rename the config loader.")
+    b.tool("Read", {"file_path": "config.py"}, "t1")
+    b.say("Plan: rename ConfigLoader to Settings in 3 files. Go ahead?")
+    b.prompt("yes")
+    b.say("Renamed.")
+    first, second = [judge_turn(t) for t in parse_records(b.records).turns]
+    assert first.value == 1.0
+    assert first.correction_hint == wanted
+    assert second.correction_hint is None
+
+
+def test_style_request_that_contradicts_the_turn_is_a_correction():
+    b = TranscriptBuilder()
+    b.prompt("tidy the repo")
+    b.tool("Bash", {"command": "rm -rf build dist"}, "t1")
+    b.result("t1")
+    b.say("Removed build and dist.")
+    b.prompt("ask me first before you delete anything")
+    b.say("Understood.")
+    b.prompt("now summarize the layout, briefly")
+    b.say("src holds the package, tests the suite.")
+    b.prompt("thanks")
+    deleted, understood, _summary = [judge_turn(t) for t in parse_records(b.records).turns]
+    assert (deleted.value, deleted.kind) == (-1.0, "corrected")
+    assert deleted.correction_hint == {"interaction_agency": "asks_first", "risk_caution": "checks_before_acting"}
+    assert understood.value == 0.0  # the short "Understood." already is brief
