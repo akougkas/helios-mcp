@@ -50,7 +50,8 @@ def test_repeated_observe_of_a_growing_conversation_is_idempotent(helios_dir):
     pytest.importorskip("helios_mcp.ingest")
     harness = BehavioralHarness("developer", helios_dir)
     convo = [{"role": "user", "content": "Refactor this."},
-             {"role": "assistant", "content": "Done. I used a comprehension."}]
+             {"role": "assistant", "content": "Done. I used a comprehension."},
+             {"role": "user", "content": "Thanks. Now add a test."}]
     first = harness.observe(convo)
     assert first["observations_added"] >= 1
     assert harness.observe(convo)["observations_added"] == 0
