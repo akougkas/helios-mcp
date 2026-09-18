@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from helios_mcp.calibrate import agreement_report, heuristic_report, iter_transcripts
+from helios_mcp.calibrate import (
+    agreement_report,
+    heuristic_report,
+    iter_transcripts,
+    label_corpus,
+)
 from helios_mcp.transcript import parse_transcript
 
 from .transcript_fixtures import TranscriptBuilder
@@ -42,3 +47,32 @@ def test_reports_carry_no_transcript_text(tmp_path: Path):
     agreement = agreement_report([parse_transcript(paths[0])], Echo(), workers=1)
     assert agreement["endorsement"]["sign_agree"] == 1
     assert SECRET not in json.dumps(report) + json.dumps(agreement)
+
+
+def test_label_corpus_is_resumable(tmp_path: Path):
+    _corpus(tmp_path / "projects")
+    paths = list(iter_transcripts(tmp_path / "projects"))
+    out = tmp_path / "ledger"
+
+    class Flaky:
+        def __init__(self, reply):
+            self.reply = reply
+            self.calls = 0
+
+        def complete_json(self, system, prompt, schema):
+            self.calls += 1
+            return self.reply
+
+    label = {"epistemic_style": None, "interaction_agency": None, "communication_register": None,
+             "risk_caution": None, "confidence": 0.5, "endorsement": -1,
+             "correction_hint": {"communication_register": "terse"}}
+    down = Flaky(None)
+    first = label_corpus(paths, out, down, workers=2)
+    assert first["sessions_done"] == 1 and down.calls == 1
+    up = Flaky({"turns": [{"id": "0", **label}, {"id": "1", **label}]})
+    label_corpus(paths, out, up, workers=2)
+    label_corpus(paths, out, up, workers=2)
+    assert up.calls == 1  # the third pass finds nothing left to label
+    status = json.loads((out / "status.json").read_text())
+    assert status["finished"] is not None
+    assert SECRET not in (out / "observations" / "corpus.jsonl").read_text()

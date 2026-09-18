@@ -113,3 +113,58 @@ def test_message_path_is_idempotent_when_the_conversation_is_resent(tmp_path: Pa
     assert again[0].correction_hint == {"communication_register": "terse"}
     assert store.append(again) == 1
     assert {o.source for o in again} == {"mcp"}
+
+
+class CountingClient:
+    """Labels every turn it is shown and records how many it saw."""
+
+    def __init__(self):
+        self.seen: list[int] = []
+
+    def complete_json(self, system, prompt, schema):
+        ids = [int(line.split()[2]) for line in prompt.splitlines() if line.startswith("### turn ")]
+        self.seen.append(len(ids))
+        label = {"epistemic_style": {"confident": 1, "hedging": 0, "admits_ignorance": 0, "speculating": 0},
+                 "interaction_agency": None, "communication_register": None, "risk_caution": None,
+                 "confidence": 0.8, "endorsement": 0.5, "correction_hint": {}}
+        return {"turns": [{"id": str(i), **label} for i in ids]}
+
+
+def test_resumed_session_end_labels_only_new_turns(tmp_path: Path):
+    helios = tmp_path / "helios"
+    b = _verbose_session_with_corrections(2)
+    path = b.write(tmp_path / "s.jsonl")
+    client = CountingClient()
+    ingest_session(helios, "dev", path, "s1", final=True, client=client)
+    b.prompt("one more thing")
+    b.say("Done again.")
+    b.write(path)
+    ingest_session(helios, "dev", path, "s1", final=True, client=client)
+    ingest_session(helios, "dev", path, "s1", final=True, client=client)
+    assert client.seen == [3, 1]
+    llm_ids = [r.turn_id for r in ObservationStore(helios).iter("dev") if r.source == "llm"]
+    assert len(llm_ids) == len(set(llm_ids)) == 4
+
+
+def test_model_hints_need_a_human_reply_and_opener_hints_come_from_the_lexicon(tmp_path: Path):
+    b = TranscriptBuilder()
+    b.prompt("check with me before changing files. Read brief.md and execute it exactly.")
+    b.say("Here is the plan. Shall I start?")
+    b.prompt("yes")
+    b.say("Started.")
+    path = b.write(tmp_path / "s.jsonl")
+    label = {"epistemic_style": None, "interaction_agency": None, "communication_register": None,
+             "risk_caution": {"acts_immediately": 1, "checks_before_acting": 0, "warns_frequently": 0,
+                              "refuses_ambiguity": 0},
+             "confidence": 0.8, "endorsement": 0.5,
+             "correction_hint": {"interaction_agency": "assumes_and_acts", "communication_register": "terse"}}
+    reply = {"turns": [{"id": "0", **label}, {"id": "1", **label}]}
+    helios = tmp_path / "helios"
+    ingest_session(helios, "dev", path, "s1", final=True, client=FakeClient(reply))
+    opener, last = [r for r in ObservationStore(helios).iter("dev") if r.source == "llm"]
+    assert opener.correction_hint == {
+        "interaction_agency": "assumes_and_acts",
+        "communication_register": "terse",
+        "risk_caution": "checks_before_acting",
+    }
+    assert last.correction_hint is None

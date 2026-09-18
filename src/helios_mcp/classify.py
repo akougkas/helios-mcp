@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
-from .taxonomy import list_states
+from .taxonomy import list_dimensions, list_states
 from .transcript import AgentTurn, ToolCall
 
 # A label is the evidence proportions scaled to a fixed mass plus a small
@@ -321,17 +322,27 @@ def classify_risk(turn: AgentTurn) -> tuple[dict[str, float], float]:
     return counts, _saturate(sum(counts.values()), 2.0)
 
 
+Classifier = Callable[[AgentTurn], tuple[dict[str, float], float]]
+
+# One scorer per dimension. A scorer for a dimension the taxonomy does not
+# define is skipped, so dimensions can be added here ahead of the taxonomy.
+CLASSIFIERS: dict[str, Classifier] = {
+    "epistemic_style": lambda t: classify_epistemic(t.text),
+    "interaction_agency": classify_agency,
+    "communication_register": lambda t: classify_register(t.final_text),
+    "risk_caution": classify_risk,
+}
+
+
 def classify_turn(turn: AgentTurn) -> TurnLabels:
     """Soft labels for one agent turn. Dimensions without evidence are omitted."""
-    scored = {
-        "epistemic_style": classify_epistemic(turn.text),
-        "interaction_agency": classify_agency(turn),
-        "communication_register": classify_register(turn.final_text),
-        "risk_caution": classify_risk(turn),
-    }
+    known = set(list_dimensions())
     labels: dict[str, dict[str, float]] = {}
     confidence: dict[str, float] = {}
-    for dim, (counts, conf) in scored.items():
+    for dim, scorer in CLASSIFIERS.items():
+        if dim not in known:
+            continue
+        counts, conf = scorer(turn)
         if conf < MIN_CONFIDENCE:
             continue
         labels[dim] = _soft(dim, counts)

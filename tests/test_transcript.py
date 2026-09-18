@@ -33,6 +33,7 @@ def test_split_assistant_records_fold_into_one_turn_per_prompt(tmp_path: Path):
     assert second.next_input is None
     assert first.turn_id != second.turn_id
     assert first.timestamp == parse_timestamp(b.records[2]["timestamp"])
+    assert first.model == "claude-test"
 
 
 def test_turn_ids_are_stable_across_reparses(tmp_path: Path):
@@ -109,3 +110,18 @@ def test_corrupt_lines_and_missing_file_are_tolerated(tmp_path: Path):
         fh.write('{"type": "user", "trunc')
     assert len(parse_transcript(path).turns) == 1
     assert parse_transcript(tmp_path / "missing.jsonl", "x").turns == []
+
+
+def test_declined_question_and_auto_mode_block_are_not_user_denials():
+    b = TranscriptBuilder()
+    b.prompt("plan the migration")
+    b.tool("AskUserQuestion", {"questions": []}, "q1")
+    b.deny("q1", feedback="The user wants to clarify these questions.")
+    b.tool("Bash", {"command": "rm -rf /data"}, "t1")
+    b.result("t1", "Permission for this action was denied by the auto mode classifier.",
+             is_error=True, toolDenialKind="automode-blocked")
+    b.tool("ExitPlanMode", {}, "p1")
+    b.deny("p1", feedback="no, keep the old schema")
+    turn = parse_records(b.records).turns[0]
+    assert [c.tool_use_id for c in turn.denials] == ["p1"]
+    assert turn.denials[0].denial_feedback == "no, keep the old schema"

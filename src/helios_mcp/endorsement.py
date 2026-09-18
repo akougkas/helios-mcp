@@ -175,12 +175,15 @@ def judge_text(text: str) -> Endorsement:
     return Endorsement(0.5, "continued")
 
 
+def opener_hints(turn: AgentTurn) -> dict[str, str]:
+    """Standing preferences stated in the prompt that opened the session."""
+    if turn.opens_session and turn.prompt is not None and turn.prompt.kind == "prompt":
+        return hints_from_text(turn.prompt.text[:600])[0]
+    return {}
+
+
 def judge_turn(turn: AgentTurn) -> Endorsement:
     """Endorsement for one agent turn from everything the user did after it."""
-    # A session opener states standing preferences for everything after it.
-    opener_hints: dict[str, str] = {}
-    if turn.opens_session and turn.prompt is not None and turn.prompt.kind == "prompt":
-        opener_hints = hints_from_text(turn.prompt.text[:600])[0]
     follow_texts = [s.text for s in turn.steers]
     follow_texts += [c.denial_feedback for c in turn.denials if c.denial_feedback]
     nxt = turn.next_input
@@ -191,7 +194,7 @@ def judge_turn(turn: AgentTurn) -> Endorsement:
     for t in follow_texts:
         for dim, state in hints_from_text(t[:600])[0].items():
             hints.setdefault(dim, state)
-    for dim, state in opener_hints.items():
+    for dim, state in opener_hints(turn).items():
         hints.setdefault(dim, state)
     hint = hints or None
 
