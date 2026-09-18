@@ -7,6 +7,11 @@ heuristic-versus-model agreement. The report holds numbers only; no transcript
 text leaves this process.
 
     python -m helios_mcp.calibrate ~/.claude/projects --llm-sample 20
+    python -m helios_mcp.calibrate ~/.claude/projects --label-into DIR
+
+``--label-into`` writes a full-corpus observation ledger (heuristic and model
+rows, persona ``corpus``) under DIR through the same ingest path SessionEnd
+uses. Re-running it labels only turns that still lack a model row.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ import math
 import random
 import statistics
 import sys
+import time
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -25,11 +31,13 @@ from typing import Any
 
 from .classify import classify_turn
 from .endorsement import judge_turn
+from .ingest import ingest_session
 from .llm import LLMClient, LLMTurnLabel, default_client, label_session
 from .taxonomy import list_dimensions
 from .transcript import AgentTurn, Session, parse_transcript
 
-EXCLUDE_MARKERS = ("helios-lab",)
+EXCLUDE_MARKERS = ("helios-lab", "helios-wt")
+CORPUS_PERSONA = "corpus"
 
 
 def iter_transcripts(root: Path) -> Iterator[Path]:
@@ -279,15 +287,69 @@ def sample_sessions(
     return picked
 
 
+def label_corpus(
+    paths: list[Path], helios_dir: Path, client: LLMClient, workers: int = 4
+) -> dict[str, Any]:
+    """Ingest every transcript with model labels into ``helios_dir``.
+
+    Smallest transcripts go first so the ledger becomes useful early. Progress
+    is written to ``status.json`` after every session; one failing session
+    never stops the pass.
+    """
+    helios_dir.mkdir(parents=True, exist_ok=True)
+    ordered = sorted(paths, key=lambda p: p.stat().st_size)
+    status: dict[str, Any] = {
+        "persona": CORPUS_PERSONA,
+        "ledger": str(helios_dir / "observations" / f"{CORPUS_PERSONA}.jsonl"),
+        "sessions_total": len(ordered),
+        "sessions_done": 0,
+        "sessions_failed": 0,
+        "rows_added": 0,
+        "started": time.time(),
+        "finished": None,
+    }
+    status_path = helios_dir / "status.json"
+
+    def one(path: Path) -> int:
+        return ingest_session(
+            helios_dir, CORPUS_PERSONA, path, path.stem, final=True, client=client
+        )
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(one, p) for p in ordered]
+        for future in futures:
+            try:
+                status["rows_added"] += future.result()
+                status["sessions_done"] += 1
+            except Exception:  # one bad transcript must not stop the pass
+                status["sessions_failed"] += 1
+            status_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
+    status["finished"] = time.time()
+    status_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
+    return status
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("root", type=Path)
     parser.add_argument("--llm-sample", type=int, default=0)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--label-into", type=Path, default=None)
     args = parser.parse_args(argv)
 
     paths = list(iter_transcripts(args.root.expanduser()))
+    if args.label_into is not None:
+        client = default_client()
+        if client is None:
+            print(
+                "model labeling is disabled or claude is not on PATH", file=sys.stderr
+            )
+            return 2
+        status = label_corpus(paths, args.label_into, client, args.workers)
+        json.dump(status, sys.stdout, indent=2)
+        print()
+        return 0
     report: dict[str, Any] = {"heuristic": heuristic_report(paths)}
     if args.llm_sample > 0:
         client = default_client()
