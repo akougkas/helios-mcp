@@ -29,6 +29,7 @@ from .drift import (
 )
 from .estimator import Evidence, estimate
 from .hierarchy import IdentityHierarchy
+from .llm import llm_enabled
 from .profile import BehavioralProfile
 from .security import persona_path
 from .store import ObservationStore, Proposal, ProposalStore, ProposedChange
@@ -84,7 +85,7 @@ class Negotiator:
     def assess(self, persona: str) -> tuple[DriftAssessment, DriftAssessment, Evidence]:
         """Endorsed and fingerprint assessments with the evidence behind them."""
         evidence = estimate(self.ledger.iter(persona), self.proposals.all(persona),
-                            self.config)
+                            self.config, llm_labels=llm_enabled(self.helios_dir))
         declared = self.declared(persona)
         return (
             assess(declared, evidence.endorsed, self.config),

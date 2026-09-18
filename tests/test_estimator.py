@@ -97,3 +97,21 @@ def test_dim_confidence_overrides_turn_confidence_per_dimension():
         confidence=0.6, dim_confidence={DIM: 0.2})], config=LINEAR)
     assert ev.endorsed[DIM] == {"thorough": 0.2}
     assert ev.fingerprint["risk_caution"] == {"acts_immediately": 0.6}
+
+
+def test_with_model_labels_only_model_labeled_turns_are_endorsed():
+    ledger = [turn("t1", "heuristic", TERSE), turn("t2", "heuristic", TERSE),
+              turn("t2", "llm", THOROUGH)]
+    ev = estimate(ledger, config=LINEAR, llm_labels=True)
+    assert ev.endorsed[DIM] == {"thorough": 1.0}
+    assert ev.endorsed_turns == 1
+    # The fingerprint still previews the heuristic-only turn.
+    assert ev.fingerprint[DIM] == {"terse": 1.0, "thorough": 1.0}
+
+
+def test_model_label_after_an_accept_counts_from_its_own_row():
+    # t1 had only a heuristic row when the proposal was accepted at row 1; its
+    # model label arrives later and was never absorbed.
+    ledger = [turn("t1", "heuristic", TERSE), turn("t1", "llm", THOROUGH)]
+    ev = estimate(ledger, [proposal("accepted", 1)], config=LINEAR, llm_labels=True)
+    assert ev.endorsed[DIM] == {"thorough": 1.0}
