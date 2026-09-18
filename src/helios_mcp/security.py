@@ -1,420 +1,121 @@
-"""Security utilities for Helios MCP server.
+"""Path and input validation for Helios MCP.
 
-Provides path validation, input sanitization, and secure operations
-to prevent common vulnerabilities like path traversal and injection attacks.
+Every persona-derived filesystem write goes through validate_persona_name
+and persona_path. Both are whitelist-based: a name is accepted only if it
+matches a narrow character class, not rejected because it matches a
+blocklist of known-bad patterns.
 """
 
 import logging
 import re
-import shlex
 from pathlib import Path
-from typing import Any
-
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 logger = logging.getLogger(__name__)
 
 
-# Allowed characters for various input types
-SAFE_FILENAME_PATTERN = re.compile(r'^[a-zA-Z0-9._-]+$')
-SAFE_PERSONA_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
-SAFE_KEY_PATTERN = re.compile(r'^[a-zA-Z0-9._-]+$')
-
-# Dangerous path components
-DANGEROUS_PATH_COMPONENTS = {
-    '..',
-    '.',
-    '~',
-    '//',
-    '\\',
-    '\0',
-}
-
-# Allowed configuration domains and keys
-ALLOWED_DOMAINS = {
-    'behaviors',
-    'communication',
-    'technical',
-    'identity',
-    'preferences',
-    'specializations',
-    'learning'
-}
-
-ALLOWED_PARAMETERS = {
-    'base_importance',
-    'specialization_level',
-    'learning_rate',
-    'version'
-}
+SAFE_PERSONA_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,50}$")
+SAFE_SUFFIX_PATTERN = re.compile(r"^[a-zA-Z0-9_.]{1,50}$")
 
 
 class SecurityError(Exception):
     """Base exception for security violations."""
-    pass
 
 
 class PathTraversalError(SecurityError):
-    """Raised when path traversal attempts are detected."""
-    pass
+    """Raised when a resolved path would escape its base directory."""
 
 
 class InvalidInputError(SecurityError):
-    """Raised when input validation fails."""
-    pass
-
-
-class BaseConfigSchema(BaseModel):
-    """Pydantic schema for base configuration validation."""
-    base_importance: float = Field(
-        ge=0.0, le=1.0,
-        description="Base configuration importance weight"
-    )
-    identity: dict[str, Any] | None = None
-    communication: dict[str, Any] | None = None
-    behaviors: dict[str, Any] | None = None
-    technical: dict[str, Any] | None = None
-    preferences: dict[str, Any] | None = None
-    version: str | None = Field(default=None, pattern=r'^\d+\.\d+\.\d+$')
-    description: str | None = Field(default=None, max_length=1000)
-    created: str | None = None
-    
-    model_config = ConfigDict(extra="ignore", strict=True)
-
-
-class PersonaConfigSchema(BaseModel):
-    """Pydantic schema for persona configuration validation."""
-    specialization_level: float = Field(
-        ge=1.0,
-        le=100.0,
-        description="Specialization level (must be >= 1.0 and <= 100.0)"
-    )
-    name: str | None = Field(default=None, max_length=100, pattern=r'^[a-zA-Z0-9 _-]+$')
-    description: str | None = Field(default=None, max_length=1000)
-    behaviors: dict[str, Any] | None = None
-    specializations: dict[str, Any] | None = None
-    learning_rate: float | None = Field(default=None, ge=0.0, le=1.0)
-    version: str | None = Field(default=None, pattern=r'^\d+\.\d+\.\d+$')
-    
-    model_config = ConfigDict(extra="ignore", strict=True)
+    """Raised when input fails whitelist validation."""
 
 
 def validate_persona_name(name: str) -> str:
-    """Validate and sanitize persona name.
-    
-    Args:
-        name: Persona name to validate
-        
-    Returns:
-        Validated persona name
-        
+    """Validate a persona name against a strict whitelist.
+
+    Only ASCII letters, digits, underscore and hyphen are accepted, 1-50
+    characters, with no leading/trailing whitespace. The pattern excludes
+    "." entirely, which also rules out "." and ".." as a side effect, and
+    excludes "/" and "\\", so a validated name cannot address a path
+    outside a single directory component.
+
     Raises:
-        InvalidInputError: If name is invalid or contains dangerous characters
+        InvalidInputError: If name is empty, not a string, too long, or
+            contains any character outside the whitelist.
     """
-    if not name or not isinstance(name, str):
+    if not isinstance(name, str) or not name:
         raise InvalidInputError("Persona name must be a non-empty string")
-    
-    # Remove any whitespace
-    name = name.strip()
-    
-    if not name:
-        raise InvalidInputError("Persona name cannot be empty")
-        
-    if len(name) > 50:
-        raise InvalidInputError("Persona name too long (max 50 characters)")
-    
-    # Check for dangerous characters
+
+    if name != name.strip():
+        raise InvalidInputError(
+            f"Persona name must not have leading or trailing whitespace: {name!r}"
+        )
+
     if not SAFE_PERSONA_NAME_PATTERN.match(name):
         raise InvalidInputError(
-            f"Persona name contains invalid characters. "
-            f"Only alphanumeric, underscore, and hyphen allowed: {name}"
+            "Persona name contains invalid characters. Only alphanumeric, "
+            f"underscore, and hyphen allowed (max 50 chars): {name!r}"
         )
-    
-    # Additional security checks
-    if name.startswith('.'):
-        raise InvalidInputError("Persona name cannot start with a dot")
-        
-    if any(dangerous in name for dangerous in DANGEROUS_PATH_COMPONENTS):
-        raise InvalidInputError(f"Persona name contains dangerous components: {name}")
-    
+
     return name
 
 
-def validate_file_path(file_path: str | Path, base_dir: Path) -> Path:
-    """Validate file path to prevent path traversal attacks.
-    
-    Args:
-        file_path: Path to validate
-        base_dir: Base directory that the path must be within
-        
-    Returns:
-        Validated and resolved Path object
-        
+def persona_path(base_dir: Path, persona: str, suffix: str) -> Path:
+    """Build base_dir/{persona}{suffix}, guaranteed to resolve under base_dir.
+
+    Validates persona through validate_persona_name and suffix against a
+    matching whitelist (letters, digits, underscore, dot — no separators),
+    so callers get one call for both "is this name safe" and "is this
+    path safe" instead of relying on validate_persona_name having already
+    run. The resolved path is re-checked against the resolved base_dir as
+    a second, independent guarantee: even if the whitelist regexes above
+    were ever loosened, a traversal attempt would still be caught here.
+
     Raises:
-        PathTraversalError: If path traversal is attempted
-        InvalidInputError: If path is invalid
+        InvalidInputError: If persona or suffix fails whitelist validation.
+        PathTraversalError: If the resulting path would not stay under
+            base_dir (defense in depth; unreachable if the whitelists hold).
     """
-    if not file_path:
-        raise InvalidInputError("File path cannot be empty")
-    
-    try:
-        # Convert to Path object
-        path_obj = Path(file_path).resolve()
-        base_obj = base_dir.resolve()
-        
-        # Check if path is within base directory
-        try:
-            path_obj.relative_to(base_obj)
-        except ValueError as e:
-            raise PathTraversalError(
-                f"Path traversal detected: {file_path} is outside {base_dir}"
-            ) from e
-        
-        # Additional checks for dangerous components
-        path_parts = path_obj.parts
-        if any(part in DANGEROUS_PATH_COMPONENTS for part in path_parts):
-            raise PathTraversalError(
-                f"Dangerous path components detected in: {file_path}"
-            )
-        
-        # Check for null bytes
-        if '\0' in str(file_path):
-            raise InvalidInputError("Null byte detected in path")
-            
-        return path_obj
-        
-    except (OSError, ValueError) as e:
-        raise InvalidInputError(f"Invalid file path: {file_path} - {e}") from e
+    validated_persona = validate_persona_name(persona)
 
-
-def validate_config_key(key: str) -> str:
-    """Validate configuration key for dot notation.
-    
-    Args:
-        key: Configuration key to validate
-        
-    Returns:
-        Validated key
-        
-    Raises:
-        InvalidInputError: If key is invalid
-    """
-    if not key or not isinstance(key, str):
-        raise InvalidInputError("Configuration key must be a non-empty string")
-    
-    key = key.strip()
-    if not key:
-        raise InvalidInputError("Configuration key cannot be empty")
-        
-    if len(key) > 200:
-        raise InvalidInputError("Configuration key too long (max 200 characters)")
-    
-    # Check each part of dot-notation key
-    key_parts = key.split('.')
-    for part in key_parts:
-        if not part:
-            raise InvalidInputError(f"Empty key component in: {key}")
-            
-        if not SAFE_KEY_PATTERN.match(part):
-            raise InvalidInputError(
-                f"Invalid characters in key component '{part}'. "
-                f"Only alphanumeric, underscore, hyphen, and dot allowed"
-            )
-    
-    return key
-
-
-def validate_config_domain(domain: str) -> str:
-    """Validate configuration domain.
-    
-    Args:
-        domain: Configuration domain to validate
-        
-    Returns:
-        Validated domain
-        
-    Raises:
-        InvalidInputError: If domain is not in allowed list
-    """
-    if not domain or not isinstance(domain, str):
-        raise InvalidInputError("Configuration domain must be a non-empty string")
-    
-    domain = domain.strip()
-    if domain not in ALLOWED_DOMAINS:
+    if not SAFE_SUFFIX_PATTERN.match(suffix):
         raise InvalidInputError(
-            f"Configuration domain '{domain}' not allowed. "
-            f"Allowed domains: {', '.join(sorted(ALLOWED_DOMAINS))}"
+            "Suffix contains invalid characters. Only alphanumeric, "
+            f"underscore, and dot allowed (max 50 chars): {suffix!r}"
         )
-    
-    return domain
 
+    resolved_base = base_dir.resolve()
+    candidate = (base_dir / f"{validated_persona}{suffix}").resolve()
 
-def validate_parameter_name(parameter: str) -> str:
-    """Validate parameter name for tuning operations.
-    
-    Args:
-        parameter: Parameter name to validate
-        
-    Returns:
-        Validated parameter name
-        
-    Raises:
-        InvalidInputError: If parameter is not in allowed list
-    """
-    if not parameter or not isinstance(parameter, str):
-        raise InvalidInputError("Parameter name must be a non-empty string")
-    
-    parameter = parameter.strip()
-    if parameter not in ALLOWED_PARAMETERS:
-        raise InvalidInputError(
-            f"Parameter '{parameter}' not allowed. "
-            f"Allowed parameters: {', '.join(sorted(ALLOWED_PARAMETERS))}"
-        )
-    
-    return parameter
-
-
-def sanitize_git_message(message: str) -> str:
-    """Sanitize git commit message to prevent injection.
-    
-    Args:
-        message: Commit message to sanitize
-        
-    Returns:
-        Sanitized commit message
-        
-    Raises:
-        InvalidInputError: If message is invalid
-    """
-    if not message or not isinstance(message, str):
-        raise InvalidInputError("Commit message must be a non-empty string")
-    
-    message = message.strip()
-    if not message:
-        raise InvalidInputError("Commit message cannot be empty")
-        
-    if len(message) > 500:
-        raise InvalidInputError("Commit message too long (max 500 characters)")
-    
-    # Remove dangerous characters that could be used for injection
-    dangerous_chars = ['\0', '\n', '\r', ';', '&', '|', '`', '$', '(', ')']
-    for char in dangerous_chars:
-        if char in message:
-            message = message.replace(char, ' ')
-    # Remove literal escape sequences that could represent dangerous chars
-    for seq in ['\\u0000', '\\ufeff', '\\x00']:
-        message = message.replace(seq, ' ')
-    
-    # Remove multiple spaces
-    message = re.sub(r'\s+', ' ', message).strip()
-    
-    return message
-
-
-def validate_commits_back(commits_back: int) -> int:
-    """Validate number of commits to revert.
-    
-    Args:
-        commits_back: Number of commits to revert
-        
-    Returns:
-        Validated commits_back value
-        
-    Raises:
-        InvalidInputError: If value is out of safe range
-    """
-    if not isinstance(commits_back, int):
-        raise InvalidInputError("commits_back must be an integer")
-    
-    if commits_back < 1 or commits_back > 10:
-        raise InvalidInputError("commits_back must be between 1 and 10")
-    
-    return commits_back
-
-
-def validate_base_config(data: dict[str, Any]) -> BaseConfigSchema:
-    """Validate base configuration using Pydantic schema.
-    
-    Args:
-        data: Configuration data to validate
-        
-    Returns:
-        Validated configuration schema
-        
-    Raises:
-        ValidationError: If validation fails
-    """
     try:
-        return BaseConfigSchema(**data)
-    except ValidationError as e:
-        logger.error(f"Base configuration validation failed: {e}")
-        raise InvalidInputError(f"Invalid base configuration: {e}") from e
+        candidate.relative_to(resolved_base)
+    except ValueError as e:
+        raise PathTraversalError(
+            f"Resolved path {candidate} escapes base directory {resolved_base}"
+        ) from e
 
-
-def validate_persona_config(data: dict[str, Any]) -> PersonaConfigSchema:
-    """Validate persona configuration using Pydantic schema.
-    
-    Args:
-        data: Configuration data to validate
-        
-    Returns:
-        Validated configuration schema
-        
-    Raises:
-        ValidationError: If validation fails
-    """
-    try:
-        return PersonaConfigSchema(**data)
-    except ValidationError as e:
-        logger.error(f"Persona configuration validation failed: {e}")
-        raise InvalidInputError(f"Invalid persona configuration: {e}") from e
-
-
-def create_safe_git_command(base_command: list[str], *args: str) -> list[str]:
-    """Create a safe git command with properly quoted arguments.
-    
-    Args:
-        base_command: Base command parts (e.g., ['git', '-C', '/path'])
-        *args: Additional arguments to add safely
-        
-    Returns:
-        List of command parts with safely quoted arguments
-    """
-    safe_command = base_command.copy()
-    
-    for arg in args:
-        if not isinstance(arg, str):
-            raise InvalidInputError(
-                f"Git command argument must be string, got {type(arg)}"
-            )
-        
-        # Use shlex.quote for proper shell escaping
-        safe_arg = shlex.quote(arg)
-        safe_command.append(safe_arg)
-    
-    return safe_command
+    return candidate
 
 
 def sanitize_error_message(error: Exception) -> str:
     """Sanitize error message for safe display to users.
-    
+
     Args:
         error: Exception to sanitize
-        
+
     Returns:
         Sanitized error message
     """
     error_str = str(error)
-    
+
     # Remove potentially sensitive information
     # Replace Unix full paths with just filenames
-    error_str = re.sub(r'/[^\s]*/', '.../', error_str)
+    error_str = re.sub(r"/[^\s]*/", ".../", error_str)
     # Replace Windows full paths (C:\Users\... or \\server\share\...)
-    error_str = re.sub(r'[A-Za-z]:\\[^\s]*', '[PATH]', error_str)
-    error_str = re.sub(r'\\\\[^\s]+', '[PATH]', error_str)
-    
+    error_str = re.sub(r"[A-Za-z]:\\[^\s]*", "[PATH]", error_str)
+    error_str = re.sub(r"\\\\[^\s]+", "[PATH]", error_str)
+
     # Limit length
     if len(error_str) > 200:
-        error_str = error_str[:197] + '...'
-    
+        error_str = error_str[:197] + "..."
+
     return error_str
