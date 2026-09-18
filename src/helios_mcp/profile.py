@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import datetime
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from .atomic_ops import atomic_write_yaml
 from .distribution import BehavioralDistribution
+from .drift import DEFAULT_CONFIG, smooth
 from .taxonomy import list_dimensions
 
 SCHEMA_VERSION = "2.0"
@@ -17,7 +18,14 @@ SCHEMA_VERSION = "2.0"
 
 @dataclass
 class BehavioralProfile:
-    """A complete behavioral identity: one distribution per dimension."""
+    """A behavioral identity: one distribution per dimension it declares.
+
+    A level in the hierarchy may declare only some dimensions; the rest pass
+    through from its parent unchanged. ``inherit_weight``, when set, replaces
+    the ``base_importance / specialization_level**2`` formula for this level's
+    blend with its parent; ``0.0`` makes the level authoritative for every
+    dimension it declares.
+    """
 
     agent_id: str
     level: str  # "species" | "domain" | "user" | "session"
@@ -30,6 +38,7 @@ class BehavioralProfile:
     last_negotiation: str | None = None
     created: str = field(default_factory=lambda: datetime.date.today().isoformat())
     schema_version: str = SCHEMA_VERSION
+    inherit_weight: float | None = None
 
     @classmethod
     def default_species(cls) -> BehavioralProfile:
@@ -93,20 +102,20 @@ class BehavioralProfile:
             d["parent_id"] = self.parent_id
         if self.last_negotiation:
             d["last_negotiation"] = self.last_negotiation
+        if self.inherit_weight is not None:
+            d["inherit_weight"] = self.inherit_weight
         return d
 
     @classmethod
     def from_yaml_dict(cls, data: dict[str, Any]) -> BehavioralProfile:
         """Deserialize from a loaded YAML dict."""
         raw_dists = data.get("behavioral_distributions", {})
-        distributions: dict[str, BehavioralDistribution] = {}
-        for dim in list_dimensions():
-            if dim in raw_dists:
-                distributions[dim] = BehavioralDistribution.from_dict(
-                    dim, raw_dists[dim]
-                )
-            else:
-                distributions[dim] = BehavioralDistribution.uniform(dim)
+        distributions = {
+            dim: BehavioralDistribution.from_dict(dim, raw_dists[dim])
+            for dim in list_dimensions()
+            if dim in raw_dists
+        }
+        weight = data.get("inherit_weight")
         return cls(
             agent_id=data.get("agent_id", "unknown"),
             level=data.get("level", "domain"),
@@ -119,6 +128,7 @@ class BehavioralProfile:
             last_negotiation=data.get("last_negotiation"),
             created=data.get("created", datetime.date.today().isoformat()),
             schema_version=data.get("schema_version", SCHEMA_VERSION),
+            inherit_weight=None if weight is None else float(weight),
         )
 
     @classmethod
@@ -129,11 +139,15 @@ class BehavioralProfile:
         return cls.from_yaml_dict(data)
 
     def save(self, path: Path) -> None:
-        """Atomically save this profile to a YAML file."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.parent / (path.name + ".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            yaml.dump(
-                self.to_yaml_dict(), f, default_flow_style=False, allow_unicode=True
+        """Atomically write this profile as YAML.
+
+        Every distribution is smoothed to the probability floor first, so no
+        state on disk is degenerate. Smoothing is a no-op for distributions
+        already at or above the floor.
+        """
+        for dim, dist in list(self.distributions.items()):
+            lifted = smooth(dist.probs, DEFAULT_CONFIG.min_prob)
+            self.distributions[dim] = BehavioralDistribution(
+                dim, dict(zip(dist.states, lifted, strict=True))
             )
-        os.replace(tmp, path)
+        atomic_write_yaml(path, self.to_yaml_dict())

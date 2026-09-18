@@ -221,3 +221,26 @@ class TestMissingLevelsSkipped:
         result = hierarchy.resolve("nobody")
         for dim in _ALL_DIMS:
             assert dim in result.distributions
+
+
+def test_child_passes_undeclared_dimensions_through_and_can_be_authoritative(
+    tmp_path: Path,
+) -> None:
+    from helios_mcp.distribution import BehavioralDistribution
+    from helios_mcp.hierarchy import IdentityHierarchy
+    from helios_mcp.profile import BehavioralProfile
+
+    species = BehavioralProfile.default_species()
+    species.save(tmp_path / "base" / "identity.yaml")
+    target = {"terse": 0.6, "moderate": 0.1, "thorough": 0.1,
+              "technical_dense": 0.1, "plain_accessible": 0.1}
+    BehavioralProfile(
+        agent_id="dev_user", level="user", inherit_weight=0.0,
+        distributions={"communication_register": BehavioralDistribution(
+            "communication_register", target)},
+    ).save(tmp_path / "personas" / "dev_user.yaml")
+
+    resolved = IdentityHierarchy(tmp_path).resolve("dev")
+    got = resolved.distributions["communication_register"].to_dict()
+    assert all(abs(got[s] - p) < 1e-12 for s, p in target.items())
+    assert resolved.distributions["risk_caution"] == species.distributions["risk_caution"]

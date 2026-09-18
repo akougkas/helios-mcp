@@ -172,39 +172,27 @@ class TestFileRoundTrip:
 
 
 # ---------------------------------------------------------------------------
-# Missing dimensions fallback
+# Partial profiles
 # ---------------------------------------------------------------------------
 
-class TestMissingDimensionFallback:
-    def test_missing_dimension_gets_uniform_distribution(self) -> None:
-        data = {
-            "agent_id": "test",
-            "level": "domain",
-            "behavioral_distributions": {
-                "epistemic_style": {
-                    "confident": 0.25,
-                    "hedging": 0.25,
-                    "admits_ignorance": 0.25,
-                    "speculating": 0.25,
-                }
-                # other 3 dimensions deliberately absent
-            },
-        }
-        profile = BehavioralProfile.from_yaml_dict(data)
-        for dim in _ALL_DIMS:
-            assert dim in profile.distributions
-            dist = profile.distributions[dim]
-            assert abs(sum(dist.probs) - 1.0) < 1e-6
+def test_undeclared_dimensions_stay_undeclared() -> None:
+    profile = BehavioralProfile.from_yaml_dict({
+        "behavioral_distributions": {
+            "epistemic_style": {"confident": 0.25, "hedging": 0.25,
+                                "admits_ignorance": 0.25, "speculating": 0.25},
+        },
+    })
+    assert set(profile.distributions) == {"epistemic_style"}
 
-    def test_missing_dimension_is_uniform(self) -> None:
-        data = {
-            "agent_id": "test",
-            "level": "domain",
-            "behavioral_distributions": {},
-        }
-        profile = BehavioralProfile.from_yaml_dict(data)
-        for dim in _ALL_DIMS:
-            dist = profile.distributions[dim]
-            expected_prob = 1.0 / len(dist.states)
-            for p in dist.probs:
-                assert abs(p - expected_prob) < 1e-6
+
+def test_save_never_writes_a_degenerate_state(tmp_path: Path) -> None:
+    profile = BehavioralProfile(
+        agent_id="x", level="user",
+        distributions={"risk_caution": BehavioralDistribution.point_mass(
+            "risk_caution", "acts_immediately")},
+    )
+    path = tmp_path / "x.yaml"
+    profile.save(path)
+    loaded = BehavioralProfile.load(path).distributions["risk_caution"]
+    assert min(loaded.probs) > 0.001
+    assert abs(sum(loaded.probs) - 1.0) < 1e-9
