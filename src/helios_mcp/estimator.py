@@ -3,13 +3,20 @@
 Two sets of counts come out, one per posterior:
 
 - ``fingerprint`` is what the agent did: every selected turn contributes its
-  soft label weighted by classifier confidence. Diagnostics only.
+  soft label weighted by ``confidence ** confidence_exponent``. The soft label
+  already spreads mass by the classifier's uncertainty, so the full confidence
+  would discount the same doubt twice; on the founder's corpus the square root
+  cut time to the first plausible proposal from 19 sessions to 8 with no
+  stationary false positives. Diagnostics only.
 - ``endorsed`` is what the user endorses. A turn the user did not correct
   counts toward what the agent did. A corrected turn with a ``correction_hint``
   puts its weight on the hinted state instead. A corrected turn without a hint
-  spreads its weight over every state except the labeled one, in proportion to
-  ``1 - label``, which moves mass away from what the agent did without
-  inventing a direction. A hint on an uncorrected turn is a standing
+  spreads ``unhinted_correction_weight`` of its weight over every state except
+  the labeled one, in proportion to ``1 - label``, which moves mass away from
+  what the agent did without inventing a direction. The weight is low because
+  on real sessions corrected turns look stylistically like all other turns:
+  most corrections are about content, and at full weight they pull every
+  dimension toward uniform. A hint on an uncorrected turn is a standing
   preference and adds ``standing_hint_weight`` toward the hinted state in
   place of that dimension's label. Rejected proposals add ``rejection_strength``
   pseudo-counts of the profile that was declared when the user said no.
@@ -38,12 +45,14 @@ class Evidence:
     endorsed: Counts = field(default_factory=dict)
     turns: int = 0
     ledger_rows: int = 0
+    endorsed_turns: int = 0
 
 
 @dataclass(frozen=True)
 class _Turn:
     first_row: int
     obs: TurnObservation
+    llm_row: int | None = None
 
 
 def select_turns(observations: Iterable[TurnObservation]) -> tuple[list[_Turn], int]:
@@ -59,10 +68,12 @@ def select_turns(observations: Iterable[TurnObservation]) -> tuple[list[_Turn], 
         rows = row + 1
         key = (obs.session_id, obs.turn_id)
         current = chosen.get(key)
+        llm_row = row if obs.source == "llm" else None
         if current is None:
-            chosen[key] = _Turn(row, obs)
+            chosen[key] = _Turn(row, obs, llm_row)
         elif rank[obs.source] < rank[current.obs.source]:
-            chosen[key] = _Turn(current.first_row, obs)
+            chosen[key] = _Turn(current.first_row, obs,
+                                current.llm_row if llm_row is None else llm_row)
     return sorted(chosen.values(), key=lambda t: t.first_row), rows
 
 
@@ -94,22 +105,41 @@ def estimate(
     observations: Iterable[TurnObservation],
     proposals: Iterable[Proposal] = (),
     config: DriftConfig = DEFAULT_CONFIG,
+    llm_labels: bool = False,
 ) -> Evidence:
+    """Fingerprint and endorsed counts.
+
+    With ``llm_labels``, only turns that have a model label count toward the
+    endorsed posterior, positioned at that label's ledger row; heuristic-only
+    turns still feed the fingerprint. Otherwise the session-end relabel would
+    swap one label distribution for another under the posterior with no change
+    in behavior.
+    """
     proposals = list(proposals)
     marks = accept_watermarks(proposals)
     turns, rows = select_turns(observations)
 
     fingerprint: Counts = {}
     endorsed: Counts = {}
+    def weight(obs: TurnObservation, dim: str) -> float:
+        return float(obs.confidence_for(dim) ** config.confidence_exponent)
+
+    endorsed_turns = 0
     for turn in turns:
         obs = turn.obs
         for dim, label in obs.labels.items():
-            _add(fingerprint, dim, label, obs.confidence_for(dim))
+            _add(fingerprint, dim, label, weight(obs, dim))
 
+        position = turn.first_row
+        if llm_labels:
+            if turn.llm_row is None:
+                continue
+            position = turn.llm_row
+        endorsed_turns += 1
         hints = obs.correction_hint or {}
         live = {
             dim for dim in {*obs.labels, *hints}
-            if turn.first_row >= marks.get(dim, 0)
+            if position >= marks.get(dim, 0)
         }
         corrected = obs.endorsement is not None and obs.endorsement < 0
         if not corrected:
@@ -120,7 +150,7 @@ def estimate(
                 if dim in live:
                     _add(endorsed, dim, {state: 1.0}, config.standing_hint_weight)
             for dim in (live & obs.labels.keys()) - hints.keys():
-                _add(endorsed, dim, obs.labels[dim], obs.confidence_for(dim))
+                _add(endorsed, dim, obs.labels[dim], weight(obs, dim))
             continue
 
         strength = -(obs.endorsement or 0.0)
@@ -133,7 +163,7 @@ def estimate(
         else:
             for dim in live & obs.labels.keys():
                 _add(endorsed, dim, _complement(dim, obs.labels[dim]),
-                     strength * obs.confidence_for(dim))
+                     strength * config.unhinted_correction_weight * weight(obs, dim))
 
     for p in proposals:
         if p.status != "rejected":
@@ -142,4 +172,4 @@ def estimate(
             if p.observation_count > marks.get(dim, 0) and dim in p.changes:
                 _add(endorsed, dim, p.changes[dim].declared, config.rejection_strength)
 
-    return Evidence(fingerprint, endorsed, len(turns), rows)
+    return Evidence(fingerprint, endorsed, len(turns), rows, endorsed_turns)
