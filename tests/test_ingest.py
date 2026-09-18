@@ -144,3 +144,27 @@ def test_resumed_session_end_labels_only_new_turns(tmp_path: Path):
     assert client.seen == [3, 1]
     llm_ids = [r.turn_id for r in ObservationStore(helios).iter("dev") if r.source == "llm"]
     assert len(llm_ids) == len(set(llm_ids)) == 4
+
+
+def test_model_hints_need_a_human_reply_and_opener_hints_come_from_the_lexicon(tmp_path: Path):
+    b = TranscriptBuilder()
+    b.prompt("check with me before changing files. Read brief.md and execute it exactly.")
+    b.say("Here is the plan. Shall I start?")
+    b.prompt("yes")
+    b.say("Started.")
+    path = b.write(tmp_path / "s.jsonl")
+    label = {"epistemic_style": None, "interaction_agency": None, "communication_register": None,
+             "risk_caution": {"acts_immediately": 1, "checks_before_acting": 0, "warns_frequently": 0,
+                              "refuses_ambiguity": 0},
+             "confidence": 0.8, "endorsement": 0.5,
+             "correction_hint": {"interaction_agency": "assumes_and_acts", "communication_register": "terse"}}
+    reply = {"turns": [{"id": "0", **label}, {"id": "1", **label}]}
+    helios = tmp_path / "helios"
+    ingest_session(helios, "dev", path, "s1", final=True, client=FakeClient(reply))
+    opener, last = [r for r in ObservationStore(helios).iter("dev") if r.source == "llm"]
+    assert opener.correction_hint == {
+        "interaction_agency": "assumes_and_acts",
+        "communication_register": "terse",
+        "risk_caution": "checks_before_acting",
+    }
+    assert last.correction_hint is None

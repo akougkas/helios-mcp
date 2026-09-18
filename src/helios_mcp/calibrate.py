@@ -33,7 +33,8 @@ from .classify import classify_turn
 from .endorsement import judge_turn
 from .ingest import ingest_session
 from .llm import LLMClient, LLMTurnLabel, default_client, label_session
-from .taxonomy import list_dimensions
+from .store import ObservationStore, TurnObservation
+from .taxonomy import list_dimensions, list_states
 from .transcript import AgentTurn, Session, parse_transcript
 
 EXCLUDE_MARKERS = ("helios-lab", "helios-wt")
@@ -329,6 +330,115 @@ def label_corpus(
     return status
 
 
+def paired_rows(
+    helios_dir: Path,
+) -> list[tuple[TurnObservation, TurnObservation]]:
+    """(heuristic, llm) row pairs for every turn the model labeled."""
+    heur: dict[tuple[str, str], TurnObservation] = {}
+    llm: dict[tuple[str, str], TurnObservation] = {}
+    for obs in ObservationStore(helios_dir).iter(CORPUS_PERSONA):
+        key = (obs.session_id, obs.turn_id)
+        if obs.source == "heuristic":
+            heur[key] = obs
+        elif obs.source == "llm":
+            llm[key] = obs
+    return [(heur[k], llm[k]) for k in llm if k in heur]
+
+
+def bias_map(
+    pairs: list[tuple[TurnObservation, TurnObservation]],
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Per dimension, heuristic state -> expected model label.
+
+    Row ``h`` averages the model's label over turns, weighted by the mass the
+    heuristic put on ``h``. Mapping a heuristic label through it gives the
+    model label it most resembles, and the result is still a distribution.
+    """
+    out: dict[str, dict[str, dict[str, float]]] = {}
+    for dim in list_dimensions():
+        states = list_states(dim)
+        acc = {h: dict.fromkeys(states, 0.0) for h in states}
+        mass = dict.fromkeys(states, 0.0)
+        for h_obs, l_obs in pairs:
+            hl, ll = h_obs.labels.get(dim), l_obs.labels.get(dim)
+            if hl is None or ll is None:
+                continue
+            for h, w in hl.items():
+                mass[h] += w
+                for s_, v in ll.items():
+                    acc[h][s_] += w * v
+        rows: dict[str, dict[str, float]] = {}
+        for h in states:
+            total = sum(acc[h].values())
+            rows[h] = (
+                {s_: round(v / total, 4) for s_, v in acc[h].items()}
+                if mass[h] >= 1.0 and total > 0
+                else {s_: float(s_ == h) for s_ in states}
+            )
+        out[dim] = rows
+    return out
+
+
+def ledger_report(helios_dir: Path) -> dict[str, Any]:
+    """Heuristic-versus-model comparison over a labeled corpus ledger."""
+    pairs = paired_rows(helios_dir)
+    hint_fires: Counter[str] = Counter()
+    hint_hits: Counter[str] = Counter()
+    hint_same_dim: Counter[str] = Counter()
+    llm_hints: Counter[str] = Counter()
+    endorse: Counter[str] = Counter()
+    label_mean: dict[str, dict[str, Counter[str]]] = {
+        "heuristic": defaultdict(Counter),
+        "llm": defaultdict(Counter),
+    }
+    label_n: Counter[str] = Counter()
+
+    def sign(v: float | None) -> str:
+        return "none" if v is None else ("neg" if v < 0 else "nonneg")
+
+    for h_obs, l_obs in pairs:
+        lh = l_obs.correction_hint or {}
+        for dim, state in (h_obs.correction_hint or {}).items():
+            key = f"{dim}.{state}"
+            hint_fires[key] += 1
+            hint_hits[key] += lh.get(dim) == state
+            hint_same_dim[key] += dim in lh
+        for dim, state in lh.items():
+            llm_hints[f"{dim}.{state}"] += 1
+        endorse[f"h_{sign(h_obs.endorsement)}__l_{sign(l_obs.endorsement)}"] += 1
+        for dim in list_dimensions():
+            hl, ll = h_obs.labels.get(dim), l_obs.labels.get(dim)
+            if hl is None or ll is None:
+                continue
+            label_n[dim] += 1
+            label_mean["heuristic"][dim].update(hl)
+            label_mean["llm"][dim].update(ll)
+
+    return {
+        "paired_turns": len(pairs),
+        "sessions": len({h.session_id for h, _ in pairs}),
+        "heuristic_hint_precision": {
+            k: {
+                "fired": n,
+                "llm_same_state": hint_hits[k],
+                "llm_same_dim": hint_same_dim[k],
+                "precision": round(hint_hits[k] / n, 3),
+            }
+            for k, n in hint_fires.most_common()
+        },
+        "llm_hints": dict(llm_hints.most_common()),
+        "endorsement_sign": dict(endorse.most_common()),
+        "mean_label": {
+            src: {
+                dim: {s_: round(v / label_n[dim], 4) for s_, v in c.items()}
+                for dim, c in by_dim.items()
+            }
+            for src, by_dim in label_mean.items()
+        },
+        "bias_map": bias_map(pairs),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("root", type=Path)
@@ -336,7 +446,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--label-into", type=Path, default=None)
+    parser.add_argument("--ledger-report", type=Path, default=None)
     args = parser.parse_args(argv)
+
+    if args.ledger_report is not None:
+        json.dump(ledger_report(args.ledger_report), sys.stdout, indent=2)
+        print()
+        return 0
 
     paths = list(iter_transcripts(args.root.expanduser()))
     if args.label_into is not None:
