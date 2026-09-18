@@ -27,6 +27,7 @@ UserKind = Literal["prompt", "notification", "command", "interrupt"]
 _INTERRUPT_PREFIX = "[Request interrupted by user"
 _DENIAL_FEEDBACK_MARKER = "the user said:\n"
 _REJECTED_MARKER = "The user doesn't want to proceed with this tool use."
+_NOT_DENIALS = frozenset({"AskUserQuestion"})
 
 # Wrappers that mark user records produced by the harness rather than typed
 # by a person. Slash commands are kept as "command" so a /clear still closes
@@ -78,6 +79,7 @@ class AgentTurn:
     end_timestamp: float = 0.0
     next_input: UserInput | None = None
     opens_session: bool = False
+    model: str | None = None  # first real model id that produced the turn
 
     @property
     def text(self) -> str:
@@ -225,6 +227,10 @@ class _Builder:
             self.pending_prompt = None
         turn = self.current
         turn.end_timestamp = max(turn.end_timestamp, ts)
+        message = rec.get("message")
+        model = message.get("model") if isinstance(message, dict) else None
+        if turn.model is None and isinstance(model, str) and model != "<synthetic>":
+            turn.model = model
         for block in _content_blocks(rec.get("message")):
             btype = block.get("type")
             if btype == "text":
@@ -249,8 +255,13 @@ class _Builder:
         text = _result_text(block)
         is_error = bool(block.get("is_error"))
         denial_kind = rec.get("toolDenialKind")
-        denied = denial_kind == "user-rejected" or (
-            denial_kind is None and is_error and text.startswith(_REJECTED_MARKER)
+        # toolDenialKind is authoritative where the CLI writes it; older
+        # transcripts only have the rejection text. Declining a question the
+        # agent asked is the user answering in chat, not refusing an action,
+        # and auto-mode blocks are a classifier's decision, not the user's.
+        denied = call.name not in _NOT_DENIALS and (
+            denial_kind == "user-rejected"
+            or (denial_kind is None and is_error and text.startswith(_REJECTED_MARKER))
         )
         feedback = None
         if denied and _DENIAL_FEEDBACK_MARKER in text:

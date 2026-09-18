@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .classify import classify_turn
-from .endorsement import judge_turn
+from .endorsement import judge_turn, opener_hints
 from .llm import LLMClient, LLMTurnLabel, default_client, label_session
 from .store import ObservationStore, TurnObservation
 from .transcript import AgentTurn, UserInput, parse_transcript
@@ -52,7 +52,7 @@ def heuristic_observation(
 
 def llm_observation(
     persona: str, session_id: str, turn: AgentTurn, label: LLMTurnLabel
-) -> TurnObservation | None:
+) -> TurnObservation:
     """Model labels for one turn, with hard transcript facts kept authoritative."""
     endorsement = label.endorsement
     if turn.interrupted or turn.denials:
@@ -60,8 +60,14 @@ def llm_observation(
         endorsement = -1.0
     elif endorsement is not None and turn.next_input is None and not turn.steers:
         endorsement = None
-    if not label.labels and label.correction_hint is None:
-        return None
+    # The model reads hints only from what the user said after the turn; a
+    # hint on a turn nobody answered came from the task text itself. Opener
+    # preferences come from the narrow heuristic lexicon instead.
+    hint = dict(label.correction_hint or {}) if _human_followed(turn) else {}
+    for dim, state in opener_hints(turn).items():
+        hint.setdefault(dim, state)
+    # A row is written even when the model found nothing, so a resumed
+    # SessionEnd does not send the same turn back to it.
     return TurnObservation(
         persona=persona,
         session_id=session_id,
@@ -71,7 +77,16 @@ def llm_observation(
         labels=label.labels,
         confidence=round(label.confidence, 4),
         endorsement=endorsement,
-        correction_hint=label.correction_hint,
+        correction_hint=hint or None,
+    )
+
+
+def _human_followed(turn: AgentTurn) -> bool:
+    nxt = turn.next_input
+    return bool(
+        (nxt is not None and nxt.kind == "prompt")
+        or turn.steers
+        or any(c.denial_feedback for c in turn.denials)
     )
 
 
@@ -110,20 +125,28 @@ def ingest_session(
         if obs is not None:
             observations.append(obs)
 
+    store = ObservationStore(helios_dir)
     if final:
-        if client is None:
+        # SessionEnd fires again when a session is resumed; only turns the
+        # model has not labeled yet go back to it.
+        done = {
+            obs.turn_id for obs in store.iter(persona)
+            if obs.source == "llm" and obs.session_id == session_id
+        }
+        pending = [t for t in turns if t.turn_id not in done]
+        if pending and client is None:
             client = default_client(helios_dir)
-        if client is not None:
-            labels = label_session(turns, client)
-            for turn in turns:
+        if pending and client is not None:
+            labels = label_session(pending, client)
+            for turn in pending:
                 label = labels.get(turn.turn_id)
                 if label is None:
                     continue
-                obs = llm_observation(persona, session_id, turn, label)
-                if obs is not None:
-                    observations.append(obs)
+                observations.append(
+                    llm_observation(persona, session_id, turn, label)
+                )
 
-    return ObservationStore(helios_dir).append(observations)
+    return store.append(observations)
 
 
 # ---------------------------------------------------------------------------
