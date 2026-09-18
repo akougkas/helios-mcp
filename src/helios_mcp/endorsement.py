@@ -81,7 +81,10 @@ _HINT_RULES: tuple[_HintRule, ...] = (
           _REG, "technical_dense", False),
     _rule(r"\b(?:just do it|stop asking|don'?t ask|no need to ask|"
           r"(?:you )?(?:do not|don't) need to ask|what are you waiting for|"
-          r"why are you (?:asking|waiting))\b",
+          r"why are you (?:asking|waiting)|timebox|"
+          r"you have enough (?:info\w*|context|data|to (?:go|start|proceed|write))|"
+          r"stop (?:reading|exploring|investigating|researching|analy[sz]ing|planning)|"
+          r"enough (?:reading|research|exploring|planning))\b",
           _AGENCY, "assumes_and_acts", True),
     _rule(r"\b(?:do it yourself|take control|i trust you|your call)\b",
           _AGENCY, "assumes_and_acts", False),
@@ -119,7 +122,7 @@ _CORRECTION = re.compile(
     r"not (?:that|this)\b)"
     r"|\b(?:not what i (?:asked|meant|wanted|said)|i (?:said|told you|asked you)\b|"
     r"why (?:did|would) you|"
-    r"you (?:didn'?t|did not|forgot|missed|ignored|misunderstood)|"
+    r"you (?:didn'?t|did not|forgot|missed|ignored)|misunderst\w+|"
     r"that'?s (?:wrong|not (?:right|it|correct))|you made a mistake|"
     r"what (?:the (?:hell|heck|fuck)|are you doing)|are you (?:an )?(?:idiot|kidding)|"
     r"wasting my time|fuck\w*|i hate|useless|you are setting .{1,20} up for failure|"
@@ -128,7 +131,8 @@ _CORRECTION = re.compile(
 )
 _FAILED = re.compile(
     r"\b(?:(?:still|it'?s) (?:broken|failing|not working)|doesn'?t work|"
-    r"didn'?t work|does not work|did not work|same error|still (?:get|see)ing)\b",
+    r"didn'?t work|does not work|did not work|same error|still (?:get|see)ing|"
+    r"failed again|fails again|broke again)\b",
     re.IGNORECASE,
 )
 _APPROVAL = re.compile(
