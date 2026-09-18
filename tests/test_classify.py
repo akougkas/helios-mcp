@@ -13,6 +13,8 @@ from helios_mcp.classify import (
     classify_structure,
     classify_sycophancy,
     classify_turn,
+    is_inspection,
+    is_mutating,
 )
 from helios_mcp.taxonomy import list_states
 from helios_mcp.transcript import AgentTurn, ToolCall, UserInput
@@ -193,3 +195,16 @@ def test_pushback_is_labeled_only_after_the_user_disputed_something():
     assert _top(classify_pushback(_answering(dispute, conceded))[0]) == "concedes_with_reason"
     held = "I still think the cache is the problem, because the miss rate doubles."
     assert _top(classify_pushback(_answering(dispute, held))[0]) == "holds_position"
+
+
+def test_compound_commands_are_judged_by_every_segment():
+    def bash(cmd: str) -> ToolCall:
+        return ToolCall("t", "Bash", {"command": cmd})
+
+    for cmd in ("ls && rm -rf build", "cat > src/x.py <<'EOF'\nprint(1)\nEOF",
+                "echo x >> .env", "git status; git commit -am wip", "cat a | tee b"):
+        assert is_mutating(bash(cmd)) and not is_inspection(bash(cmd)), cmd
+    for cmd in ("cd /tmp/x/ && ls -la", "git log --oneline | head -5",
+                "grep -rn foo src 2>/dev/null", "rg foo 2>&1 | wc -l"):
+        assert is_inspection(bash(cmd)) and not is_mutating(bash(cmd)), cmd
+    assert not is_mutating(bash("cd repo && uv run pytest -q"))

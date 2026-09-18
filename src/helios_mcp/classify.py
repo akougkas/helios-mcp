@@ -39,12 +39,18 @@ _MUTATING_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 _ASK_TOOLS = frozenset({"AskUserQuestion"})
 _PLAN_TOOLS = frozenset({"ExitPlanMode", "EnterPlanMode"})
 
+# Matched against each segment of a compound command, so "ls && rm -rf build"
+# is judged by its rm and not by its leading ls.
 _READ_ONLY_CMD = re.compile(
-    r"^\s*(?:cd\s+\S+\s*&&\s*)?(?:ls|cat|head|tail|less|wc|grep|rg|find|fd|tree|pwd|"
-    r"echo|which|file|stat|du|df|sed\s+-n|awk|jq|diff|"
+    r"^\s*(?:cd(?:\s+\S+)?\s*$|(?:ls|cat|head|tail|less|wc|grep|rg|find|fd|tree|"
+    r"pwd|echo|which|file|stat|du|df|sed\s+-n|awk|jq|diff|"
     r"git\s+(?:status|log|diff|show|branch|remote|rev-parse|blame|ls-files)|"
-    r"gh\s+(?:pr|issue|run)\s+(?:view|list|diff|checks))\b"
+    r"gh\s+(?:pr|issue|run)\s+(?:view|list|diff|checks))\b)"
 )
+_SEGMENT_SPLIT = re.compile(r"&&|\|\||[;|\n]")
+# Output redirection writes a file whatever the command is; 2>&1 and
+# >/dev/null do not.
+_WRITE_REDIRECT = re.compile(r">>?(?!\s*(?:&|/dev/null))")
 _VERIFY_CMD = re.compile(
     r"\b(?:pytest|jest|vitest|mocha|cargo\s+(?:test|check|clippy)|go\s+(?:test|vet)|"
     r"npm\s+(?:run\s+)?(?:test|lint|typecheck|check)|pnpm\s+(?:test|lint)|"
@@ -181,16 +187,32 @@ def is_mutating(call: ToolCall) -> bool:
         return True
     if call.name == "Bash":
         cmd = _command(call)
-        return bool(cmd) and not (
-            _READ_ONLY_CMD.match(cmd) or _VERIFY_CMD.search(cmd)
+        return bool(cmd) and (
+            _WRITE_REDIRECT.search(cmd) is not None
+            or any(
+                not (_READ_ONLY_CMD.match(seg) or _VERIFY_CMD.search(seg))
+                for seg in _segments(cmd)
+            )
         )
     return False
+
+
+def _segments(cmd: str) -> list[str]:
+    return [seg for seg in (s.strip() for s in _SEGMENT_SPLIT.split(cmd)) if seg]
 
 
 def is_inspection(call: ToolCall) -> bool:
     if call.name in _READ_ONLY_TOOLS:
         return True
-    return call.name == "Bash" and bool(_READ_ONLY_CMD.match(_command(call)))
+    if call.name != "Bash":
+        return False
+    cmd = _command(call)
+    segments = _segments(cmd)
+    return (
+        bool(segments)
+        and _WRITE_REDIRECT.search(cmd) is None
+        and all(_READ_ONLY_CMD.match(seg) for seg in segments)
+    )
 
 
 def is_verification(call: ToolCall) -> bool:

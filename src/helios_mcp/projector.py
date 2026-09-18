@@ -182,6 +182,7 @@ PROJECTION_SAMPLES = 3
 def _project_once(
     system: str, user: str, client: LLMClient
 ) -> dict[str, BehavioralDistribution] | None:
+    """One projection, holding only the dimensions the model actually gave."""
     data = client.complete_json(system, user, projection_schema())
     if data is None:
         return None
@@ -189,7 +190,8 @@ def _project_once(
         raw = parse_projection_response(json.dumps(data))
     except ValueError:
         return None
-    return validate_and_normalize(raw)
+    full = validate_and_normalize(raw)
+    return {dim: dist for dim, dist in full.items() if dim in raw}
 
 
 def project_with_llm(
@@ -207,10 +209,18 @@ def project_with_llm(
         ]
     if not runs:
         return None
-    return {
-        dim: BehavioralDistribution(dim, {
-            state: sum(run[dim][state] for run in runs) / len(runs)
+    # A dimension one run omitted is averaged over the runs that gave it, so
+    # the species default does not dilute it. Only a dimension no run gave
+    # takes the default.
+    species = BehavioralProfile.default_species().distributions
+    out: dict[str, BehavioralDistribution] = {}
+    for dim in list_dimensions():
+        given = [run[dim] for run in runs if dim in run]
+        if not given:
+            out[dim] = species[dim]
+            continue
+        out[dim] = BehavioralDistribution(dim, {
+            state: sum(d[state] for d in given) / len(given)
             for state in list_states(dim)
         })
-        for dim in runs[0]
-    }
+    return out
