@@ -26,3 +26,9 @@ def helios_config(temp_helios_dir):
         learned_path=temp_helios_dir / "learned",
         temporary_path=temp_helios_dir / "temporary",
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_model_calls(monkeypatch):
+    """Tests never spawn the model CLI; tests that exercise it inject a fake client."""
+    monkeypatch.setenv("HELIOS_LLM", "0")
