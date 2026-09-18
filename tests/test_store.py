@@ -33,7 +33,8 @@ def test_append_is_idempotent_across_calls_and_within_batch(tmp_path):
 def test_roundtrip_preserves_fields(tmp_path):
     store = ObservationStore(tmp_path)
     original = obs("t1", endorsement=-1.0, confidence=0.4,
-                   correction_hint={"communication_register": "terse"})
+                   correction_hint={"communication_register": "terse"},
+                   dim_confidence={"communication_register": 0.9})
     store.append([original])
     assert list(store.iter("dev")) == [original]
 
@@ -55,6 +56,8 @@ def test_corrupt_and_torn_lines_are_skipped(tmp_path):
     {"endorsement": 2.0},
     {"confidence": -0.1},
     {"correction_hint": {"communication_register": "loud"}},
+    {"dim_confidence": {"communication_register": 1.5}},
+    {"dim_confidence": {"nope": 0.5}},
 ])
 def test_invalid_observations_rejected(bad):
     fields: dict[str, object] = {"persona": "dev", "session_id": "s", "turn_id": "t",

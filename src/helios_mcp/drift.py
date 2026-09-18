@@ -47,6 +47,7 @@ class DriftConfig:
     auto_accept_level: float = 0.9
     auto_accept_min_change: float = 0.0005
     rejection_strength: float = 10.0
+    standing_hint_weight: float = 0.5
     samples: int = 1000
     seed: int = 0
     min_prob: float = 0.005

@@ -66,6 +66,7 @@ class TurnObservation:
     confidence: float = 1.0
     endorsement: float | None = None
     correction_hint: dict[str, str] | None = None
+    dim_confidence: dict[str, float] | None = None
 
     def __post_init__(self) -> None:
         validate_persona_name(self.persona)
@@ -83,6 +84,17 @@ class TurnObservation:
         for dim, state in (self.correction_hint or {}).items():
             if state not in BEHAVIORAL_TAXONOMY.get(dim, ()):
                 raise ValueError(f"correction_hint {dim}={state!r} is not a state")
+        for dim, conf in (self.dim_confidence or {}).items():
+            if dim not in BEHAVIORAL_TAXONOMY:
+                raise ValueError(f"dim_confidence names unknown dimension {dim!r}")
+            if not 0.0 <= conf <= 1.0:
+                raise ValueError(f"dim_confidence for {dim} must be in [0, 1]")
+
+    def confidence_for(self, dimension: str) -> float:
+        """Per-dimension classifier confidence, falling back to ``confidence``."""
+        if self.dim_confidence and dimension in self.dim_confidence:
+            return self.dim_confidence[dimension]
+        return self.confidence
 
     @property
     def key(self) -> tuple[str, str, str, str]:
@@ -103,6 +115,7 @@ class TurnObservation:
             confidence=float(data.get("confidence", 1.0)),
             endorsement=data.get("endorsement"),
             correction_hint=data.get("correction_hint"),
+            dim_confidence=data.get("dim_confidence"),
         )
 
 

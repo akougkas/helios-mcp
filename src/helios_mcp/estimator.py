@@ -9,7 +9,9 @@ Two sets of counts come out, one per posterior:
   puts its weight on the hinted state instead. A corrected turn without a hint
   spreads its weight over every state except the labeled one, in proportion to
   ``1 - label``, which moves mass away from what the agent did without
-  inventing a direction. Rejected proposals add ``rejection_strength``
+  inventing a direction. A hint on an uncorrected turn is a standing
+  preference and adds ``standing_hint_weight`` toward the hinted state in
+  place of that dimension's label. Rejected proposals add ``rejection_strength``
   pseudo-counts of the profile that was declared when the user said no.
 
 Accepting a proposal absorbs the evidence it was computed from into the
@@ -102,20 +104,26 @@ def estimate(
     for turn in turns:
         obs = turn.obs
         for dim, label in obs.labels.items():
-            _add(fingerprint, dim, label, obs.confidence)
+            _add(fingerprint, dim, label, obs.confidence_for(dim))
 
+        hints = obs.correction_hint or {}
         live = {
-            dim for dim in {*obs.labels, *(obs.correction_hint or {})}
+            dim for dim in {*obs.labels, *hints}
             if turn.first_row >= marks.get(dim, 0)
         }
         corrected = obs.endorsement is not None and obs.endorsement < 0
         if not corrected:
-            for dim in live & obs.labels.keys():
-                _add(endorsed, dim, obs.labels[dim], obs.confidence)
+            # A hint on an uncorrected turn is a standing preference ("keep it
+            # brief"): it speaks for its dimensions at reduced weight, and the
+            # rest of the turn counts as uncorrected.
+            for dim, state in hints.items():
+                if dim in live:
+                    _add(endorsed, dim, {state: 1.0}, config.standing_hint_weight)
+            for dim in (live & obs.labels.keys()) - hints.keys():
+                _add(endorsed, dim, obs.labels[dim], obs.confidence_for(dim))
             continue
 
         strength = -(obs.endorsement or 0.0)
-        hints = obs.correction_hint or {}
         if hints:
             # The correction names what it is about, so dimensions it does not
             # mention get no evidence from this turn either way.
@@ -125,7 +133,7 @@ def estimate(
         else:
             for dim in live & obs.labels.keys():
                 _add(endorsed, dim, _complement(dim, obs.labels[dim]),
-                     strength * obs.confidence)
+                     strength * obs.confidence_for(dim))
 
     for p in proposals:
         if p.status != "rejected":
