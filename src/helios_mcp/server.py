@@ -2,9 +2,10 @@
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from fastmcp import Context, FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from .security import (
@@ -18,6 +19,105 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Structured output shapes — one TypedDict per tool return payload.
+#
+# Tools whose bodies only ever return one key set use a total (all-required)
+# TypedDict. Tools with an error/short-circuit branch that returns a
+# different key set use total=False so every key that can genuinely appear
+# on any success/error path is modeled without inventing or renaming keys.
+# ---------------------------------------------------------------------------
+
+
+class ListPersonasResult(TypedDict):
+    """Return shape of list_personas — a single, unconditional success shape."""
+
+    status: str
+    personas: list[str]
+
+
+class GetBehavioralContextResult(TypedDict, total=False):
+    """Return shape of get_behavioral_context (success or error branch)."""
+
+    status: str
+    persona: str
+    behavioral_context: str
+    observation_count: int
+    specialization_level: int
+    message: str
+
+
+class ObserveInteractionResult(TypedDict, total=False):
+    """Return shape of observe_interaction (success or error branch)."""
+
+    status: str
+    persona: str
+    observation_count: int
+    current_drift: float
+    drift_threshold: float
+    negotiation_recommended: bool
+    message: str
+
+
+class GetDriftReportResult(TypedDict, total=False):
+    """Return shape of get_drift_report (success, no_data, or error branch)."""
+
+    status: str
+    persona: str
+    message: str
+    summary: str
+    per_dimension: dict[str, str]
+    total_drift: float
+    exceeds_threshold: bool
+    proposed_at: str
+
+
+class NegotiateUpdateResult(TypedDict, total=False):
+    """Return shape of negotiate_update.
+
+    Covers all four branches: rejected (status/persona/reason), applied
+    (status/updated_dimensions/commit_message), unknown decision
+    (status/message), and the exception handler (status/message).
+    """
+
+    status: str
+    persona: str
+    reason: str
+    updated_dimensions: list[str]
+    commit_message: str
+    message: str
+
+
+class ImportProfileResult(TypedDict, total=False):
+    """Return shape of import_profile (success or error branch)."""
+
+    status: str
+    persona: str
+    source: str
+    saved_to: str
+    distributions: dict[str, dict[str, str | float]]
+    message: str
+
+
+class ExportProfileResult(TypedDict, total=False):
+    """Return shape of export_profile.
+
+    Covers the soulspec branch (status/persona/format/content), the
+    yaml/json branch (status/persona/format/agent_id/level/dimensions,
+    spread from export_dimensions), and the exception handler
+    (status/message).
+    """
+
+    status: str
+    persona: str
+    format: str
+    content: str
+    agent_id: str
+    level: str
+    dimensions: dict[str, dict[str, Any]]
+    message: str
 
 
 async def create_server(helios_dir: Path | None = None) -> FastMCP:
@@ -43,10 +143,18 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
     @mcp.tool(
         description="List available persona names in the Helios directory",
         tags={"personas"},
+        title="List Personas",
+        annotations=ToolAnnotations(
+            title="List Personas",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
     )
     async def list_personas(
         ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
-    ) -> dict[str, Any]:
+    ) -> ListPersonasResult:
         """Return the names of all .yaml files under ~/.helios/personas/."""
         personas_dir = helios_dir / "personas"
         if not personas_dir.exists():
@@ -62,11 +170,18 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
         description="Get the full behavioral context for a persona as system "
         "prompt text",
         tags={"behavioral", "context"},
+        title="Get Behavioral Context",
+        annotations=ToolAnnotations(
+            title="Get Behavioral Context",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+        ),
     )
     async def get_behavioral_context(
         persona_name: str = Field(description="Persona name (e.g. 'developer')"),
         ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
-    ) -> dict[str, Any]:
+    ) -> GetBehavioralContextResult:
         """Resolve the 4-level behavioral hierarchy and render as system prompt text."""
         try:
             from .hierarchy import IdentityHierarchy
@@ -95,6 +210,13 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
         description="Observe a conversation and update behavioral fingerprint "
         "for a persona",
         tags={"behavioral", "observation"},
+        title="Observe Interaction",
+        annotations=ToolAnnotations(
+            title="Observe Interaction",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+        ),
     )
     async def observe_interaction(
         persona_name: str = Field(description="Persona to observe for"),
@@ -102,7 +224,7 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
             description="Conversation messages (role+content dicts)"
         ),
         ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
-    ) -> dict[str, Any]:
+    ) -> ObserveInteractionResult:
         """Feed messages into the observation engine and check drift."""
         try:
             from .drift import DriftDetector
@@ -141,11 +263,18 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
         description="Get a natural language drift report — call when "
         "negotiation_recommended is true",
         tags={"behavioral", "drift"},
+        title="Get Drift Report",
+        annotations=ToolAnnotations(
+            title="Get Drift Report",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+        ),
     )
     async def get_drift_report(
         persona_name: str = Field(description="Persona to report on"),
         ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
-    ) -> dict[str, Any]:
+    ) -> GetDriftReportResult:
         """Generate a human-readable behavioral drift summary with a proposal."""
         try:
             from .drift import DriftDetector
@@ -195,6 +324,17 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
     @mcp.tool(
         description="Accept or reject a proposed behavioral update for a persona",
         tags={"behavioral", "negotiation"},
+        title="Negotiate Behavioral Update",
+        annotations=ToolAnnotations(
+            title="Negotiate Behavioral Update",
+            readOnlyHint=False,
+            # On accept, this overwrites the persona's existing declared
+            # distributions in place (profile.save() replaces the YAML file
+            # and a git commit is made) — that is a destructive update to
+            # the previously declared behavioral state, not an additive one.
+            destructiveHint=True,
+            idempotentHint=False,
+        ),
     )
     async def negotiate_update(
         persona_name: str = Field(description="Persona to update"),
@@ -205,7 +345,7 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
             description="Specific dimensions to accept (None = accept all)",
         ),
         ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
-    ) -> dict[str, Any]:
+    ) -> NegotiateUpdateResult:
         """Apply or reject a behavioral evolution proposal. Accepted changes \
 are git-committed."""
         try:
@@ -254,6 +394,17 @@ are git-committed."""
         description="Import a personality file (CLAUDE.md, soul.md, etc.) into "
         "a Helios behavioral profile",
         tags={"behavioral", "import"},
+        title="Import Profile",
+        annotations=ToolAnnotations(
+            title="Import Profile",
+            readOnlyHint=False,
+            # profile.save() writes unconditionally (os.replace) with no
+            # existence check first, so importing with a persona_name (or a
+            # derived agent_id) that already has a persona file silently
+            # overwrites it.
+            destructiveHint=True,
+            idempotentHint=False,
+        ),
     )
     async def import_profile(
         source_path: str = Field(description="Path to the personality file to import"),
@@ -262,7 +413,7 @@ are git-committed."""
             description="Name for the new persona (default: derived from filename)",
         ),
         ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
-    ) -> dict[str, Any]:
+    ) -> ImportProfileResult:
         """Parse a personality file and create a new Helios persona \
 with projected distributions."""
         try:
@@ -282,7 +433,7 @@ with projected distributions."""
             profile.save(out_path)
 
             # Return summary
-            summary: dict[str, Any] = {
+            summary: ImportProfileResult = {
                 "status": "success",
                 "persona": profile.agent_id,
                 "source": str(path),
@@ -308,6 +459,15 @@ with projected distributions."""
         description="Export a behavioral profile in various formats "
         "(yaml, json, soulspec)",
         tags={"behavioral", "export"},
+        title="Export Profile",
+        annotations=ToolAnnotations(
+            title="Export Profile",
+            # Resolves the profile and serializes/returns it — no file or
+            # state is written anywhere in this function.
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+        ),
     )
     async def export_profile(
         persona_name: str = Field(description="Persona to export"),
@@ -319,7 +479,7 @@ with projected distributions."""
             description="Specific dimensions to include (None = all)",
         ),
         ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
-    ) -> dict[str, Any]:
+    ) -> ExportProfileResult:
         """Export a behavioral profile with optional dimension filtering."""
         try:
             from .exporter import export_dimensions, export_soulspec
