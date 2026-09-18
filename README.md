@@ -193,6 +193,7 @@ uv run helios-mcp ingest --persona NAME --session-id ID --transcript PATH [--fin
 | `HELIOS_LLM` | Set to `0` to skip the Haiku batch labeler; heuristic labels stay authoritative. Same as `llm: false` in `HELIOS_DIR/config.yaml`. |
 | `HELIOS_PERSONA` | Overrides persona resolution in the plugin's hooks, ahead of a `.helios-persona` file or the stored default. |
 | `HELIOS_DISABLE` | Set to `1` to make every hook and the Haiku subprocess a no-op. The labeler subprocess sets this on itself so it never re-triggers Helios's own hooks. |
+| `HELIOS_TRUST_HEADLESS` | Set to `1` to make a headless `claude -p` session's user turns count as the person's own feedback instead of machine input. For scripted lab sessions only; system, notification, peer, coordinator and scheduled input are still always treated as machine input regardless of this variable. |
 
 ## Project status
 
