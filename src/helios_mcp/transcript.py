@@ -16,6 +16,7 @@ parsed here is persisted; callers derive labels and discard the text.
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -161,13 +162,19 @@ def machine_sent(record: dict[str, Any]) -> bool:
     write user records too. Their text says nothing about how the person
     received the turn, so it carries no endorsement and no hints. Messages
     queued while a turn runs are still the person typing, so they stay.
+
+    ``HELIOS_TRUST_HEADLESS=1`` makes headless input count as the person's.
+    A lab that scripts the user through ``claude -p`` sets it so its prompts
+    act as real replies. It lifts only the ``entrypoint: sdk-cli`` signal;
+    system, notification, peer, coordinator and scheduled input stay machine.
     """
     origin = record.get("origin")
     origin_kind = origin.get("kind") if isinstance(origin, dict) else None
     return (
         record.get("promptSource") == "system"
         or origin_kind in {"task-notification", "peer", "coordinator"}
-        or record.get("entrypoint") == "sdk-cli"
+        or (record.get("entrypoint") == "sdk-cli"
+            and os.environ.get("HELIOS_TRUST_HEADLESS") != "1")
         or bool(record.get("scheduledTaskId"))
     )
 
