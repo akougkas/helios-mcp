@@ -15,12 +15,6 @@ import pytest
 from click.testing import CliRunner
 
 from helios_mcp.cli import main
-from helios_mcp.hook_events import parse_hook_stdin
-from helios_mcp.hook_observer import (
-    extract_failure_signals,
-    extract_tool_signals,
-    hook_signals_to_distributions,
-)
 
 HANDLER = Path(__file__).parent.parent / "helios-plugin" / "hooks" / "hook-handler.py"
 PLUGIN_DIR = Path(__file__).parent.parent / "helios-plugin"
@@ -175,48 +169,45 @@ class TestSessionSimulation:
         }
         assert expected.issubset(event_types)
 
-    def test_records_parseable_by_hook_events(self, session_dir):
-        """Every stored record should be parseable back through parse_hook_stdin."""
+    def test_tool_events_have_no_raw_content(self, session_dir):
+        """Capture stores derived features only — never the raw hook
+        envelope. This replaces a prior version of this test that
+        round-tripped stored records through parse_hook_stdin(record["data"],
+        ...): that depended on hook-handler.py persisting the full raw
+        stdin payload, which was the privacy bug P2 removed. The
+        replay-from-hook-JSONL pipeline (hook_events.parse_hook_stdin,
+        hook_observer.py) is being superseded by ingest.py reading the
+        session transcript directly, per the sprint's target architecture."""
         obs_file = session_dir / "observations" / "hooks" / "default.jsonl"
-        for line_str in obs_file.read_text().strip().splitlines():
-            record = json.loads(line_str)
-            event = parse_hook_stdin(record["data"], record["event_type"])
-            assert event is not None
+        records = [
+            json.loads(line) for line in obs_file.read_text().strip().splitlines()
+        ]
+        assert len(records) >= 15
+        for record in records:
+            assert "data" not in record
+            assert "tool_input" not in record
+            assert "prompt" not in record
 
-    def test_tool_events_produce_distributions(self, session_dir):
-        """Tool events from the session should produce non-uniform distributions."""
+    def test_bash_tool_events_classified(self, session_dir):
         obs_file = session_dir / "observations" / "hooks" / "default.jsonl"
-        tool_events = []
-        for line_str in obs_file.read_text().strip().splitlines():
-            record = json.loads(line_str)
-            if record["event_type"] in ("post-tool", "pre-tool"):
-                event = parse_hook_stdin(record["data"], record["event_type"])
-                tool_events.append(event)
+        bash_records = [
+            json.loads(line)
+            for line in obs_file.read_text().strip().splitlines()
+            if json.loads(line).get("tool_name") == "Bash"
+        ]
+        assert len(bash_records) >= 2
+        assert all(r["command_kind"] == "test" for r in bash_records)
+        assert all(r["is_test_command"] for r in bash_records)
 
-        assert len(tool_events) >= 5
-        signals = extract_tool_signals(tool_events)
-        dists = hook_signals_to_distributions(signals)
-
-        # With read-heavy, edit, test pattern, should see checks_before_acting
-        assert dists["risk_caution"]["checks_before_acting"] > 0.1
-        # Should see confident or thorough due to read-heavy
-        assert dists["communication_register"]["thorough"] > 0.1
-
-    def test_failure_events_produce_signals(self, session_dir):
-        """Failure events should produce meaningful failure signals."""
+    def test_failure_event_marks_success_false(self, session_dir):
         obs_file = session_dir / "observations" / "hooks" / "default.jsonl"
-        failure_events = []
-        for line_str in obs_file.read_text().strip().splitlines():
-            record = json.loads(line_str)
-            if record["event_type"] == "post-tool-failure":
-                event = parse_hook_stdin(record["data"], record["event_type"])
-                failure_events.append(event)
-
-        assert len(failure_events) >= 1
-        signals = extract_failure_signals(failure_events)
-        # Single failure produces minimal signals (correct behavior)
-        assert isinstance(signals, dict)
-        assert len(signals) == 4
+        failure_records = [
+            json.loads(line)
+            for line in obs_file.read_text().strip().splitlines()
+            if json.loads(line)["event_type"] == "post-tool-failure"
+        ]
+        assert len(failure_records) >= 1
+        assert all(r["success"] is False for r in failure_records)
 
 
 class TestPluginInstallReadiness:
