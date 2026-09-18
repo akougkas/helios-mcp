@@ -27,7 +27,7 @@ from .drift import (
     js_divergence,
     smooth,
 )
-from .estimator import Evidence, estimate
+from .estimator import Evidence, estimate_ledger
 from .hierarchy import IdentityHierarchy
 from .llm import llm_enabled
 from .profile import BehavioralProfile
@@ -82,10 +82,13 @@ class Negotiator:
         profile = self.hierarchy.resolve(persona, include_session=False)
         return {dim: d.to_dict() for dim, d in profile.distributions.items()}
 
+    def evidence(self, persona: str) -> Evidence:
+        return estimate_ledger(self.ledger, persona, self.proposals.all(persona),
+                               self.config, llm_labels=llm_enabled(self.helios_dir))
+
     def assess(self, persona: str) -> tuple[DriftAssessment, DriftAssessment, Evidence]:
         """Endorsed and fingerprint assessments with the evidence behind them."""
-        evidence = estimate(self.ledger.iter(persona), self.proposals.all(persona),
-                            self.config, llm_labels=llm_enabled(self.helios_dir))
+        evidence = self.evidence(persona)
         declared = self.declared(persona)
         return (
             assess(declared, evidence.endorsed, self.config),
@@ -102,8 +105,7 @@ class Negotiator:
         asks it to counter.
         """
         if evidence is None:
-            evidence = estimate(self.ledger.iter(persona), self.proposals.all(persona),
-                                self.config, llm_labels=llm_enabled(self.helios_dir))
+            evidence = self.evidence(persona)
         declared = self.declared(persona)
         ranked = sorted(evidence.model_turns.items(), key=lambda mt: (-mt[1], mt[0]))
         return [(model, turns,
