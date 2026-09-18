@@ -1,6 +1,8 @@
 {
-  "helios": {
-    "command": "uvx",
-    "args": ["helios-mcp"]
+  "mcpServers": {
+    "helios": {
+      "command": "uvx",
+      "args": ["--from", "${HELIOS_SOURCE:-helios-mcp}", "helios-mcp"]
+    }
   }
 }

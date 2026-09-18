@@ -9,8 +9,9 @@ from pathlib import Path
 
 import pytest
 
-PLUGIN_DIR = Path(__file__).parent.parent / "helios-plugin"
-SKILL_DIR = Path(__file__).parent.parent / "helios-skill"
+REPO_ROOT = Path(__file__).parent.parent
+PLUGIN_DIR = REPO_ROOT / "helios-plugin"
+SKILL_DIR = REPO_ROOT / "helios-skill"
 
 # Deliberately no plain "does this file/dir exist" test class here: every
 # fixture below (manifest, hooks, skill_content, ...) reads the same paths
@@ -194,13 +195,60 @@ class TestMCPConfig:
         path = PLUGIN_DIR / ".mcp.json"
         return json.loads(path.read_text())
 
-    def test_has_helios_server(self, mcp):
-        assert "helios" in mcp
+    def test_uses_mcp_servers_envelope(self, mcp):
+        """A plugin's .mcp.json must be {"mcpServers": {...}}, not a flat
+        {"helios": {...}} — the flat shape isn't a valid server
+        registration and Claude Code silently fails to load it."""
+        assert "mcpServers" in mcp
+        assert "helios" not in mcp
 
-    def test_uses_uvx(self, mcp):
-        server = mcp["helios"]
+    def test_has_helios_server(self, mcp):
+        assert "helios" in mcp["mcpServers"]
+
+    def test_uses_uvx_with_source_fallback(self, mcp):
+        server = mcp["mcpServers"]["helios"]
         assert server["command"] == "uvx"
         assert "helios-mcp" in server["args"]
+        # ${HELIOS_SOURCE:-helios-mcp}: a local worktree during
+        # development, the published PyPI package once it exists.
+        assert "${HELIOS_SOURCE:-helios-mcp}" in server["args"]
+
+
+# ---------------------------------------------------------------------------
+# marketplace.json
+# ---------------------------------------------------------------------------
+
+
+class TestMarketplaceManifest:
+    """The manifest lives at REPO_ROOT/.claude-plugin/marketplace.json, not
+    under a nested marketplace/ directory — a marketplace plugin's `source`
+    must resolve inside the marketplace's own root, so the root has to be
+    the ancestor that actually contains helios-plugin/. A source that
+    escapes it (a `../` path or a symlink to one) is rejected at install;
+    confirmed via `claude plugin validate` and the Claude Code marketplace
+    docs."""
+
+    @pytest.fixture
+    def manifest(self):
+        path = REPO_ROOT / ".claude-plugin" / "marketplace.json"
+        return json.loads(path.read_text())
+
+    def test_helios_plugin_source_stays_inside_marketplace_root(self, manifest):
+        entry = next(p for p in manifest["plugins"] if p["name"] == "helios")
+        source = entry["source"]
+        assert not source.startswith("..")
+        assert "/../" not in source
+        resolved = (REPO_ROOT / source).resolve()
+        assert resolved == PLUGIN_DIR.resolve()
+        assert resolved.is_relative_to(REPO_ROOT.resolve())
+
+    def test_source_is_not_a_symlink(self, manifest):
+        """A relative source is still rejected if it traverses a symlink
+        that itself escapes the marketplace root — make sure this isn't a
+        symlink to begin with, not just a plain directory that happens to
+        resolve in-bounds today."""
+        entry = next(p for p in manifest["plugins"] if p["name"] == "helios")
+        assert not (REPO_ROOT / entry["source"]).is_symlink()
 
 
 # ---------------------------------------------------------------------------
@@ -294,12 +342,18 @@ class TestObserverAgent:
 
 
 class TestStandaloneSkill:
-    def test_skill_md_matches_plugin(self):
+    def test_skill_md_matches_plugin_except_tool_prefix(self):
+        """Deliberately not byte-identical: a plugin-loaded MCP server's
+        tools are named mcp__plugin_<plugin>_<server>__<tool>, while the
+        same server configured directly (as this standalone skill's own
+        .mcp.json does) is named mcp__<server>__<tool>. See the matching,
+        more detailed test in test_readiness.py::TestStandaloneSkillReadiness."""
         plugin_skill = (PLUGIN_DIR / "skills" / "helios" / "SKILL.md").read_text()
         standalone_skill = (SKILL_DIR / "SKILL.md").read_text()
-        assert plugin_skill == standalone_skill
+        normalized_plugin = plugin_skill.replace("mcp__plugin_helios_helios__", "mcp__helios__")
+        assert normalized_plugin == standalone_skill
 
     def test_mcp_json_matches_plugin(self):
-        plugin_mcp = (PLUGIN_DIR / ".mcp.json").read_text()
-        standalone_mcp = (SKILL_DIR / ".mcp.json").read_text()
+        plugin_mcp = json.loads((PLUGIN_DIR / ".mcp.json").read_text())
+        standalone_mcp = json.loads((SKILL_DIR / ".mcp.json").read_text())
         assert plugin_mcp == standalone_mcp

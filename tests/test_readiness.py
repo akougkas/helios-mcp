@@ -242,7 +242,7 @@ class TestPluginInstallReadiness:
     def test_mcp_json_valid(self):
         path = PLUGIN_DIR / ".mcp.json"
         config = json.loads(path.read_text())
-        server = config["helios"]
+        server = config["mcpServers"]["helios"]
         assert server["command"] == "uvx"
 
     def test_skill_has_frontmatter(self):
@@ -287,16 +287,25 @@ class TestStandaloneSkillReadiness:
 
     def test_mcp_json_has_server(self):
         config = json.loads((self.SKILL_DIR / ".mcp.json").read_text())
-        assert config["helios"]["command"] == "uvx"
+        assert config["mcpServers"]["helios"]["command"] == "uvx"
 
-    def test_skill_matches_plugin(self):
+    def test_skill_matches_plugin_except_tool_prefix(self):
+        """The two SKILL.md files are deliberately not byte-identical: a
+        plugin-loaded MCP server's tools are named
+        mcp__plugin_<plugin>_<server>__<tool>, while the same server
+        configured directly (as the standalone skill's own .mcp.json
+        does) is named mcp__<server>__<tool> — no plugin_ component.
+        Confirmed against current docs. Everything else must match."""
         plugin_skill = (PLUGIN_DIR / "skills" / "helios" / "SKILL.md").read_text()
         standalone_skill = (self.SKILL_DIR / "SKILL.md").read_text()
-        assert plugin_skill == standalone_skill
+        normalized_plugin = plugin_skill.replace("mcp__plugin_helios_helios__", "mcp__helios__")
+        assert normalized_plugin == standalone_skill
 
-    def test_mcp_matches_plugin(self):
-        plugin_mcp = (PLUGIN_DIR / ".mcp.json").read_text()
-        standalone_mcp = (self.SKILL_DIR / ".mcp.json").read_text()
+    def test_mcp_matches_plugin_except_server_command(self):
+        """Both .mcp.json files launch the same server the same way —
+        this only guards against the two configs drifting apart."""
+        plugin_mcp = json.loads((PLUGIN_DIR / ".mcp.json").read_text())
+        standalone_mcp = json.loads((self.SKILL_DIR / ".mcp.json").read_text())
         assert plugin_mcp == standalone_mcp
 
 

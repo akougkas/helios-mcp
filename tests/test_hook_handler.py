@@ -374,8 +374,14 @@ class TestHookHandlerRotation:
 
 class TestHookHandlerIngestTrigger:
     """_trigger_ingest shells out to `uvx --from ... helios-mcp ingest`.
-    Every test here mocks subprocess.run so nothing actually invokes uvx —
-    real invocation is exercised only in the sandboxed end-to-end runs."""
+
+    stop blocks on subprocess.run (heuristic-only ingest, fast); every
+    stop test here mocks subprocess.run so nothing actually invokes uvx.
+    session-end launches --final fully detached via subprocess.Popen and
+    returns immediately without waiting — session-end tests mock Popen
+    instead, since --final also runs the Haiku batch labeler, which can
+    take far longer than a SessionEnd hook is allowed to block for.
+    """
 
     def test_no_op_without_transcript_file(self, tmp_path, monkeypatch):
         hook_handler = _load_hook_handler_module()
@@ -394,6 +400,16 @@ class TestHookHandlerIngestTrigger:
         transcript.write_text("{}\n")
         hook_handler._trigger_ingest("stop", "developer", "", str(transcript), tmp_path)
         hook_handler._trigger_ingest("stop", "developer", "sess-1", "", tmp_path)
+        assert calls == []
+
+    def test_session_end_no_op_without_transcript_file(self, tmp_path, monkeypatch):
+        hook_handler = _load_hook_handler_module()
+        calls = []
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: calls.append((a, k)))
+        hook_handler._trigger_ingest(
+            "session-end", "developer", "sess-1",
+            str(tmp_path / "missing.jsonl"), tmp_path,
+        )
         assert calls == []
 
     def test_stop_invokes_ingest_without_final(self, tmp_path, monkeypatch):
@@ -419,10 +435,10 @@ class TestHookHandlerIngestTrigger:
         assert "--final" not in cmd
         assert calls[0][1]["timeout"] == 300
 
-    def test_session_end_invokes_ingest_with_final(self, tmp_path, monkeypatch):
+    def test_session_end_invokes_ingest_with_final_detached(self, tmp_path, monkeypatch):
         hook_handler = _load_hook_handler_module()
         calls = []
-        monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append((a, k)))
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: calls.append((a, k)))
         transcript = tmp_path / "t.jsonl"
         transcript.write_text("{}\n")
 
@@ -431,9 +447,31 @@ class TestHookHandlerIngestTrigger:
         )
 
         assert len(calls) == 1
-        cmd = calls[0][0][0]
+        args, kwargs = calls[0]
+        cmd = args[0]
         assert "--final" in cmd
-        assert calls[0][1]["timeout"] == 45
+        # Detached: its own session, no pipes we'd have to drain, and
+        # this call never blocks on the child finishing.
+        assert kwargs["start_new_session"] is True
+        assert kwargs["stdin"] == subprocess.DEVNULL
+        assert "timeout" not in kwargs
+
+    def test_session_end_logs_to_bounded_file_under_helios_dir(self, tmp_path, monkeypatch):
+        hook_handler = _load_hook_handler_module()
+        transcript = tmp_path / "t.jsonl"
+        transcript.write_text("{}\n")
+        # Use a command that actually runs (`true`) instead of mocking
+        # Popen, so the log file and detachment are exercised for real.
+        monkeypatch.setattr(hook_handler, "_ingest_command", lambda *a, **k: ["true"])
+
+        hook_handler._trigger_ingest(
+            "session-end", "developer", "sess-1", str(transcript), tmp_path
+        )
+
+        log_path = tmp_path / "logs" / "ingest.log"
+        # The detached child may not have flushed/exited yet; the log
+        # file's existence and location are what this test guarantees.
+        assert log_path.parent.is_dir()
 
     def test_default_source_is_package_name(self, tmp_path, monkeypatch):
         hook_handler = _load_hook_handler_module()
@@ -463,6 +501,31 @@ class TestHookHandlerIngestTrigger:
         hook_handler._trigger_ingest(
             "stop", "developer", "sess-1", str(transcript), tmp_path
         )  # must not raise
+
+    def test_session_end_popen_failure_never_raises(self, tmp_path, monkeypatch):
+        hook_handler = _load_hook_handler_module()
+
+        def _raise(*a, **k):
+            raise OSError("uvx not found")
+
+        monkeypatch.setattr(subprocess, "Popen", _raise)
+        transcript = tmp_path / "t.jsonl"
+        transcript.write_text("{}\n")
+
+        hook_handler._trigger_ingest(
+            "session-end", "developer", "sess-1", str(transcript), tmp_path
+        )  # must not raise
+
+    def test_log_rotation_reuses_bounded_rotation(self, tmp_path):
+        hook_handler = _load_hook_handler_module()
+        log_path = tmp_path / "logs" / "ingest.log"
+        log_path.parent.mkdir(parents=True)
+        log_path.write_text("x" * (hook_handler._MAX_LOG_BYTES + 1))
+
+        hook_handler._rotate_if_needed(log_path, max_bytes=hook_handler._MAX_LOG_BYTES)
+
+        assert (tmp_path / "logs" / "ingest.log.1").exists()
+        assert not log_path.exists()
 
 
 class TestSessionStartContext:

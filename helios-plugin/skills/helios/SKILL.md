@@ -3,7 +3,7 @@ name: helios
 description: Observes behavioral patterns, detects drift via KL-divergence, and negotiates profile updates with the human
 argument-hint: "[status|drift|negotiate|import|export]"
 user-invocable: true
-allowed-tools: "mcp__helios__get_behavioral_context,mcp__helios__observe_interaction,mcp__helios__get_drift_report,mcp__helios__negotiate_update,mcp__helios__import_profile,mcp__helios__export_profile"
+allowed-tools: "mcp__plugin_helios_helios__list_personas,mcp__plugin_helios_helios__get_behavioral_context,mcp__plugin_helios_helios__observe_interaction,mcp__plugin_helios_helios__get_drift_report,mcp__plugin_helios_helios__negotiate_update,mcp__plugin_helios_helios__import_profile,mcp__plugin_helios_helios__export_profile"
 ---
 
 # Helios Behavioral Science
@@ -24,61 +24,66 @@ Route based on $ARGUMENTS:
 
 !`helios-mcp status 2>/dev/null || echo "Helios not yet bootstrapped"`
 
-At the beginning of each session, call the `get_behavioral_context` MCP tool to load the user's behavioral preferences. Apply these preferences to guide your communication style, epistemic approach, interaction patterns, and risk posture.
+At the beginning of each session, call `get_behavioral_context` to load the user's behavioral preferences. Apply these preferences to guide your communication style, epistemic approach, interaction patterns, and risk posture. Omit `persona_name` unless the user names a specific persona — it falls back to `HELIOS_DIR/default_persona`, then `"default"`.
 
 ```
 Tool: get_behavioral_context
-Args: { "persona_name": "developer" }
+Args: {}
 ```
 
 ## Ongoing Observation
 
-After completing significant work, call `observe_interaction` with recent conversation messages. This feeds the observation engine and checks for drift.
+After completing significant work, call `observe_interaction` with the recent conversation messages. This feeds the observation engine and reports whether a profile update is recommended. Pass the same `session_id` for every call within one conversation — it's the idempotency key that keeps repeated calls from double-counting the same turns.
 
 ```
 Tool: observe_interaction
-Args: { "persona_name": "developer", "messages": [...] }
+Args: { "messages": [...], "session_id": "<stable id for this conversation>" }
 ```
 
 ## Drift Detection
 
-When `observe_interaction` returns `negotiation_recommended: true`, call `get_drift_report` and present the summary to the user naturally. Do not interrupt the user's workflow. Mention it at a natural break point.
+When `observe_interaction` returns `negotiation_recommended: true` (or a non-null `proposal_id`), call `get_drift_report` and present the summary to the user naturally. Do not interrupt the user's workflow. Mention it at a natural break point.
 
 ```
 Tool: get_drift_report
-Args: { "persona_name": "developer" }
+Args: {}
 ```
+
+The response includes a `proposal_id`. Hold onto it — `negotiate_update` needs it.
 
 ## Negotiation
 
-When presenting a drift report, explain what changed in plain language. Ask the user if they want to accept the observed behavior as their new profile.
+When presenting a drift report, explain what changed in plain language. Ask the user if they want to accept the observed behavior as their new profile. Use the `proposal_id` from `get_drift_report`, not a persona name alone — a stale or wrong id is rejected rather than silently applied to whatever the current proposal happens to be.
 
 If the user accepts:
 ```
 Tool: negotiate_update
-Args: { "persona_name": "developer", "decision": "accept" }
+Args: { "proposal_id": "<id from get_drift_report>", "decision": "accept" }
 ```
 
 If the user rejects:
 ```
 Tool: negotiate_update
-Args: { "persona_name": "developer", "decision": "reject", "reason": "..." }
+Args: { "proposal_id": "<id from get_drift_report>", "decision": "reject", "reason": "..." }
 ```
+
+`accepted_dimensions` narrows either decision to specific dimensions (default: all dimensions in the proposal).
 
 ## Import
 
 When the user wants to import a personality file:
 ```
 Tool: import_profile
-Args: { "source_path": "/path/to/CLAUDE.md", "persona_name": "..." }
+Args: { "source_path": "/path/to/CLAUDE.md" }
 ```
+Add `"persona_name"` to name the resulting persona explicitly; otherwise it's derived from the filename.
 
 ## Export
 
 When the user wants to see or save their profile:
 ```
 Tool: export_profile
-Args: { "persona_name": "developer", "format": "soulspec" }
+Args: { "format": "soulspec" }
 ```
 
 ## Behavioral Dimensions
@@ -94,4 +99,4 @@ Each dimension is a probability distribution, not a label. The dominant state gu
 
 ## Privacy
 
-All data is stored locally in `~/.helios/`. Nothing is sent to external services. Every profile change is git-committed for full version history.
+All data is stored locally in `~/.helios/` (or `HELIOS_DIR`, if set). Nothing is sent to external services. Every profile change is git-committed for full version history.

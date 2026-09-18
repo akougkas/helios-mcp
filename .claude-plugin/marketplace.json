@@ -1,10 +1,11 @@
 {
   "name": "helios-marketplace",
   "owner": {"name": "Anthony Kougkas"},
+  "description": "Marketplace for the Helios behavioral genome plugin.",
   "plugins": [
     {
       "name": "helios",
-      "source": "./plugins/helios",
+      "source": "./helios-plugin",
       "description": "Behavioral genome for AI agents. Observes behavior, detects drift via KL-divergence, negotiates profile updates.",
       "version": "0.4.0-beta.1",
       "category": "productivity"
