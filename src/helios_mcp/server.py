@@ -1,13 +1,16 @@
 """Helios MCP Server — behavioral science tools for AI agents."""
 
 import logging
-from typing import Dict, Any, Optional
 from pathlib import Path
+from typing import Any
 
-from fastmcp import FastMCP, Context
+from fastmcp import Context, FastMCP
 from pydantic import Field
 
-from .security import validate_persona_name, sanitize_error_message, SecurityError, InvalidInputError
+from .security import (
+    sanitize_error_message,
+    validate_persona_name,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
+async def create_server(helios_dir: Path | None = None) -> FastMCP:
     """Create the Helios MCP server with behavioral science tools.
 
     Args:
@@ -41,7 +44,9 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
         description="List available persona names in the Helios directory",
         tags={"personas"},
     )
-    async def list_personas(ctx: Context = None) -> Dict[str, Any]:
+    async def list_personas(
+        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+    ) -> dict[str, Any]:
         """Return the names of all .yaml files under ~/.helios/personas/."""
         personas_dir = helios_dir / "personas"
         if not personas_dir.exists():
@@ -54,13 +59,14 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
     # ------------------------------------------------------------------
 
     @mcp.tool(
-        description="Get the full behavioral context for a persona as system prompt text",
+        description="Get the full behavioral context for a persona as system "
+        "prompt text",
         tags={"behavioral", "context"},
     )
     async def get_behavioral_context(
         persona_name: str = Field(description="Persona name (e.g. 'developer')"),
-        ctx: Context = None,
-    ) -> Dict[str, Any]:
+        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+    ) -> dict[str, Any]:
         """Resolve the 4-level behavioral hierarchy and render as system prompt text."""
         try:
             from .hierarchy import IdentityHierarchy
@@ -86,19 +92,22 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
     # ------------------------------------------------------------------
 
     @mcp.tool(
-        description="Observe a conversation and update behavioral fingerprint for a persona",
+        description="Observe a conversation and update behavioral fingerprint "
+        "for a persona",
         tags={"behavioral", "observation"},
     )
     async def observe_interaction(
         persona_name: str = Field(description="Persona to observe for"),
-        messages: list[Dict[str, Any]] = Field(description="Conversation messages (role+content dicts)"),
-        ctx: Context = None,
-    ) -> Dict[str, Any]:
+        messages: list[dict[str, Any]] = Field(
+            description="Conversation messages (role+content dicts)"
+        ),
+        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+    ) -> dict[str, Any]:
         """Feed messages into the observation engine and check drift."""
         try:
-            from .observer import BehavioralObserver
             from .drift import DriftDetector
             from .hierarchy import IdentityHierarchy
+            from .observer import BehavioralObserver
 
             observer = BehavioralObserver(helios_dir)
             observer.observe(persona_name, messages)
@@ -108,7 +117,9 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             profile = hierarchy.resolve(persona_name)
             observed_dists = observer.get_accumulated_distributions(persona_name)
             detector = DriftDetector()
-            drift_result = detector.compute_drift(profile.distributions, observed_dists, count)
+            drift_result = detector.compute_drift(
+                profile.distributions, observed_dists, count
+            )
 
             return {
                 "status": "success",
@@ -127,19 +138,20 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
     # ------------------------------------------------------------------
 
     @mcp.tool(
-        description="Get a natural language drift report — call when negotiation_recommended is true",
+        description="Get a natural language drift report — call when "
+        "negotiation_recommended is true",
         tags={"behavioral", "drift"},
     )
     async def get_drift_report(
         persona_name: str = Field(description="Persona to report on"),
-        ctx: Context = None,
-    ) -> Dict[str, Any]:
+        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+    ) -> dict[str, Any]:
         """Generate a human-readable behavioral drift summary with a proposal."""
         try:
-            from .observer import BehavioralObserver
             from .drift import DriftDetector
-            from .negotiation import NegotiationEngine
             from .hierarchy import IdentityHierarchy
+            from .negotiation import NegotiationEngine
+            from .observer import BehavioralObserver
 
             hierarchy = IdentityHierarchy(helios_dir)
             profile = hierarchy.resolve(persona_name)
@@ -149,12 +161,15 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             if count == 0:
                 return {
                     "status": "no_data",
-                    "message": f"No observations for '{persona_name}'. Use observe_interaction first.",
+                    "message": f"No observations for '{persona_name}'. "
+                    "Use observe_interaction first.",
                 }
 
             observed_dists = observer.get_accumulated_distributions(persona_name)
             detector = DriftDetector()
-            drift_result = detector.compute_drift(profile.distributions, observed_dists, count)
+            drift_result = detector.compute_drift(
+                profile.distributions, observed_dists, count
+            )
 
             proposal = NegotiationEngine().generate_summary(
                 persona_name, profile, observed_dists, drift_result
@@ -185,23 +200,26 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
         persona_name: str = Field(description="Persona to update"),
         decision: str = Field(description="'accept' or 'reject'"),
         reason: str = Field(default="", description="Optional reason for rejection"),
-        accepted_dimensions: Optional[list[str]] = Field(
+        accepted_dimensions: list[str] | None = Field(
             default=None,
             description="Specific dimensions to accept (None = accept all)",
         ),
-        ctx: Context = None,
-    ) -> Dict[str, Any]:
-        """Apply or reject a behavioral evolution proposal. Accepted changes are git-committed."""
+        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+    ) -> dict[str, Any]:
+        """Apply or reject a behavioral evolution proposal. Accepted changes \
+are git-committed."""
         try:
-            from .observer import BehavioralObserver
             from .drift import DriftDetector
-            from .negotiation import NegotiationEngine
             from .hierarchy import IdentityHierarchy
+            from .negotiation import NegotiationEngine
+            from .observer import BehavioralObserver
 
             engine = NegotiationEngine()
 
             if decision.lower() == "reject":
-                return engine.reject_update(persona_name, reason or "user rejected", helios_dir)
+                return engine.reject_update(
+                    persona_name, reason or "user rejected", helios_dir
+                )
 
             if decision.lower() == "accept":
                 hierarchy = IdentityHierarchy(helios_dir)
@@ -210,11 +228,20 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
                 observed_dists = observer.get_accumulated_distributions(persona_name)
                 count = observer.get_observation_count(persona_name)
                 detector = DriftDetector()
-                drift_result = detector.compute_drift(profile.distributions, observed_dists, count)
-                proposal = engine.generate_summary(persona_name, profile, observed_dists, drift_result)
-                return engine.apply_update(persona_name, proposal, helios_dir, accepted_dimensions)
+                drift_result = detector.compute_drift(
+                    profile.distributions, observed_dists, count
+                )
+                proposal = engine.generate_summary(
+                    persona_name, profile, observed_dists, drift_result
+                )
+                return engine.apply_update(
+                    persona_name, proposal, helios_dir, accepted_dimensions
+                )
 
-            return {"status": "error", "message": f"Unknown decision '{decision}'. Use 'accept' or 'reject'."}
+            return {
+                "status": "error",
+                "message": f"Unknown decision '{decision}'. Use 'accept' or 'reject'.",
+            }
         except Exception as e:
             logger.error(f"negotiate_update failed: {e}")
             return {"status": "error", "message": str(e)}
@@ -224,18 +251,22 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
     # ------------------------------------------------------------------
 
     @mcp.tool(
-        description="Import a personality file (CLAUDE.md, soul.md, etc.) into a Helios behavioral profile",
+        description="Import a personality file (CLAUDE.md, soul.md, etc.) into "
+        "a Helios behavioral profile",
         tags={"behavioral", "import"},
     )
     async def import_profile(
         source_path: str = Field(description="Path to the personality file to import"),
-        persona_name: str = Field(default="", description="Name for the new persona (default: derived from filename)"),
-        ctx: Context = None,
-    ) -> Dict[str, Any]:
-        """Parse a personality file and create a new Helios persona with projected distributions."""
+        persona_name: str = Field(
+            default="",
+            description="Name for the new persona (default: derived from filename)",
+        ),
+        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+    ) -> dict[str, Any]:
+        """Parse a personality file and create a new Helios persona \
+with projected distributions."""
         try:
             from .importer import import_from_markdown
-            from .profile import BehavioralProfile
 
             path = Path(source_path).expanduser().resolve()
             profile = import_from_markdown(path)
@@ -251,7 +282,7 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
             profile.save(out_path)
 
             # Return summary
-            summary: Dict[str, Any] = {
+            summary: dict[str, Any] = {
                 "status": "success",
                 "persona": profile.agent_id,
                 "source": str(path),
@@ -274,19 +305,25 @@ async def create_server(helios_dir: Optional[Path] = None) -> FastMCP:
     # ------------------------------------------------------------------
 
     @mcp.tool(
-        description="Export a behavioral profile in various formats (yaml, json, soulspec)",
+        description="Export a behavioral profile in various formats "
+        "(yaml, json, soulspec)",
         tags={"behavioral", "export"},
     )
     async def export_profile(
         persona_name: str = Field(description="Persona to export"),
-        format: str = Field(default="yaml", description="Export format: yaml, json, or soulspec"),
-        dimensions: Optional[list[str]] = Field(default=None, description="Specific dimensions to include (None = all)"),
-        ctx: Context = None,
-    ) -> Dict[str, Any]:
+        format: str = Field(  # noqa: A002 - published MCP export-format parameter name
+            default="yaml", description="Export format: yaml, json, or soulspec"
+        ),
+        dimensions: list[str] | None = Field(
+            default=None,
+            description="Specific dimensions to include (None = all)",
+        ),
+        ctx: Context = None,  # noqa: ARG001 - required by FastMCP tool signature
+    ) -> dict[str, Any]:
         """Export a behavioral profile with optional dimension filtering."""
         try:
-            from .hierarchy import IdentityHierarchy
             from .exporter import export_dimensions, export_soulspec
+            from .hierarchy import IdentityHierarchy
 
             validate_persona_name(persona_name)
             hierarchy = IdentityHierarchy(helios_dir)

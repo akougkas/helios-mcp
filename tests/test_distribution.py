@@ -1,14 +1,14 @@
 """Tests for BehavioralDistribution — the core scientific data type of Helios v2."""
 
 import math
+
 import pytest
+
 from helios_mcp.distribution import (
     BehavioralDistribution,
     total_kl_divergence,
-    _normalize,
 )
 from helios_mcp.taxonomy import list_dimensions, list_states
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

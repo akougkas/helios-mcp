@@ -1,7 +1,6 @@
 """Tests for export_profile MCP tool and CLI export command (Tasks 2.7, 2.8)."""
 
 import json
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner

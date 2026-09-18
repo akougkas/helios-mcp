@@ -14,7 +14,6 @@ from helios_mcp.observer import (
 )
 from helios_mcp.taxonomy import list_dimensions, list_states
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -391,7 +390,7 @@ class TestBehavioralObserver:
         obs = self._make_observer()
         result = obs.observe("developer", [])
         assert set(result.keys()) == set(list_dimensions())
-        for dim, dist in result.items():
+        for _dim, dist in result.items():
             assert abs(sum(dist.probs) - 1.0) < 1e-6
 
     def test_accumulated_distributions_returns_all_dimensions(self) -> None:
@@ -415,5 +414,5 @@ class TestBehavioralObserver:
         for _ in range(3):
             obs.observe("developer", self._sample_messages())
         result = obs.get_accumulated_distributions("developer")
-        for dim, dist in result.items():
+        for _dim, dist in result.items():
             assert abs(sum(dist.probs) - 1.0) < 1e-6

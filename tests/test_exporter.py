@@ -15,7 +15,6 @@ from helios_mcp.exporter import (
 from helios_mcp.profile import BehavioralProfile
 from helios_mcp.taxonomy import list_dimensions, list_states
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

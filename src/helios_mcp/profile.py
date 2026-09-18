@@ -5,7 +5,6 @@ import datetime
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -22,17 +21,17 @@ class BehavioralProfile:
     agent_id: str
     level: str  # "species" | "domain" | "user" | "session"
     distributions: dict[str, BehavioralDistribution]
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     specialization_level: int = 1
     base_importance: float = 0.7
     description: str = ""
     observation_count: int = 0
-    last_negotiation: Optional[str] = None
+    last_negotiation: str | None = None
     created: str = field(default_factory=lambda: datetime.date.today().isoformat())
     schema_version: str = SCHEMA_VERSION
 
     @classmethod
-    def default_species(cls) -> "BehavioralProfile":
+    def default_species(cls) -> BehavioralProfile:
         """Balanced species-level base profile."""
         return cls(
             agent_id="base",
@@ -51,13 +50,16 @@ class BehavioralProfile:
                     "decides_unilaterally": 0.05,
                     "defers_to_user": 0.10,
                 }),
-                "communication_register": BehavioralDistribution("communication_register", {
-                    "terse": 0.20,
-                    "moderate": 0.45,
-                    "thorough": 0.20,
-                    "technical_dense": 0.10,
-                    "plain_accessible": 0.05,
-                }),
+                "communication_register": BehavioralDistribution(
+                    "communication_register",
+                    {
+                        "terse": 0.20,
+                        "moderate": 0.45,
+                        "thorough": 0.20,
+                        "technical_dense": 0.10,
+                        "plain_accessible": 0.05,
+                    },
+                ),
                 "risk_caution": BehavioralDistribution("risk_caution", {
                     "acts_immediately": 0.15,
                     "checks_before_acting": 0.45,
@@ -93,13 +95,15 @@ class BehavioralProfile:
         return d
 
     @classmethod
-    def from_yaml_dict(cls, data: dict) -> "BehavioralProfile":
+    def from_yaml_dict(cls, data: dict) -> BehavioralProfile:
         """Deserialize from a loaded YAML dict."""
         raw_dists = data.get("behavioral_distributions", {})
         distributions: dict[str, BehavioralDistribution] = {}
         for dim in list_dimensions():
             if dim in raw_dists:
-                distributions[dim] = BehavioralDistribution.from_dict(dim, raw_dists[dim])
+                distributions[dim] = BehavioralDistribution.from_dict(
+                    dim, raw_dists[dim]
+                )
             else:
                 distributions[dim] = BehavioralDistribution.uniform(dim)
         return cls(
@@ -117,9 +121,9 @@ class BehavioralProfile:
         )
 
     @classmethod
-    def load(cls, path: Path) -> "BehavioralProfile":
+    def load(cls, path: Path) -> BehavioralProfile:
         """Load a BehavioralProfile from a YAML file."""
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         return cls.from_yaml_dict(data)
 
@@ -128,5 +132,7 @@ class BehavioralProfile:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.parent / (path.name + ".tmp")
         with open(tmp, "w", encoding="utf-8") as f:
-            yaml.dump(self.to_yaml_dict(), f, default_flow_style=False, allow_unicode=True)
+            yaml.dump(
+                self.to_yaml_dict(), f, default_flow_style=False, allow_unicode=True
+            )
         os.replace(tmp, path)

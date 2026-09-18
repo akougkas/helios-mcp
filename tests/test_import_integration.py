@@ -1,7 +1,5 @@
 """Tests for import_profile MCP tool and CLI import command (Tasks 2.3, 2.4)."""
 
-import json
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner

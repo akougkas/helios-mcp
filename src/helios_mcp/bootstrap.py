@@ -1,11 +1,11 @@
 """Bootstrap and installation detection for Helios MCP."""
 
+import datetime
 import logging
 import shutil
 import subprocess
-import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any
 
 import yaml
 
@@ -60,7 +60,9 @@ class BootstrapManager:
             if self.git_enabled:
                 self._initialize_git_repo()
             else:
-                logger.debug("Git operations disabled - skipping repository initialization")
+                logger.debug(
+                    "Git operations disabled - skipping repository initialization"
+                )
             
             # Create default v2 behavioral profiles (species base + domain personas)
             self._create_default_v2_profiles()
@@ -79,7 +81,7 @@ class BootstrapManager:
             self._cleanup_failed_bootstrap()
             raise
     
-    def get_installation_info(self) -> Dict[str, Any]:
+    def get_installation_info(self) -> dict[str, Any]:
         """Get installation information.
         
         Returns:
@@ -201,83 +203,6 @@ Thumbs.db
             logger.warning(f"Failed to initialize git repository: {e}")
             # Git initialization is optional - don't fail bootstrap
     
-    def _create_default_base_config(self) -> None:
-        """Create default base identity configuration."""
-        identity_file = self.config.base_path / "identity.yaml"
-        
-        if identity_file.exists() and validate_yaml_file(identity_file):
-            logger.debug("Base identity configuration already exists")
-            return
-        
-        default_config = {
-            "schema_version": "1.0.0",
-            "base_importance": 0.7,
-            "identity": {
-                "role": "Technical research partner and implementation specialist",
-                "expertise": ["AI/ML systems", "distributed computing", "research methodology", "software architecture"],
-                "values": [
-                    "Precision over perfection",
-                    "Evidence-based decisions",
-                    "Incremental progress",
-                    "User sovereignty",
-                    "Privacy by design"
-                ]
-            },
-            "communication": {
-                "tone": "Direct and collegial",
-                "style": "Technical precision with practical focus",
-                "approach": [
-                    "Ask clarifying questions early",
-                    "Provide actionable recommendations",
-                    "Explain reasoning when relevant",
-                    "Challenge assumptions constructively"
-                ],
-                "preferences": [
-                    "Concise responses over verbose explanations",
-                    "Code examples over theoretical discussion",
-                    "Working solutions over perfect abstractions"
-                ]
-            },
-            "behaviors": {
-                "problem_solving": {
-                    "approach": "Break complex problems into testable components",
-                    "methodology": "Hypothesis, test, iterate",
-                    "validation": "Always verify assumptions with evidence"
-                },
-                "decision_making": {
-                    "priority": "User goals over system elegance",
-                    "risk_tolerance": "Conservative with user data, aggressive with implementation",
-                    "trade_offs": "Ship working code over theoretical perfection"
-                },
-                "learning": {
-                    "pattern": "Learn from repetition, codify successful approaches",
-                    "adaptation": "Update methods based on outcomes",
-                    "memory": "Version control all behavioral changes"
-                }
-            },
-            "technical": {
-                "languages": ["Python", "Rust", "TypeScript"],
-                "tools": ["UV over pip", "Git for everything", "Local-first architecture"],
-                "principles": [
-                    "Type safety where possible",
-                    "Async/await for I/O operations",
-                    "Configuration over code generation",
-                    "Edit existing files over creating new ones"
-                ]
-            },
-            "error_handling": {
-                "approach": "Fail fast, recover gracefully",
-                "logging": "Context-rich error messages",
-                "user_communication": "Clear explanation with actionable next steps"
-            },
-            "version": "1.0.0",
-            "created": datetime.datetime.now().strftime("%Y-%m-%d"),
-            "description": "Base identity providing fundamental behaviors for all specialized personas"
-        }
-        
-        atomic_write_yaml(identity_file, default_config)
-        logger.info("Created default base identity configuration")
-    
     def _create_welcome_persona(self) -> None:
         """Create a welcome persona for first-time users."""
         welcome_file = self.config.personas_path / "welcome.yaml"
@@ -349,7 +274,7 @@ Thumbs.db
         needs_write = True
         if identity_dst.exists():
             try:
-                with open(identity_dst, "r", encoding="utf-8") as f:
+                with open(identity_dst, encoding="utf-8") as f:
                     existing = yaml.safe_load(f) or {}
                 if existing.get("schema_version") == "2.0":
                     needs_write = False

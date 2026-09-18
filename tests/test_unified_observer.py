@@ -4,22 +4,16 @@ Verifies that BehavioralObserver handles both text messages and hook
 events, and correctly blends distributions from both sources.
 """
 
-import json
-import time
-from pathlib import Path
 
 import pytest
 
 from helios_mcp.distribution import BehavioralDistribution
 from helios_mcp.hook_events import (
-    SessionEvent,
-    SubagentEvent,
     ToolUseEvent,
     UserPromptEvent,
 )
 from helios_mcp.observer import BehavioralObserver
 from helios_mcp.taxonomy import list_dimensions
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

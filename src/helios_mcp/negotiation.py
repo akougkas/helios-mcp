@@ -12,16 +12,14 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 from .distribution import BehavioralDistribution
 from .drift import DriftDetector, DriftResult
 from .observer import BehavioralObserver
 from .profile import BehavioralProfile
 from .taxonomy import DIMENSION_DESCRIPTIONS, list_dimensions
-
 
 # ---------------------------------------------------------------------------
 # NegotiationProposal dataclass
@@ -94,11 +92,14 @@ class NegotiationEngine:
 
         # Build the main summary paragraph
         lines: list[str] = [
-            f"Your '{persona_name}' behavioral profile has drifted from its declared state.",
+            (
+                f"Your '{persona_name}' behavioral profile has drifted from its "
+                "declared state."
+            ),
             (
                 f"Over {obs_count} observed interactions, your agent's actual behavior"
-                f" diverged significantly from its profile (drift score: {total_drift:.2f},"
-                f" threshold: 0.30)."
+                f" diverged significantly from its profile"
+                f" (drift score: {total_drift:.2f}, threshold: 0.30)."
             ),
             "",
             "The most significant changes:",
@@ -109,8 +110,12 @@ class NegotiationEngine:
                 dim_desc = DIMENSION_DESCRIPTIONS.get(dim, dim)
                 declared_dist = declared_profile.distributions.get(dim)
                 observed_dist = observed_dists.get(dim)
-                declared_most = declared_dist.most_likely() if declared_dist else "unknown"
-                observed_most = observed_dist.most_likely() if observed_dist else "unknown"
+                declared_most = (
+                    declared_dist.most_likely() if declared_dist else "unknown"
+                )
+                observed_most = (
+                    observed_dist.most_likely() if observed_dist else "unknown"
+                )
                 lines.append(
                     f"- {dim_desc}: the agent was observed behaving as"
                     f" '{observed_most}' more than its declared '{declared_most}'"
@@ -118,13 +123,17 @@ class NegotiationEngine:
                 )
         else:
             lines.append(
-                "  Multiple dimensions show moderate drift that together exceed the threshold."
+                "  Multiple dimensions show moderate drift that together exceed"
+                " the threshold."
             )
 
         lines.extend([
             "",
             "Do you want to update the declared profile to match observed behavior?",
-            "Accepting this update will commit the changes to your behavioral biography.",
+            (
+                "Accepting this update will commit the changes to your behavioral"
+                " biography."
+            ),
         ])
 
         summary = "\n".join(lines)
@@ -135,7 +144,7 @@ class NegotiationEngine:
             for dim, dist in observed_dists.items()
         }
 
-        proposed_at = datetime.now(timezone.utc).isoformat()
+        proposed_at = datetime.now(UTC).isoformat()
 
         return NegotiationProposal(
             persona_name=persona_name,
@@ -148,7 +157,7 @@ class NegotiationEngine:
 
     def generate_per_dimension_summary(
         self,
-        dim: str,
+        dim: str,  # noqa: ARG002 - kept for symmetry with generate_summary's call site
         declared_dist: BehavioralDistribution,
         observed_dist: BehavioralDistribution,
         kl: float,
@@ -187,7 +196,7 @@ class NegotiationEngine:
         persona_name: str,
         proposal: NegotiationProposal,
         helios_dir: Path,
-        accepted_dimensions: Optional[list[str]] = None,
+        accepted_dimensions: list[str] | None = None,
     ) -> dict:
         """Apply an accepted negotiation proposal to the persona's profile.
 
@@ -213,7 +222,9 @@ class NegotiationEngine:
         updated: list[str] = []
         for dim in dims_to_update:
             if dim in proposal.proposed_distributions:
-                new_dist = BehavioralDistribution(dim, proposal.proposed_distributions[dim])
+                new_dist = BehavioralDistribution(
+                    dim, proposal.proposed_distributions[dim]
+                )
                 profile.distributions[dim] = new_dist
                 updated.append(dim)
 
@@ -247,7 +258,7 @@ class NegotiationEngine:
         self,
         persona_name: str,
         reason: str,
-        helios_dir: Path,
+        helios_dir: Path,  # noqa: ARG002 - symmetry with apply_update
     ) -> dict:
         """Reject a negotiation proposal and log the rejection.
 
@@ -271,7 +282,7 @@ def create_proposal_from_observer(
     helios_dir: Path,
     observer: BehavioralObserver,
     drift_detector: DriftDetector,
-) -> Optional[NegotiationProposal]:
+) -> NegotiationProposal | None:
     """Convenience function: check drift and return a proposal if threshold exceeded.
 
     Args:

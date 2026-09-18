@@ -18,7 +18,6 @@ from helios_mcp.projector import (
 )
 from helios_mcp.taxonomy import list_dimensions, list_states
 
-
 # ---------------------------------------------------------------------------
 # Prompt construction
 # ---------------------------------------------------------------------------
@@ -154,29 +153,73 @@ class TestValidateAndNormalize:
         raw = json.loads(_valid_response())
         dists = validate_and_normalize(raw)
         assert set(dists.keys()) == set(list_dimensions())
-        for dim, dist in dists.items():
+        for _dim, dist in dists.items():
             assert isinstance(dist, BehavioralDistribution)
             total = sum(dist.probs)
             assert abs(total - 1.0) < 1e-6
 
     def test_unnormalized_input_gets_normalized(self):
         raw = {
-            "epistemic_style": {"confident": 5.0, "hedging": 3.0, "admits_ignorance": 1.0, "speculating": 1.0},
-            "interaction_agency": {"asks_first": 2.0, "assumes_and_acts": 4.0, "offers_options": 2.0, "decides_unilaterally": 1.0, "defers_to_user": 1.0},
-            "communication_register": {"terse": 3.0, "moderate": 3.0, "thorough": 2.0, "technical_dense": 1.0, "plain_accessible": 1.0},
-            "risk_caution": {"acts_immediately": 1.0, "checks_before_acting": 4.0, "warns_frequently": 3.0, "refuses_ambiguity": 2.0},
+            "epistemic_style": {
+                "confident": 5.0,
+                "hedging": 3.0,
+                "admits_ignorance": 1.0,
+                "speculating": 1.0,
+            },
+            "interaction_agency": {
+                "asks_first": 2.0,
+                "assumes_and_acts": 4.0,
+                "offers_options": 2.0,
+                "decides_unilaterally": 1.0,
+                "defers_to_user": 1.0,
+            },
+            "communication_register": {
+                "terse": 3.0,
+                "moderate": 3.0,
+                "thorough": 2.0,
+                "technical_dense": 1.0,
+                "plain_accessible": 1.0,
+            },
+            "risk_caution": {
+                "acts_immediately": 1.0,
+                "checks_before_acting": 4.0,
+                "warns_frequently": 3.0,
+                "refuses_ambiguity": 2.0,
+            },
         }
         dists = validate_and_normalize(raw)
-        for dim, dist in dists.items():
+        for _dim, dist in dists.items():
             total = sum(dist.probs)
             assert abs(total - 1.0) < 1e-6
 
     def test_zero_values_get_floored(self):
         raw = {
-            "epistemic_style": {"confident": 1.0, "hedging": 0.0, "admits_ignorance": 0.0, "speculating": 0.0},
-            "interaction_agency": {"asks_first": 0.0, "assumes_and_acts": 1.0, "offers_options": 0.0, "decides_unilaterally": 0.0, "defers_to_user": 0.0},
-            "communication_register": {"terse": 1.0, "moderate": 0.0, "thorough": 0.0, "technical_dense": 0.0, "plain_accessible": 0.0},
-            "risk_caution": {"acts_immediately": 0.0, "checks_before_acting": 1.0, "warns_frequently": 0.0, "refuses_ambiguity": 0.0},
+            "epistemic_style": {
+                "confident": 1.0,
+                "hedging": 0.0,
+                "admits_ignorance": 0.0,
+                "speculating": 0.0,
+            },
+            "interaction_agency": {
+                "asks_first": 0.0,
+                "assumes_and_acts": 1.0,
+                "offers_options": 0.0,
+                "decides_unilaterally": 0.0,
+                "defers_to_user": 0.0,
+            },
+            "communication_register": {
+                "terse": 1.0,
+                "moderate": 0.0,
+                "thorough": 0.0,
+                "technical_dense": 0.0,
+                "plain_accessible": 0.0,
+            },
+            "risk_caution": {
+                "acts_immediately": 0.0,
+                "checks_before_acting": 1.0,
+                "warns_frequently": 0.0,
+                "refuses_ambiguity": 0.0,
+            },
         }
         dists = validate_and_normalize(raw)
         # All states should have nonzero probability due to floor
@@ -205,7 +248,7 @@ class TestProjectToDistributions:
     def test_keyword_fallback(self):
         dists = project_to_distributions(["Be direct and concise."])
         assert set(dists.keys()) == set(list_dimensions())
-        for dim, dist in dists.items():
+        for _dim, dist in dists.items():
             total = sum(dist.probs)
             assert abs(total - 1.0) < 1e-6
 
@@ -219,5 +262,7 @@ class TestProjectToDistributions:
             project_to_distributions(["test"], llm_response="garbage")
 
     def test_none_response_uses_fallback(self):
-        dists = project_to_distributions(["Be thorough and comprehensive."], llm_response=None)
+        dists = project_to_distributions(
+            ["Be thorough and comprehensive."], llm_response=None
+        )
         assert dists["communication_register"]["thorough"] > 0.2

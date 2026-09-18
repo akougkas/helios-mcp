@@ -9,7 +9,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -20,8 +19,6 @@ from helios_mcp.hook_events import parse_hook_stdin
 from helios_mcp.hook_observer import (
     extract_failure_signals,
     extract_tool_signals,
-    extract_prompt_signals,
-    merge_signal_results,
     hook_signals_to_distributions,
 )
 
@@ -240,7 +237,7 @@ class TestPluginInstallReadiness:
         path = PLUGIN_DIR / "hooks" / "hooks.json"
         config = json.loads(path.read_text())
         assert "hooks" in config
-        for event_type, entries in config["hooks"].items():
+        for _event_type, entries in config["hooks"].items():
             for entry in entries:
                 for hook in entry["hooks"]:
                     assert hook["type"] == "command"

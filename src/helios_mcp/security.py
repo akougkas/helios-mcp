@@ -4,12 +4,13 @@ Provides path validation, input sanitization, and secure operations
 to prevent common vulnerabilities like path traversal and injection attacks.
 """
 
+import logging
 import re
 import shlex
-from pathlib import Path, PurePosixPath
-from typing import Any, Dict, List, Optional, Union, Set
-import logging
-from pydantic import BaseModel, Field, validator, ValidationError, ConfigDict
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +70,14 @@ class BaseConfigSchema(BaseModel):
         ge=0.0, le=1.0,
         description="Base configuration importance weight"
     )
-    identity: Optional[Dict[str, Any]] = None
-    communication: Optional[Dict[str, Any]] = None
-    behaviors: Optional[Dict[str, Any]] = None
-    technical: Optional[Dict[str, Any]] = None
-    preferences: Optional[Dict[str, Any]] = None
-    version: Optional[str] = Field(default=None, pattern=r'^\d+\.\d+\.\d+$')
-    description: Optional[str] = Field(default=None, max_length=1000)
-    created: Optional[str] = None
+    identity: dict[str, Any] | None = None
+    communication: dict[str, Any] | None = None
+    behaviors: dict[str, Any] | None = None
+    technical: dict[str, Any] | None = None
+    preferences: dict[str, Any] | None = None
+    version: str | None = Field(default=None, pattern=r'^\d+\.\d+\.\d+$')
+    description: str | None = Field(default=None, max_length=1000)
+    created: str | None = None
     
     model_config = ConfigDict(extra="ignore", strict=True)
 
@@ -88,12 +89,12 @@ class PersonaConfigSchema(BaseModel):
         le=100.0,
         description="Specialization level (must be >= 1.0 and <= 100.0)"
     )
-    name: Optional[str] = Field(default=None, max_length=100, pattern=r'^[a-zA-Z0-9 _-]+$')
-    description: Optional[str] = Field(default=None, max_length=1000)
-    behaviors: Optional[Dict[str, Any]] = None
-    specializations: Optional[Dict[str, Any]] = None
-    learning_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    version: Optional[str] = Field(default=None, pattern=r'^\d+\.\d+\.\d+$')
+    name: str | None = Field(default=None, max_length=100, pattern=r'^[a-zA-Z0-9 _-]+$')
+    description: str | None = Field(default=None, max_length=1000)
+    behaviors: dict[str, Any] | None = None
+    specializations: dict[str, Any] | None = None
+    learning_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    version: str | None = Field(default=None, pattern=r'^\d+\.\d+\.\d+$')
     
     model_config = ConfigDict(extra="ignore", strict=True)
 
@@ -139,7 +140,7 @@ def validate_persona_name(name: str) -> str:
     return name
 
 
-def validate_file_path(file_path: Union[str, Path], base_dir: Path) -> Path:
+def validate_file_path(file_path: str | Path, base_dir: Path) -> Path:
     """Validate file path to prevent path traversal attacks.
     
     Args:
@@ -164,10 +165,10 @@ def validate_file_path(file_path: Union[str, Path], base_dir: Path) -> Path:
         # Check if path is within base directory
         try:
             path_obj.relative_to(base_obj)
-        except ValueError:
+        except ValueError as e:
             raise PathTraversalError(
                 f"Path traversal detected: {file_path} is outside {base_dir}"
-            )
+            ) from e
         
         # Additional checks for dangerous components
         path_parts = path_obj.parts
@@ -183,7 +184,7 @@ def validate_file_path(file_path: Union[str, Path], base_dir: Path) -> Path:
         return path_obj
         
     except (OSError, ValueError) as e:
-        raise InvalidInputError(f"Invalid file path: {file_path} - {e}")
+        raise InvalidInputError(f"Invalid file path: {file_path} - {e}") from e
 
 
 def validate_config_key(key: str) -> str:
@@ -331,7 +332,7 @@ def validate_commits_back(commits_back: int) -> int:
     return commits_back
 
 
-def validate_base_config(data: Dict[str, Any]) -> BaseConfigSchema:
+def validate_base_config(data: dict[str, Any]) -> BaseConfigSchema:
     """Validate base configuration using Pydantic schema.
     
     Args:
@@ -347,10 +348,10 @@ def validate_base_config(data: Dict[str, Any]) -> BaseConfigSchema:
         return BaseConfigSchema(**data)
     except ValidationError as e:
         logger.error(f"Base configuration validation failed: {e}")
-        raise InvalidInputError(f"Invalid base configuration: {e}")
+        raise InvalidInputError(f"Invalid base configuration: {e}") from e
 
 
-def validate_persona_config(data: Dict[str, Any]) -> PersonaConfigSchema:
+def validate_persona_config(data: dict[str, Any]) -> PersonaConfigSchema:
     """Validate persona configuration using Pydantic schema.
     
     Args:
@@ -366,10 +367,10 @@ def validate_persona_config(data: Dict[str, Any]) -> PersonaConfigSchema:
         return PersonaConfigSchema(**data)
     except ValidationError as e:
         logger.error(f"Persona configuration validation failed: {e}")
-        raise InvalidInputError(f"Invalid persona configuration: {e}")
+        raise InvalidInputError(f"Invalid persona configuration: {e}") from e
 
 
-def create_safe_git_command(base_command: List[str], *args: str) -> List[str]:
+def create_safe_git_command(base_command: list[str], *args: str) -> list[str]:
     """Create a safe git command with properly quoted arguments.
     
     Args:
@@ -383,7 +384,9 @@ def create_safe_git_command(base_command: List[str], *args: str) -> List[str]:
     
     for arg in args:
         if not isinstance(arg, str):
-            raise InvalidInputError(f"Git command argument must be string, got {type(arg)}")
+            raise InvalidInputError(
+                f"Git command argument must be string, got {type(arg)}"
+            )
         
         # Use shlex.quote for proper shell escaping
         safe_arg = shlex.quote(arg)

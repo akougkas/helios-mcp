@@ -8,8 +8,6 @@ import json
 import time
 from pathlib import Path
 
-import pytest
-
 from helios_mcp.observer import BehavioralObserver
 from helios_mcp.taxonomy import list_dimensions
 

@@ -1,4 +1,7 @@
-"""Behavioral profile renderer — converts a BehavioralProfile into system prompt text."""
+"""Behavioral profile renderer.
+
+Converts a BehavioralProfile into system prompt text.
+"""
 from __future__ import annotations
 
 from .profile import BehavioralProfile
@@ -66,7 +69,8 @@ class BehavioralRenderer:
 
         lines.append(
             "These behavioral patterns reflect accumulated preferences. "
-            "Follow them as defaults, adapting to explicit user instructions when given."
+            "Follow them as defaults, adapting to explicit user instructions "
+            "when given."
         )
 
         return "\n".join(lines)

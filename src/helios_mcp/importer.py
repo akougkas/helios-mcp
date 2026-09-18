@@ -19,8 +19,7 @@ from pathlib import Path
 
 from .distribution import BehavioralDistribution
 from .profile import BehavioralProfile
-from .taxonomy import BEHAVIORAL_TAXONOMY, list_dimensions, list_states
-
+from .taxonomy import list_dimensions, list_states
 
 # ---------------------------------------------------------------------------
 # Format detection
@@ -84,7 +83,10 @@ _PERSONALITY_HEADERS = re.compile(
 )
 
 
-def extract_text_blocks(content: str, format: str) -> list[str]:
+def extract_text_blocks(
+    content: str,
+    format: str,  # noqa: A002 - kept for external callers using format=
+) -> list[str]:
     """Extract personality-relevant text blocks from a markdown file.
 
     Splits the markdown by headers and returns sections whose headers
@@ -178,7 +180,10 @@ _KEYWORD_MAP: dict[str, list[tuple[str, str, float]]] = {
     "decisive": [("epistemic_style", "confident", 1.5)],
     "opinionated": [("epistemic_style", "confident", 1.5)],
     "hedge": [("epistemic_style", "hedging", 2.0)],
-    "careful": [("epistemic_style", "hedging", 1.0), ("risk_caution", "checks_before_acting", 1.5)],
+    "careful": [
+        ("epistemic_style", "hedging", 1.0),
+        ("risk_caution", "checks_before_acting", 1.5),
+    ],
     "uncertain": [("epistemic_style", "hedging", 1.5)],
     "honest": [("epistemic_style", "admits_ignorance", 1.5)],
     "transparent": [("epistemic_style", "admits_ignorance", 1.0)],
@@ -256,7 +261,7 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
     # Accumulate weights per dimension per state
     weights: dict[str, dict[str, float]] = {}
     for dim in list_dimensions():
-        weights[dim] = {s: 0.1 for s in list_states(dim)}  # uniform prior
+        weights[dim] = dict.fromkeys(list_states(dim), 0.1)  # uniform prior
 
     full_text = " ".join(text_blocks).lower()
 
@@ -273,7 +278,7 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
             normalized = {s: v / total for s, v in weights[dim].items()}
         else:
             n = len(weights[dim])
-            normalized = {s: 1.0 / n for s in weights[dim]}
+            normalized = dict.fromkeys(weights[dim], 1.0 / n)
         dists[dim] = BehavioralDistribution(dim, normalized)
 
     return dists
@@ -285,7 +290,7 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
 
 def import_from_markdown(
     path: Path,
-    format: str = "auto",
+    format: str = "auto",  # noqa: A002 - public param name; kept for callers
 ) -> BehavioralProfile:
     """Import a personality file into a Helios BehavioralProfile.
 
@@ -314,7 +319,9 @@ def import_from_markdown(
 
     # Stage 1: parse
     if format == "auto":
-        format = detect_format(content, path.name)
+        # `format` is this function's published parameter name; rebinding it keeps
+        # the resolved value in one place rather than introducing a shadow.
+        format = detect_format(content, path.name)  # noqa: A001
 
     valid_formats = ("claude", "soul", "agents", "gemini", "generic")
     if format not in valid_formats:
@@ -343,7 +350,7 @@ def import_from_markdown(
 def import_from_text(
     text: str,
     name: str = "imported",
-    format: str = "auto",
+    format: str = "auto",  # noqa: A002 - public param name; kept for callers
 ) -> BehavioralProfile:
     """Import from raw text content (no file required).
 
@@ -361,7 +368,7 @@ def import_from_text(
         raise ValueError("Import text is empty")
 
     if format == "auto":
-        format = detect_format(text)
+        format = detect_format(text)  # noqa: A001
 
     text_blocks = extract_text_blocks(text, format)
     distributions = keyword_project(text_blocks)

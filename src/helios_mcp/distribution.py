@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Any
 
 from .taxonomy import (
     list_states,
@@ -106,7 +105,7 @@ class BehavioralDistribution:
     # Core scientific operations
     # ------------------------------------------------------------------
 
-    def kl_divergence(self, other: "BehavioralDistribution") -> float:
+    def kl_divergence(self, other: BehavioralDistribution) -> float:
         """Compute KL-divergence D_KL(self || other).
 
         D_KL(P || Q) = sum_x P(x) * log(P(x) / Q(x))
@@ -131,7 +130,7 @@ class BehavioralDistribution:
         self._assert_same_dimension(other)
 
         result = 0.0
-        for p, q in zip(self.probs, other.probs):
+        for p, q in zip(self.probs, other.probs, strict=False):
             if p < _EPSILON:
                 # P(x) = 0 contributes 0 to KL (limit of x*log(x) as x→0 is 0)
                 continue
@@ -141,7 +140,9 @@ class BehavioralDistribution:
 
         return result
 
-    def kl_blend(self, other: "BehavioralDistribution", weight: float) -> "BehavioralDistribution":
+    def kl_blend(
+        self, other: BehavioralDistribution, weight: float
+    ) -> BehavioralDistribution:
         """Compute the KL-divergence minimizing mixture of self and other.
 
         M(x) = weight * self(x) + (1 - weight) * other(x)
@@ -176,7 +177,9 @@ class BehavioralDistribution:
         persona_weight = 1.0 - weight
         blended: dict[str, float] = {}
 
-        for state, p_base, p_persona in zip(self.states, self.probs, other.probs):
+        for state, p_base, p_persona in zip(
+            self.states, self.probs, other.probs, strict=False
+        ):
             blended[state] = weight * p_base + persona_weight * p_persona
 
         # Renormalize to correct any floating point drift
@@ -245,7 +248,7 @@ class BehavioralDistribution:
         """
         r = random.random()
         cumulative = 0.0
-        for state, prob in zip(self.states, self.probs):
+        for state, prob in zip(self.states, self.probs, strict=False):
             cumulative += prob
             if r <= cumulative:
                 return state
@@ -261,10 +264,12 @@ class BehavioralDistribution:
         Returns:
             Dict suitable for YAML serialization.
         """
-        return dict(zip(self.states, self.probs))
+        return dict(zip(self.states, self.probs, strict=False))
 
     @classmethod
-    def from_dict(cls, dimension: str, data: dict[str, float]) -> "BehavioralDistribution":
+    def from_dict(
+        cls, dimension: str, data: dict[str, float]
+    ) -> BehavioralDistribution:
         """Deserialize from a plain dict.
 
         Args:
@@ -284,7 +289,7 @@ class BehavioralDistribution:
     # ------------------------------------------------------------------
 
     @classmethod
-    def uniform(cls, dimension: str) -> "BehavioralDistribution":
+    def uniform(cls, dimension: str) -> BehavioralDistribution:
         """Create a uniform (maximum entropy) distribution.
 
         Args:
@@ -295,10 +300,10 @@ class BehavioralDistribution:
         """
         states = list_states(dimension)
         prob = 1.0 / len(states)
-        return cls(dimension, {s: prob for s in states})
+        return cls(dimension, dict.fromkeys(states, prob))
 
     @classmethod
-    def point_mass(cls, dimension: str, state: str) -> "BehavioralDistribution":
+    def point_mass(cls, dimension: str, state: str) -> BehavioralDistribution:
         """Create a point-mass distribution concentrated on one state.
 
         Args:
@@ -324,7 +329,7 @@ class BehavioralDistribution:
             return False
         return all(
             abs(a - b) < _SUM_TOLERANCE
-            for a, b in zip(self.probs, other.probs)
+            for a, b in zip(self.probs, other.probs, strict=False)
         )
 
     def __repr__(self) -> str:
@@ -351,14 +356,16 @@ class BehavioralDistribution:
         try:
             idx = self.states.index(state)
             return self.probs[idx]
-        except ValueError:
-            raise KeyError(f"State '{state}' not in dimension '{self.dimension}'")
+        except ValueError as e:
+            raise KeyError(
+                f"State '{state}' not in dimension '{self.dimension}'"
+            ) from e
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _assert_same_dimension(self, other: "BehavioralDistribution") -> None:
+    def _assert_same_dimension(self, other: BehavioralDistribution) -> None:
         if self.dimension != other.dimension:
             raise ValueError(
                 f"Cannot operate on distributions from different dimensions: "
@@ -389,8 +396,8 @@ def _normalize(probs: dict[str, float]) -> dict[str, float]:
 
 
 def total_kl_divergence(
-    observed: dict[str, "BehavioralDistribution"],
-    declared: dict[str, "BehavioralDistribution"],
+    observed: dict[str, BehavioralDistribution],
+    declared: dict[str, BehavioralDistribution],
 ) -> float:
     """Compute total KL-divergence across all behavioral dimensions.
 

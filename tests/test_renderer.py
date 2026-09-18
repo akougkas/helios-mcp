@@ -1,13 +1,10 @@
 """Tests for BehavioralRenderer (Phase 2)."""
 from __future__ import annotations
 
-import pytest
-
+from helios_mcp.distribution import BehavioralDistribution
 from helios_mcp.profile import BehavioralProfile
 from helios_mcp.renderer import BehavioralRenderer
-from helios_mcp.distribution import BehavioralDistribution
-from helios_mcp.taxonomy import list_dimensions, get_state_label
-
+from helios_mcp.taxonomy import get_state_label, list_dimensions
 
 _ALL_DIMS = list_dimensions()
 

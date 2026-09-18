@@ -26,10 +26,9 @@ Event types:
 
 from __future__ import annotations
 
+import contextlib
 import time
 from dataclasses import dataclass, field
-from typing import Union
-
 
 # ---------------------------------------------------------------------------
 # Base event
@@ -57,7 +56,8 @@ class HookEvent:
 
 @dataclass(frozen=True)
 class ToolUseEvent(HookEvent):
-    """A tool invocation observed via PreToolUse, PostToolUse, or PostToolUseFailure hooks.
+    """A tool invocation observed via PreToolUse, PostToolUse, or
+    PostToolUseFailure hooks.
 
     Attributes:
         tool_name: The tool that was called (e.g., "Read", "Edit", "Bash").
@@ -91,10 +91,7 @@ class SubagentEvent(HookEvent):
 
     def __post_init__(self) -> None:
         if self.event_type not in ("start", "stop"):
-            object.__setattr__(
-                self, "event_type",
-                "start" if self.event_type not in ("start", "stop") else self.event_type,
-            )
+            object.__setattr__(self, "event_type", "start")
 
 
 @dataclass(frozen=True)
@@ -104,7 +101,8 @@ class SessionEvent(HookEvent):
     Attributes:
         event_type: "start" or "end".
         source: For SessionStart, how the session began (startup/resume/clear/compact).
-        reason: For SessionEnd, why the session ended (clear/logout/prompt_input_exit/other).
+        reason: For SessionEnd, why the session ended
+            (clear/logout/prompt_input_exit/other).
     """
 
     event_type: str = "start"
@@ -213,21 +211,21 @@ class PreCompactEvent(HookEvent):
 
 
 # Union type for all concrete events
-AnyHookEvent = Union[
-    ToolUseEvent,
-    SubagentEvent,
-    SessionEvent,
-    NotificationEvent,
-    UserPromptSubmitEvent,
-    StopEvent,
-    InstructionsLoadedEvent,
-    PermissionRequestEvent,
-    TeammateIdleEvent,
-    TaskCompletedEvent,
-    ConfigChangeEvent,
-    WorktreeEvent,
-    PreCompactEvent,
-]
+AnyHookEvent = (
+    ToolUseEvent
+    | SubagentEvent
+    | SessionEvent
+    | NotificationEvent
+    | UserPromptSubmitEvent
+    | StopEvent
+    | InstructionsLoadedEvent
+    | PermissionRequestEvent
+    | TeammateIdleEvent
+    | TaskCompletedEvent
+    | ConfigChangeEvent
+    | WorktreeEvent
+    | PreCompactEvent
+)
 
 # Mapping from CLI event-type strings to hook event names
 _EVENT_TYPE_MAP: dict[str, str] = {
@@ -289,7 +287,9 @@ def parse_hook_stdin(raw_json: dict, event_type: str | None = None) -> AnyHookEv
         event_type = raw_json.get("type", "")
 
     if not event_type:
-        raise ValueError("Cannot determine event type: no 'type' in JSON and no event_type argument")
+        raise ValueError(
+            "Cannot determine event type: no 'type' in JSON and no event_type argument"
+        )
 
     ts = _extract_timestamp(raw_json)
     common = _extract_common_fields(raw_json)
@@ -328,17 +328,23 @@ def _extract_timestamp(raw_json: dict) -> float:
     """Extract timestamp from raw JSON, falling back to current time."""
     ts = raw_json.get("timestamp")
     if ts is not None:
-        try:
+        with contextlib.suppress(TypeError, ValueError):
             return float(ts)
-        except (TypeError, ValueError):
-            pass
     return time.time()
 
 
-def _parse_tool_use(raw_json: dict, event_type: str, ts: float, common: dict) -> ToolUseEvent:
-    tool_name = raw_json.get("tool_name", "") or raw_json.get("tool", {}).get("name", "")
-    tool_input = raw_json.get("tool_input", {}) or raw_json.get("tool", {}).get("input", {})
-    input_keys = tuple(sorted(tool_input.keys())) if isinstance(tool_input, dict) else ()
+def _parse_tool_use(
+    raw_json: dict, event_type: str, ts: float, common: dict
+) -> ToolUseEvent:
+    tool_name = (
+        raw_json.get("tool_name", "") or raw_json.get("tool", {}).get("name", "")
+    )
+    tool_input = (
+        raw_json.get("tool_input", {}) or raw_json.get("tool", {}).get("input", {})
+    )
+    input_keys = (
+        tuple(sorted(tool_input.keys())) if isinstance(tool_input, dict) else ()
+    )
     duration_ms = int(raw_json.get("duration_ms", 0))
 
     if event_type == "post-tool-failure":
@@ -362,7 +368,9 @@ def _parse_tool_use(raw_json: dict, event_type: str, ts: float, common: dict) ->
     )
 
 
-def _parse_subagent(raw_json: dict, event_type: str, ts: float, common: dict) -> SubagentEvent:
+def _parse_subagent(
+    raw_json: dict, event_type: str, ts: float, common: dict
+) -> SubagentEvent:
     agent_type = raw_json.get("agent_type", "") or raw_json.get("type_name", "")
     agent_id = raw_json.get("agent_id", "") or raw_json.get("id", "")
     sub_event = "start" if event_type == "subagent-start" else "stop"
@@ -376,7 +384,9 @@ def _parse_subagent(raw_json: dict, event_type: str, ts: float, common: dict) ->
     )
 
 
-def _parse_session(raw_json: dict, event_type: str, ts: float, common: dict) -> SessionEvent:
+def _parse_session(
+    raw_json: dict, event_type: str, ts: float, common: dict
+) -> SessionEvent:
     sub_event = "start" if event_type == "session-start" else "end"
     source = str(raw_json.get("source", "") or "")
     reason = str(raw_json.get("reason", "") or "")
@@ -395,16 +405,28 @@ def _parse_notification(raw_json: dict, ts: float, common: dict) -> Notification
     length = len(str(content)) if content else 0
     notification_type = str(raw_json.get("notification_type", "") or "")
 
-    return NotificationEvent(timestamp=ts, length=length, notification_type=notification_type, **common)
+    return NotificationEvent(
+        timestamp=ts,
+        length=length,
+        notification_type=notification_type,
+        **common,
+    )
 
 
-def _parse_user_prompt(raw_json: dict, ts: float, common: dict) -> UserPromptSubmitEvent:
+def _parse_user_prompt(
+    raw_json: dict, ts: float, common: dict
+) -> UserPromptSubmitEvent:
     content = raw_json.get("content", "") or raw_json.get("prompt", "")
     text = str(content) if content else ""
     length = len(text)
     question_count = text.count("?")
 
-    return UserPromptSubmitEvent(timestamp=ts, length=length, question_count=question_count, **common)
+    return UserPromptSubmitEvent(
+        timestamp=ts,
+        length=length,
+        question_count=question_count,
+        **common,
+    )
 
 
 def _parse_stop(raw_json: dict, ts: float, common: dict) -> StopEvent:
@@ -412,7 +434,9 @@ def _parse_stop(raw_json: dict, ts: float, common: dict) -> StopEvent:
     return StopEvent(timestamp=ts, stop_hook_active=stop_hook_active, **common)
 
 
-def _parse_permission_request(raw_json: dict, ts: float, common: dict) -> PermissionRequestEvent:
+def _parse_permission_request(
+    raw_json: dict, ts: float, common: dict
+) -> PermissionRequestEvent:
     tool_name = str(raw_json.get("tool_name", "") or "")
     return PermissionRequestEvent(timestamp=ts, tool_name=tool_name, **common)
 
@@ -423,6 +447,11 @@ def _parse_config_change(raw_json: dict, ts: float, common: dict) -> ConfigChang
     return ConfigChangeEvent(timestamp=ts, source=source, file_path=file_path, **common)
 
 
-def _parse_worktree(raw_json: dict, event_type: str, ts: float, common: dict) -> WorktreeEvent:
+def _parse_worktree(
+    raw_json: dict,  # noqa: ARG001 - uniform parser signature for the dispatch table
+    event_type: str,
+    ts: float,
+    common: dict,
+) -> WorktreeEvent:
     wt_event = "create" if event_type == "worktree-create" else "remove"
     return WorktreeEvent(timestamp=ts, event_type=wt_event, **common)

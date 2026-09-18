@@ -8,7 +8,6 @@ from helios_mcp.distribution import BehavioralDistribution
 from helios_mcp.drift import DriftDetector, DriftResult
 from helios_mcp.taxonomy import list_dimensions, list_states
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -38,10 +37,10 @@ def make_detector() -> DriftDetector:
 
 class TestDriftDetectorConstants:
     def test_total_threshold(self) -> None:
-        assert DriftDetector.TOTAL_THRESHOLD == pytest.approx(0.30)
+        assert pytest.approx(0.30) == DriftDetector.TOTAL_THRESHOLD
 
     def test_per_dim_threshold(self) -> None:
-        assert DriftDetector.PER_DIM_THRESHOLD == pytest.approx(0.10)
+        assert pytest.approx(0.10) == DriftDetector.PER_DIM_THRESHOLD
 
     def test_min_observations(self) -> None:
         assert DriftDetector.MIN_OBSERVATIONS == 20

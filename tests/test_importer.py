@@ -4,11 +4,9 @@ Covers format detection, markdown parsing, keyword projection,
 and the full import pipeline.
 """
 
-from pathlib import Path
 
 import pytest
 
-from helios_mcp.distribution import BehavioralDistribution
 from helios_mcp.importer import (
     detect_format,
     extract_text_blocks,
@@ -18,7 +16,6 @@ from helios_mcp.importer import (
 )
 from helios_mcp.profile import BehavioralProfile
 from helios_mcp.taxonomy import list_dimensions, list_states
-
 
 # ---------------------------------------------------------------------------
 # Format detection
@@ -42,7 +39,8 @@ class TestDetectFormat:
         assert detect_format("", "agents.md") == "agents"
 
     def test_agents_by_content(self):
-        assert detect_format("agent_id: my_agent\nbehavioral_distributions:", "") == "agents"
+        content = "agent_id: my_agent\nbehavioral_distributions:"
+        assert detect_format(content, "") == "agents"
 
     def test_gemini_by_filename(self):
         assert detect_format("", "gemini.md") == "gemini"
@@ -138,19 +136,25 @@ libfoo, libbar
 class TestKeywordProject:
     def test_direct_confident(self):
         dists = keyword_project(["Be direct and confident in responses."])
-        assert dists["epistemic_style"]["confident"] > dists["epistemic_style"]["hedging"]
+        epistemic = dists["epistemic_style"]
+        assert epistemic["confident"] > epistemic["hedging"]
 
     def test_concise_terse(self):
         dists = keyword_project(["Keep responses concise and brief."])
-        assert dists["communication_register"]["terse"] > dists["communication_register"]["thorough"]
+        register = dists["communication_register"]
+        assert register["terse"] > register["thorough"]
 
     def test_thorough_communication(self):
-        dists = keyword_project(["Provide thorough, comprehensive answers with detailed explanations."])
-        assert dists["communication_register"]["thorough"] > dists["communication_register"]["terse"]
+        dists = keyword_project(
+            ["Provide thorough, comprehensive answers with detailed explanations."]
+        )
+        register = dists["communication_register"]
+        assert register["thorough"] > register["terse"]
 
     def test_cautious_risk(self):
         dists = keyword_project(["Always verify before acting. Check with caution."])
-        assert dists["risk_caution"]["checks_before_acting"] > dists["risk_caution"]["acts_immediately"]
+        risk = dists["risk_caution"]
+        assert risk["checks_before_acting"] > risk["acts_immediately"]
 
     def test_all_dimensions_present(self):
         dists = keyword_project(["Be helpful."])
@@ -187,8 +191,11 @@ class TestKeywordProject:
         assert dists["risk_caution"]["checks_before_acting"] > 0.2
 
     def test_autonomous_boosts_assumes(self):
-        dists = keyword_project(["Be autonomous and proactive. Execute without asking."])
-        assert dists["interaction_agency"]["assumes_and_acts"] > dists["interaction_agency"]["asks_first"]
+        dists = keyword_project(
+            ["Be autonomous and proactive. Execute without asking."]
+        )
+        agency = dists["interaction_agency"]
+        assert agency["assumes_and_acts"] > agency["asks_first"]
 
 
 # ---------------------------------------------------------------------------

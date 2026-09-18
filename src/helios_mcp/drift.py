@@ -11,11 +11,10 @@ Drift thresholds (scientifically grounded):
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from .distribution import BehavioralDistribution
-
 
 # ---------------------------------------------------------------------------
 # DriftResult dataclass
@@ -104,7 +103,7 @@ class DriftDetector:
             dim for dim, kl in per_dim.items()
             if kl >= self.PER_DIM_THRESHOLD
         ]
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
 
         return DriftResult(
             total_drift=total,

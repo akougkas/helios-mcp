@@ -8,7 +8,6 @@ import pytest
 from helios_mcp.harness import BehavioralHarness
 from helios_mcp.profile import BehavioralProfile
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

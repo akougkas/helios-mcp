@@ -26,7 +26,6 @@ from helios_mcp.hierarchy import IdentityHierarchy
 from helios_mcp.negotiation import NegotiationEngine, create_proposal_from_observer
 from helios_mcp.observer import BehavioralObserver
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -53,10 +52,7 @@ def _assert_dist_sums(dists: dict) -> None:
     and plain dicts (state→probability).
     """
     for dim, d in dists.items():
-        if hasattr(d, "probs"):
-            total = sum(d.probs)
-        else:
-            total = sum(d.values())
+        total = sum(d.probs) if hasattr(d, "probs") else sum(d.values())
         assert abs(total - 1.0) < 1e-6, f"{dim} sums to {total}, not 1.0"
 
 
@@ -129,7 +125,7 @@ async def test_full_behavioral_cycle():
         observer = BehavioralObserver(helios_dir)
         messages = _terse_confident_messages()
 
-        for i in range(25):
+        for _i in range(25):
             dists = observer.observe(persona_name, messages)
             _assert_dist_sums(dists)
 

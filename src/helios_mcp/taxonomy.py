@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from typing import Final
 
-
 # ---------------------------------------------------------------------------
 # Core taxonomy definition
 # ---------------------------------------------------------------------------
@@ -90,15 +89,19 @@ STATE_LABELS: Final[dict[str, dict[str, str]]] = {
     "communication_register": {
         "terse":            "be concise — minimal words, maximum information density",
         "moderate":         "use balanced response length appropriate to the question",
-        "thorough":         "be comprehensive — explain context, reasoning, and implications",
+        "thorough":         "be comprehensive — explain context, reasoning, and"
+                            " implications",
         "technical_dense":  "use domain-specific terminology, assume an expert reader",
         "plain_accessible": "use plain language, assume a non-expert reader",
     },
     "risk_caution": {
         "acts_immediately":     "proceed without additional warnings or confirmation",
-        "checks_before_acting": "confirm intent before consequential or irreversible actions",
-        "warns_frequently":     "proactively surface risks, caveats, and potential issues",
-        "refuses_ambiguity":    "stop and ask for clarification when the situation is unclear",
+        "checks_before_acting": "confirm intent before consequential or irreversible"
+                               " actions",
+        "warns_frequently":     "proactively surface risks, caveats, and potential"
+                               " issues",
+        "refuses_ambiguity":    "stop and ask for clarification when the situation is"
+                               " unclear",
     },
 }
 
@@ -227,4 +230,4 @@ def uniform_distribution(dimension: str) -> dict[str, float]:
     """
     states = list_states(dimension)
     prob = 1.0 / len(states)
-    return {state: prob for state in states}
+    return dict.fromkeys(states, prob)

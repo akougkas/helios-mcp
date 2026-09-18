@@ -18,13 +18,12 @@ from collections import Counter, defaultdict
 from .distribution import BehavioralDistribution
 from .hook_events import (
     ConfigChangeEvent,
-    SubagentEvent,
     SessionEvent,
+    SubagentEvent,
     ToolUseEvent,
     UserPromptEvent,
 )
 from .taxonomy import list_dimensions, list_states
-
 
 # ---------------------------------------------------------------------------
 # Types
@@ -344,7 +343,9 @@ def extract_prompt_signals(events: list[UserPromptEvent]) -> SignalResult:
     avg_length = sum(lengths) / len(lengths) if lengths else 0
     total_questions = sum(questions)
     avg_questions = total_questions / len(questions) if questions else 0
-    question_rate = sum(1 for q in questions if q > 0) / len(questions) if questions else 0
+    question_rate = (
+        sum(1 for q in questions if q > 0) / len(questions) if questions else 0
+    )
 
     # --- communication_register contributions ---
     # Short prompts from user suggest the interaction is terse
@@ -562,7 +563,7 @@ def hook_signals_to_distributions(
         else:
             # Fallback to uniform
             prob = 1.0 / len(states)
-            weights = {s: prob for s in states}
+            weights = dict.fromkeys(states, prob)
 
         dists[dim] = BehavioralDistribution(dim, weights)
 

@@ -12,6 +12,7 @@ Four signal types (all used simultaneously):
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -20,8 +21,8 @@ from pathlib import Path
 from .distribution import BehavioralDistribution
 from .hook_events import (
     AnyHookEvent,
-    SubagentEvent,
     SessionEvent,
+    SubagentEvent,
     ToolUseEvent,
     UserPromptEvent,
     parse_hook_stdin,
@@ -58,6 +59,18 @@ _SPECULATE_PHRASES: list[str] = [
     "perhaps", "imagine", "what if", "could be", "might mean", "hypothesis",
 ]
 
+_DEFERENCE_PHRASES: list[str] = [
+    "up to you", "your call", "whatever you prefer", "as you wish",
+]
+
+_UNILATERAL_PHRASES: list[str] = [
+    "i will", "i'm going to", "i've decided", "i'll just",
+]
+
+_OPTIONS_PHRASES: list[str] = [
+    "option", "alternative", "you could", "or you could",
+]
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -74,7 +87,7 @@ def _normalize_dict(d: dict[str, float]) -> dict[str, float]:
     if total <= 0.0:
         # Fall back to uniform
         n = len(d)
-        return {k: 1.0 / n for k in d}
+        return dict.fromkeys(d, 1.0 / n)
     return {k: v / total for k, v in d.items()}
 
 
@@ -162,7 +175,7 @@ def extract_semantic(messages: list[dict]) -> list[str]:
 
         if _contains_any(content, _IGNORANCE_PHRASES):
             results.append("admits_ignorance")
-        elif any(phrase in lower for phrase in ["perhaps", "imagine", "what if", "could be", "might mean", "hypothesis"]):
+        elif any(phrase in lower for phrase in _SPECULATE_PHRASES):
             results.append("speculating")
         elif _contains_any(content, _HEDGE_WORDS):
             results.append("hedging")
@@ -191,13 +204,13 @@ def extract_decision_points(messages: list[dict]) -> list[str]:
         lower = content.lower()
 
         # Check defers_to_user first (explicit deference phrases)
-        if any(phrase in lower for phrase in ["up to you", "your call", "whatever you prefer", "as you wish"]):
+        if any(phrase in lower for phrase in _DEFERENCE_PHRASES):
             results.append("defers_to_user")
         # Check decides_unilaterally
-        elif any(phrase in lower for phrase in ["i will", "i'm going to", "i've decided", "i'll just"]):
+        elif any(phrase in lower for phrase in _UNILATERAL_PHRASES):
             results.append("decides_unilaterally")
         # Check offers_options (options keywords or numbered list)
-        elif any(phrase in lower for phrase in ["option", "alternative", "you could", "or you could"]) or (
+        elif any(phrase in lower for phrase in _OPTIONS_PHRASES) or (
             "1." in content and "2." in content
         ):
             results.append("offers_options")
@@ -286,7 +299,7 @@ def signals_to_distributions(
     # epistemic_style
     # ------------------------------------------------------------------
     ep_states = list_states("epistemic_style")
-    ep_counts: dict[str, float] = {s: 0.0 for s in ep_states}
+    ep_counts: dict[str, float] = dict.fromkeys(ep_states, 0.0)
     for intent in semantic_intents:
         if intent in ep_counts:
             ep_counts[intent] += 1.0
@@ -303,7 +316,7 @@ def signals_to_distributions(
     # interaction_agency
     # ------------------------------------------------------------------
     ag_states = list_states("interaction_agency")
-    ag_counts: dict[str, float] = {s: 0.0 for s in ag_states}
+    ag_counts: dict[str, float] = dict.fromkeys(ag_states, 0.0)
     for dp in decision_points:
         if dp in ag_counts:
             ag_counts[dp] += 1.0
@@ -317,7 +330,7 @@ def signals_to_distributions(
     # communication_register
     # ------------------------------------------------------------------
     reg_states = list_states("communication_register")
-    reg_weights: dict[str, float] = {s: 0.0 for s in reg_states}
+    reg_weights: dict[str, float] = dict.fromkeys(reg_states, 0.0)
 
     avg_len = structural.get("avg_length", 0.0)
     code_rate = structural.get("code_rate", 0.0)
@@ -349,7 +362,7 @@ def signals_to_distributions(
     # risk_caution
     # ------------------------------------------------------------------
     rc_states = list_states("risk_caution")
-    rc_weights: dict[str, float] = {s: 0.0 for s in rc_states}
+    rc_weights: dict[str, float] = dict.fromkeys(rc_states, 0.0)
 
     caveat_rate = structural.get("caveat_rate", 0.0)
     question_rate = structural.get("question_rate", 0.0)
@@ -414,12 +427,10 @@ class BehavioralObserver:
         path = self._obs_path(persona_name)
         if path is None or not path.exists():
             return
-        try:
+        with contextlib.suppress(Exception):  # Corrupt file: start fresh
             data = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(data, list):
                 self._observations[persona_name] = data
-        except Exception:
-            pass  # Corrupt file: start fresh
 
     def _save(self, persona_name: str) -> None:
         """Atomically write observations for a persona to disk."""
@@ -435,14 +446,10 @@ class BehavioralObserver:
             os.close(fd)
             os.replace(tmp, path)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(fd)
-            except OSError:
-                pass
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise
 
     # ------------------------------------------------------------------
@@ -459,12 +466,10 @@ class BehavioralObserver:
         path = self._hook_obs_path(persona_name)
         if path is None or not path.exists():
             return
-        try:
+        with contextlib.suppress(Exception):
             data = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(data, list):
                 self._hook_observations[persona_name] = data
-        except Exception:
-            pass
 
     def _save_hooks(self, persona_name: str) -> None:
         """Atomically write hook observations for a persona to disk."""
@@ -480,14 +485,10 @@ class BehavioralObserver:
             os.close(fd)
             os.replace(tmp, path)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(fd)
-            except OSError:
-                pass
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise
 
     # ------------------------------------------------------------------
@@ -581,7 +582,9 @@ class BehavioralObserver:
 
         return dists
 
-    def replay_raw_hooks(self, persona_name: str) -> dict[str, BehavioralDistribution] | None:
+    def replay_raw_hooks(
+        self, persona_name: str
+    ) -> dict[str, BehavioralDistribution] | None:
         """Read raw JSONL hook events and process them through the observation pipeline.
 
         The fast-path hook handler writes raw events to
@@ -594,7 +597,9 @@ class BehavioralObserver:
         if self._helios_dir is None:
             return None
 
-        jsonl_path = self._helios_dir / "observations" / "hooks" / f"{persona_name}.jsonl"
+        jsonl_path = (
+            self._helios_dir / "observations" / "hooks" / f"{persona_name}.jsonl"
+        )
         if not jsonl_path.exists():
             return None
 
@@ -671,7 +676,10 @@ class BehavioralObserver:
     def _get_text_distributions(
         self, persona_name: str
     ) -> dict[str, BehavioralDistribution] | None:
-        """Compute distributions from text observations only. Returns None if no data."""
+        """Compute distributions from text observations only.
+
+        Returns None if no data.
+        """
         if persona_name not in self._observations:
             self._load(persona_name)
 
@@ -701,7 +709,10 @@ class BehavioralObserver:
     def _get_hook_distributions(
         self, persona_name: str
     ) -> dict[str, BehavioralDistribution] | None:
-        """Compute distributions from hook observations only. Returns None if no data."""
+        """Compute distributions from hook observations only.
+
+        Returns None if no data.
+        """
         if persona_name not in self._hook_observations:
             self._load_hooks(persona_name)
 

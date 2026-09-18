@@ -55,10 +55,26 @@ packages = ["src/helios_mcp"]
 line-length = 88
 target-version = "py313"
 src = ["src"]
+# Not source: build output and archived pre-v2 material kept for reference only.
+extend-exclude = ["ai-docs", "dist"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "ANN", "B", "A", "C4", "SIM", "ARG"]
-ignore = ["ANN101", "ANN102", "ANN401"]
+ignore = ["ANN401"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Field() in a parameter default is how FastMCP tools declare their published
+# parameter schema, not a mutable-default bug.
+extend-immutable-calls = ["pydantic.Field", "fastmcp.Context"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test functions return None by construction and fixtures are injected by name;
+# annotating either buys nothing, so the annotation and unused-argument rules
+# are relaxed for tests only. E501 is relaxed because the long lines are event
+# literals and parametrize tables, where wrapping hurts readability and invites
+# transcription errors in the fixtures that guard the behavioral math.
+# The library surface in src/ stays strict, line length included.
+"tests/**" = ["ANN", "ARG", "E501"]
 
 [tool.mypy]
 python_version = "3.13"

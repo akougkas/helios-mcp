@@ -25,8 +25,9 @@ from __future__ import annotations
 import functools
 import inspect
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from .drift import DriftDetector
 from .hierarchy import IdentityHierarchy
@@ -43,7 +44,7 @@ class BehavioralHarness:
     def __init__(
         self,
         persona: str = "developer",
-        helios_dir: Optional[Path] = None,
+        helios_dir: Path | None = None,
         drift_threshold: float = 0.30,
         observe_every: int = 1,
         negotiate_after: int = 20,
@@ -68,7 +69,7 @@ class BehavioralHarness:
         self._observer = BehavioralObserver()
         self._detector = DriftDetector()
         self._call_count: int = 0
-        self._profile: Optional[BehavioralProfile] = None
+        self._profile: BehavioralProfile | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -108,7 +109,7 @@ class BehavioralHarness:
         )
         return bool(result.total_drift >= self.drift_threshold)
 
-    def get_drift_summary(self) -> Optional[str]:
+    def get_drift_summary(self) -> str | None:
         """Return None if no observations, else a brief one-line drift summary.
 
         Returns:
@@ -183,7 +184,7 @@ class BehavioralHarness:
     # Context manager support
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> "BehavioralHarness":
+    def __enter__(self) -> BehavioralHarness:
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:

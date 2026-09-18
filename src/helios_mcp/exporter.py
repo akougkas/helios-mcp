@@ -21,7 +21,6 @@ from .taxonomy import (
     list_states,
 )
 
-
 # ---------------------------------------------------------------------------
 # Per-dimension export
 # ---------------------------------------------------------------------------
@@ -46,7 +45,9 @@ def export_dimensions(
     dims = dimensions or list_dimensions()
     for d in dims:
         if d not in profile.distributions:
-            raise ValueError(f"Dimension '{d}' not found in profile '{profile.agent_id}'")
+            raise ValueError(
+                f"Dimension '{d}' not found in profile '{profile.agent_id}'"
+            )
 
     result: dict[str, Any] = {
         "agent_id": profile.agent_id,
@@ -60,7 +61,10 @@ def export_dimensions(
             "description": DIMENSION_DESCRIPTIONS.get(dim, ""),
             "dominant_state": dist.most_likely(),
             "entropy": round(dist.normalized_entropy(), 4),
-            "distribution": {s: round(p, 4) for s, p in zip(dist.states, dist.probs)},
+            "distribution": {
+                s: round(p, 4)
+                for s, p in zip(dist.states, dist.probs, strict=False)
+            },
         }
 
     return result
@@ -178,9 +182,9 @@ def export_soulspec(profile: BehavioralProfile) -> str:
         if not dist:
             continue
 
-        dim_desc = DIMENSION_DESCRIPTIONS.get(dim, dim)
+        DIMENSION_DESCRIPTIONS.get(dim, dim)
         dominant = dist.most_likely()
-        dominant_label = STATE_LABELS.get(dim, {}).get(dominant, dominant)
+        STATE_LABELS.get(dim, {}).get(dominant, dominant)
 
         lines.append(f"## {_dim_title(dim)}")
         lines.append("")
@@ -208,7 +212,7 @@ def _dim_title(dim: str) -> str:
 def _describe_distribution(dist: BehavioralDistribution, dim: str) -> str:
     """Generate a natural language sentence describing a distribution."""
     sorted_states = sorted(
-        zip(dist.states, dist.probs),
+        zip(dist.states, dist.probs, strict=False),
         key=lambda x: x[1],
         reverse=True,
     )

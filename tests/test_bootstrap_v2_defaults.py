@@ -90,7 +90,7 @@ def test_fresh_bootstrap_identity_loads_valid_distributions(tmp_path: Path) -> N
     for name in _DOMAIN_PERSONAS:
         resolved = hierarchy.resolve(name)
         assert set(resolved.distributions) == set(list_dimensions())
-        for dim, dist in resolved.distributions.items():
+        for dist in resolved.distributions.values():
             assert isinstance(dist, BehavioralDistribution)
             assert abs(sum(dist.probs) - 1.0) < 1e-6
 

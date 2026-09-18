@@ -6,16 +6,14 @@ and the signal-to-distribution conversion.
 
 import time
 
-import pytest
-
+from helios_mcp.distribution import BehavioralDistribution
 from helios_mcp.hook_events import (
     ConfigChangeEvent,
-    SubagentEvent,
     SessionEvent,
+    SubagentEvent,
     ToolUseEvent,
     UserPromptEvent,
 )
-from helios_mcp.distribution import BehavioralDistribution
 from helios_mcp.hook_observer import (
     SignalResult,
     extract_config_signals,
@@ -28,7 +26,6 @@ from helios_mcp.hook_observer import (
     merge_signal_results,
 )
 from helios_mcp.taxonomy import list_dimensions, list_states
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -483,7 +480,7 @@ class TestHookSignalsToDistributions:
         dists = hook_signals_to_distributions(merged)
 
         assert len(dists) == 4
-        for dim, dist in dists.items():
+        for _dim, dist in dists.items():
             assert isinstance(dist, BehavioralDistribution)
             total = sum(dist.probs)
             assert abs(total - 1.0) < 1e-6

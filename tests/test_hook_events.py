@@ -9,7 +9,6 @@ import time
 import pytest
 
 from helios_mcp.hook_events import (
-    AnyHookEvent,
     ConfigChangeEvent,
     HookEvent,
     InstructionsLoadedEvent,
@@ -27,7 +26,6 @@ from helios_mcp.hook_events import (
     WorktreeEvent,
     parse_hook_stdin,
 )
-
 
 # ---------------------------------------------------------------------------
 # Base HookEvent common fields

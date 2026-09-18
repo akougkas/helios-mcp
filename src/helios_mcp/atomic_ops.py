@@ -1,16 +1,17 @@
 """Atomic file operations for safe YAML handling."""
 
+import logging
 import os
 import tempfile
-import yaml
-import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
 
-def atomic_write_yaml(path: Path, data: Dict[str, Any]) -> None:
+def atomic_write_yaml(path: Path, data: dict[str, Any]) -> None:
     """Write YAML atomically via temp file + rename.
 
     Args:
@@ -24,7 +25,13 @@ def atomic_write_yaml(path: Path, data: Dict[str, Any]) -> None:
     )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+            yaml.safe_dump(
+                data,
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True,
+            )
             f.flush()
             os.fsync(f.fileno())
         Path(temp_name).replace(path)

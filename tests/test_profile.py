@@ -1,16 +1,11 @@
 """Tests for BehavioralProfile (Phase 1)."""
 from __future__ import annotations
 
-import math
-import tempfile
 from pathlib import Path
 
-import pytest
-
-from helios_mcp.profile import BehavioralProfile, SCHEMA_VERSION
 from helios_mcp.distribution import BehavioralDistribution
+from helios_mcp.profile import SCHEMA_VERSION, BehavioralProfile
 from helios_mcp.taxonomy import list_dimensions
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -21,7 +16,7 @@ _ALL_DIMS = list_dimensions()
 
 def _profile_sums_to_one(profile: BehavioralProfile) -> bool:
     """Return True if every distribution in the profile sums to 1.0."""
-    for dim, dist in profile.distributions.items():
+    for _dim, dist in profile.distributions.items():
         total = sum(dist.probs)
         if abs(total - 1.0) > 1e-6:
             return False
@@ -96,7 +91,7 @@ class TestYamlRoundTrip:
         for dim in _ALL_DIMS:
             orig = profile.distributions[dim]
             rest = restored.distributions[dim]
-            for s, p in zip(orig.states, orig.probs):
+            for s, p in zip(orig.states, orig.probs, strict=False):
                 assert abs(rest[s] - p) < 1e-6, f"Mismatch in {dim}/{s}"
 
     def test_round_trip_restored_sums_to_one(self) -> None:
@@ -143,7 +138,7 @@ class TestFileRoundTrip:
         for dim in _ALL_DIMS:
             orig = profile.distributions[dim]
             rest = loaded.distributions[dim]
-            for s, prob in zip(orig.states, orig.probs):
+            for s, prob in zip(orig.states, orig.probs, strict=False):
                 assert abs(rest[s] - prob) < 1e-6
 
     def test_save_creates_file(self, tmp_path: Path) -> None:

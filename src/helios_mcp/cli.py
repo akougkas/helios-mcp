@@ -1,9 +1,9 @@
 """CLI interface for Helios MCP server."""
 
-import os
-import sys
 import asyncio
 import logging
+import os
+import sys
 from pathlib import Path
 
 try:
@@ -13,13 +13,13 @@ except ImportError:
     sys.exit(1)
 
 from . import __version__
-from .server import create_server
 from .bootstrap import BootstrapManager
+from .drift import DriftDetector
 from .hierarchy import IdentityHierarchy
 from .hook_events import parse_hook_stdin
-from .observer import BehavioralObserver
-from .drift import DriftDetector
 from .negotiation import NegotiationEngine
+from .observer import BehavioralObserver
+from .server import create_server
 from .taxonomy import list_dimensions
 
 log_level_str = os.getenv("HELIOS_LOG_LEVEL", "INFO").upper()
@@ -135,13 +135,18 @@ def status_command(helios_dir: Path) -> None:
     default=lambda: Path(os.getenv("HELIOS_DIR", Path.home() / ".helios")),
     type=click.Path(path_type=Path),
 )
-@click.option("--threshold", default=0.30, type=float, help="Drift threshold (default: 0.30)")
+@click.option(
+    "--threshold", default=0.30, type=float,
+    help="Drift threshold (default: 0.30)",
+)
 @click.option(
     "--yes", "-y",
     is_flag=True,
     help="Accept the proposed update without an interactive prompt (non-interactive).",
 )
-def negotiate_command(persona: str, helios_dir: Path, threshold: float, yes: bool) -> None:
+def negotiate_command(
+    persona: str, helios_dir: Path, threshold: float, yes: bool
+) -> None:
     """Show drift report for PERSONA and prompt for action.
 
     With --yes/-y, the proposed update is accepted non-interactively —
@@ -158,7 +163,9 @@ def negotiate_command(persona: str, helios_dir: Path, threshold: float, yes: boo
         observer.replay_raw_hooks("default")
         # Re-attribute to the requested persona
         if "default" in observer._hook_observations:
-            observer._hook_observations[persona] = observer._hook_observations["default"]
+            observer._hook_observations[persona] = (
+                observer._hook_observations["default"]
+            )
 
     obs_count = observer.get_observation_count(persona)
     if obs_count == 0:
@@ -189,7 +196,10 @@ def negotiate_command(persona: str, helios_dir: Path, threshold: float, yes: boo
         observed_dist = observed.get(dim)
         declared_state = declared_dist.most_likely() if declared_dist else "unknown"
         observed_state = observed_dist.most_likely() if observed_dist else "unknown"
-        click.echo(f"  {dim:<28} {kl:.2f} {dim_flag}  (declared: {declared_state}, observed: {observed_state})")
+        click.echo(
+            f"  {dim:<28} {kl:.2f} {dim_flag}  "
+            f"(declared: {declared_state}, observed: {observed_state})"
+        )
 
     click.echo("")
 
@@ -209,20 +219,23 @@ def negotiate_command(persona: str, helios_dir: Path, threshold: float, yes: boo
             outcome = engine.apply_update(persona, proposal, helios_dir)
         except Exception as exc:
             click.echo(f"Failed to apply update for '{persona}': {exc}", err=True)
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
 
         updated = outcome.get("updated_dimensions", [])
         if updated:
             click.echo(f"Changes accepted — updated dimensions: {', '.join(updated)}.")
         else:
             click.echo("Changes accepted — no dimensions required updates.")
-        click.echo(f"Committed to git: {outcome.get('commit_message', '(no commit message)')}")
+        click.echo(
+            f"Committed to git: "
+            f"{outcome.get('commit_message', '(no commit message)')}"
+        )
     elif action == "R":
         try:
             outcome = engine.reject_update(persona, "user rejected", helios_dir)
         except Exception as exc:
             click.echo(f"Failed to reject update for '{persona}': {exc}", err=True)
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
         click.echo(f"Changes rejected: {outcome.get('reason', 'user rejected')}")
     else:
         click.echo("No action taken.")
@@ -241,7 +254,10 @@ def negotiate_command(persona: str, helios_dir: Path, threshold: float, yes: boo
     default="yaml",
     help="Export format (default: yaml)",
 )
-@click.option("--dimensions", "dims", default=None, help="Comma-separated dimension names to export")
+@click.option(
+    "--dimensions", "dims", default=None,
+    help="Comma-separated dimension names to export",
+)
 @click.option(
     "--helios-dir",
     default=lambda: Path(os.getenv("HELIOS_DIR", Path.home() / ".helios")),
@@ -250,16 +266,18 @@ def negotiate_command(persona: str, helios_dir: Path, threshold: float, yes: boo
 def export_command(persona: str, fmt: str, dims: str | None, helios_dir: Path) -> None:
     """Export a behavioral profile for PERSONA."""
     import json as _json
+
     import yaml as _yaml
-    from .hierarchy import IdentityHierarchy
+
     from .exporter import export_dimensions, export_soulspec
+    from .hierarchy import IdentityHierarchy
 
     try:
         hierarchy = IdentityHierarchy(helios_dir)
         profile = hierarchy.resolve(persona)
     except Exception as exc:
         click.echo(f"Failed to load profile for '{persona}': {exc}", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
     if fmt == "soulspec":
         click.echo(export_soulspec(profile))
@@ -271,7 +289,7 @@ def export_command(persona: str, fmt: str, dims: str | None, helios_dir: Path) -
         exported = export_dimensions(profile, dim_list)
     except ValueError as exc:
         click.echo(str(exc), err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
     if fmt == "json":
         click.echo(_json.dumps(exported, indent=2))
@@ -286,7 +304,10 @@ def export_command(persona: str, fmt: str, dims: str | None, helios_dir: Path) -
 
 @main.command("import")
 @click.argument("path", type=click.Path(exists=True, path_type=Path))
-@click.option("--persona", default="", help="Name for the imported persona (default: from filename)")
+@click.option(
+    "--persona", default="",
+    help="Name for the imported persona (default: from filename)",
+)
 @click.option(
     "--format", "fmt",
     type=click.Choice(["auto", "claude", "soul", "agents", "gemini", "generic"]),
@@ -328,7 +349,7 @@ def import_command(path: Path, persona: str, fmt: str, helios_dir: Path) -> None
 
     except Exception as exc:
         click.echo(f"Import failed: {exc}", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
 
 # ---------------------------------------------------------------------------

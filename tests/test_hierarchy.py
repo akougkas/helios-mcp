@@ -3,13 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-import yaml
-
 from helios_mcp.hierarchy import IdentityHierarchy
 from helios_mcp.profile import BehavioralProfile
 from helios_mcp.taxonomy import list_dimensions
-
 
 _ALL_DIMS = list_dimensions()
 
@@ -168,7 +164,6 @@ class TestBlendWeightFormula:
         species = BehavioralProfile.default_species()
         _write_profile(helios / "base" / "identity.yaml", species)
 
-        from helios_mcp.distribution import BehavioralDistribution
         persona = BehavioralProfile(
             agent_id="ultra_specialized",
             level="domain",

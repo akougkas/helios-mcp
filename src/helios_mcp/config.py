@@ -1,10 +1,9 @@
 """Configuration management for Helios MCP server."""
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import yaml
 
@@ -35,7 +34,12 @@ class HeliosConfig:
         )
 
     def ensure_directories(self) -> None:
-        for p in [self.base_path, self.personas_path, self.learned_path, self.temporary_path]:
+        for p in [
+            self.base_path,
+            self.personas_path,
+            self.learned_path,
+            self.temporary_path,
+        ]:
             p.mkdir(parents=True, exist_ok=True)
 
 
@@ -46,21 +50,21 @@ class ConfigLoader:
         self.config = config
         self.config.ensure_directories()
 
-    async def load_yaml(self, file_path: Path) -> Dict[str, Any]:
+    async def load_yaml(self, file_path: Path) -> dict[str, Any]:
         with file_path.open("r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
 
-    async def save_yaml(self, file_path: Path, data: Dict[str, Any]) -> None:
+    async def save_yaml(self, file_path: Path, data: dict[str, Any]) -> None:
         atomic_write_yaml(file_path, data)
 
-    async def load_base_config(self) -> Dict[str, Any]:
+    async def load_base_config(self) -> dict[str, Any]:
         identity = self.config.base_path / "identity.yaml"
         if identity.exists():
             return await self.load_yaml(identity)
         config_file = self.config.base_path / "config.yaml"
         return await self.load_yaml(config_file)
 
-    async def load_persona_config(self, name: str) -> Optional[Dict[str, Any]]:
+    async def load_persona_config(self, name: str) -> dict[str, Any] | None:
         path = self.config.personas_path / f"{name}.yaml"
         try:
             return await self.load_yaml(path)

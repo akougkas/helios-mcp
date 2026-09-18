@@ -4,13 +4,14 @@ Provides git-based versioning of YAML configurations with automated
 commit messages and repository management.
 """
 
-import os
-from pathlib import Path
-from typing import Optional, Dict, List, Any
-from datetime import datetime, timedelta
-
-from git import Repo, InvalidGitRepositoryError
 import logging
+import os
+from collections.abc import Callable
+from datetime import timedelta
+from pathlib import Path
+from typing import Any
+
+from git import InvalidGitRepositoryError, Repo
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class GitStore:
     for configuration changes and behavioral evolution.
     """
     
-    def __init__(self, helios_dir: Optional[Path] = None):
+    def __init__(self, helios_dir: Path | None = None) -> None:
         """Initialize git store.
         
         Args:
@@ -55,8 +56,8 @@ class GitStore:
             logger.info(f"Creating directory and git repo at {self.helios_dir}")
             return Repo.init(str(self.helios_dir))
     
-    def auto_commit(self, change_type: str = "config", persona: Optional[str] = None, 
-                   file_type: Optional[str] = None) -> bool:
+    def auto_commit(self, change_type: str = "config", persona: str | None = None, 
+                   file_type: str | None = None) -> bool:
         """Auto-commit any YAML configuration changes with conflict detection.
         
         Args:
@@ -82,7 +83,8 @@ class GitStore:
                     if file_path.exists() and file_path.is_file():
                         try:
                             content = file_path.read_text(encoding='utf-8')
-                            if any(marker in content for marker in ['<<<<<<<', '=======', '>>>>>>>']):
+                            conflict_markers = ['<<<<<<<', '=======', '>>>>>>>']
+                            if any(marker in content for marker in conflict_markers):
                                 conflict_files.append(str(item.a_path))
                         except (UnicodeDecodeError, OSError):
                             # Skip binary files or files we can't read
@@ -112,14 +114,14 @@ class GitStore:
                     logger.debug("Nothing to commit after staging")
                     return False
                 else:
-                    raise commit_error
+                    raise
             
         except Exception as e:
             logger.error(f"Failed to commit changes: {e}")
             return False
     
     def commit_file_change(self, file_path: Path, change_type: str, 
-                          persona: Optional[str] = None) -> bool:
+                          persona: str | None = None) -> bool:
         """Commit specific file with descriptive message.
         
         Args:
@@ -152,7 +154,7 @@ class GitStore:
             logger.error(f"Failed to commit file {file_path}: {e}")
             return False
     
-    def has_uncommitted_changes(self, file_path: Optional[Path] = None) -> bool:
+    def has_uncommitted_changes(self, file_path: Path | None = None) -> bool:
         """Check if repository or specific file has uncommitted changes.
         
         Args:
@@ -170,7 +172,7 @@ class GitStore:
             logger.error(f"Error checking repository status: {e}")
             return False
     
-    def get_repo_status(self) -> Dict[str, Any]:
+    def get_repo_status(self) -> dict[str, Any]:
         """Get comprehensive repository status.
         
         Returns:
@@ -181,7 +183,11 @@ class GitStore:
                 'is_dirty': self.repo.is_dirty(),
                 'untracked_files': self.repo.untracked_files,
                 'modified_files': [item.a_path for item in self.repo.index.diff(None)],
-                'staged_files': [item.a_path for item in self.repo.index.diff("HEAD")] if self.repo.heads else [],
+                'staged_files': (
+                    [item.a_path for item in self.repo.index.diff("HEAD")]
+                    if self.repo.heads
+                    else []
+                ),
                 'clean': not self.repo.is_dirty() and not self.repo.untracked_files
             }
         except Exception as e:
@@ -195,7 +201,9 @@ class GitStore:
                 'error': str(e)
             }
     
-    def get_config_history(self, config_file: Path, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_config_history(
+        self, config_file: Path, limit: int = 10
+    ) -> list[dict[str, Any]]:
         """Get evolution history of specific configuration file.
         
         Args:
@@ -221,7 +229,7 @@ class GitStore:
             logger.error(f"Error getting config history for {config_file}: {e}")
             return []
     
-    def get_recent_changes(self, hours: int = 24) -> List[str]:
+    def get_recent_changes(self, hours: int = 24) -> list[str]:
         """Get commits from last N hours for behavior tracking.
         
         Args:
@@ -243,8 +251,8 @@ class GitStore:
             logger.error(f"Error getting recent changes: {e}")
             return []
     
-    def _generate_commit_message(self, change_type: str, persona: Optional[str] = None, 
-                                file_type: Optional[str] = None) -> str:
+    def _generate_commit_message(self, change_type: str, persona: str | None = None, 
+                                file_type: str | None = None) -> str:
         """Generate descriptive commit messages for behavior changes.
         
         Args:
@@ -260,11 +268,21 @@ class GitStore:
             'persona_update': f"config(persona): update {persona} behavioral settings",
             'base_update': "config(base): update core behavioral configuration", 
             'learning': f"learn: incorporate new behavioral pattern for {persona}",
-            'inheritance': f"config(inheritance): adjust weight calculation for {persona}",
+            'inheritance': (
+                f"config(inheritance): adjust weight calculation for {persona}"
+            ),
             'initialization': "feat: initialize Helios behavioral configuration",
             'yaml_update': f"config: update {file_type} configuration",
-            'preference': f"config(preference): update {persona} preferences" if persona else "config(preference): update preferences",
-            'pattern': f"learn: record behavioral pattern for {persona}" if persona else "learn: record behavioral pattern",
+            'preference': (
+                f"config(preference): update {persona} preferences"
+                if persona
+                else "config(preference): update preferences"
+            ),
+            'pattern': (
+                f"learn: record behavioral pattern for {persona}"
+                if persona
+                else "learn: record behavioral pattern"
+            ),
         }
         
         message = templates.get(change_type)
@@ -281,7 +299,9 @@ class GitStore:
         else:
             return f"config: {change_type}"
     
-    def safe_operation(self, operation_func, *args, **kwargs):
+    def safe_operation(
+        self, operation_func: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> Any | None:
         """Safely execute git operations with error handling.
         
         Args:

@@ -13,10 +13,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
-from .profile import BehavioralProfile
 from .distribution import BehavioralDistribution
+from .profile import BehavioralProfile
 from .taxonomy import list_dimensions
 
 logger = logging.getLogger(__name__)
@@ -64,7 +63,9 @@ class IdentityHierarchy:
         if domain is not None:
             resolved = self._blend_profiles(resolved, domain)
         else:
-            logger.debug(f"No domain persona found for '{persona_name}' — using species only")
+            logger.debug(
+                f"No domain persona found for '{persona_name}' — using species only"
+            )
 
         # Level 3: user adaptation
         user_path = self.personas_path / f"{persona_name}_user.yaml"
@@ -84,7 +85,7 @@ class IdentityHierarchy:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _load_level(self, path: Path) -> Optional[BehavioralProfile]:
+    def _load_level(self, path: Path) -> BehavioralProfile | None:
         """Load a BehavioralProfile from a YAML file, returning None if missing."""
         if not path.exists():
             return None
@@ -117,8 +118,12 @@ class IdentityHierarchy:
 
         blended_dists: dict[str, BehavioralDistribution] = {}
         for dim in list_dimensions():
-            parent_dist = parent.distributions.get(dim, BehavioralDistribution.uniform(dim))
-            child_dist = child.distributions.get(dim, BehavioralDistribution.uniform(dim))
+            parent_dist = parent.distributions.get(
+                dim, BehavioralDistribution.uniform(dim)
+            )
+            child_dist = child.distributions.get(
+                dim, BehavioralDistribution.uniform(dim)
+            )
             blended_dists[dim] = parent_dist.kl_blend(child_dist, weight)
 
         return BehavioralProfile(

@@ -1,19 +1,19 @@
 """Tests for behavioral taxonomy — the scientific foundation of Helios v2."""
 
 import pytest
+
 from helios_mcp.taxonomy import (
     BEHAVIORAL_TAXONOMY,
     DIMENSION_DESCRIPTIONS,
     STATE_LABELS,
-    list_dimensions,
-    list_states,
-    validate_dimension,
-    validate_state,
     get_dimension_description,
     get_state_label,
+    list_dimensions,
+    list_states,
     uniform_distribution,
+    validate_dimension,
+    validate_state,
 )
-
 
 # ---------------------------------------------------------------------------
 # Taxonomy completeness and structure
@@ -153,7 +153,7 @@ class TestUtilities:
             states = list_states(dim)
             dist = uniform_distribution(dim)
             expected_prob = 1.0 / len(states)
-            for state, prob in dist.items():
+            for _state, prob in dist.items():
                 assert abs(prob - expected_prob) < 1e-9
 
     def test_list_states_returns_copy(self) -> None:

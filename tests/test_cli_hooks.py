@@ -5,8 +5,6 @@ from stdin and persists observations. Covers all 18 event types.
 """
 
 import json
-import tempfile
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner

@@ -138,7 +138,7 @@ class TestHooksConfig:
         assert "PermissionRequest" not in hooks["hooks"]
 
     def test_all_hooks_are_command_type(self, hooks):
-        for event_type, entries in hooks["hooks"].items():
+        for _event_type, entries in hooks["hooks"].items():
             for entry in entries:
                 for hook in entry["hooks"]:
                     assert hook["type"] == "command"
