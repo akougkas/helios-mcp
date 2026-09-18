@@ -219,24 +219,29 @@ def export_command(persona: str | None, fmt: str, dims: str | None,
 
 @main.command("init")
 @click.argument("persona", required=False)
-@click.option("--source", type=click.Path(path_type=Path), default=None,
-              help="Personality file to import (default: ~/.claude/CLAUDE.md)")
+@click.option("--home", type=click.Path(path_type=Path), default=None,
+              help="Claude home to read declared sources from (default: ~/.claude)")
+@click.option("--project-dir", "project_dir", type=click.Path(path_type=Path),
+              default=None,
+              help="Project dir for a local output style (default: cwd)")
 @helios_dir_option
-def init_command(persona: str | None, source: Path | None,
+def init_command(persona: str | None, home: Path | None, project_dir: Path | None,
                  helios_dir: Path | None) -> None:
-    """Bootstrap Helios and onboard PERSONA (default: developer) from CLAUDE.md.
+    """Bootstrap Helios and onboard PERSONA (default: developer) from CLAUDE.md
+    and the active output style.
 
-    Imports the source file into PERSONA's user level as authoritative, sets
-    it as the default persona, and renders its context. Safe to rerun.
+    Imports both declared sources into PERSONA's user level as authoritative,
+    sets it as the default persona, and renders its context. Safe to rerun.
     """
     from .onboard import onboard
 
     try:
-        result = onboard(_service(helios_dir), persona, source)
+        result = onboard(_service(helios_dir), persona, home,
+                         project_dir or Path.cwd())
     except (ValueError, SecurityError, FileNotFoundError) as e:
         raise click.ClickException(str(e)) from e
     click.echo(f"Persona: {result['persona']} (default)")
-    click.echo(f"Imported from: {result['source']}")
+    click.echo("Imported from: " + ", ".join(result["sources"]))
     for dim, summary in result["distributions"].items():
         click.echo(f"  {dim:<24} {summary['dominant']} "
                    f"(entropy {summary['entropy']:.2f})")
