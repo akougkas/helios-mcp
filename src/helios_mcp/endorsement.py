@@ -9,9 +9,12 @@ Grades:
     +1.0  explicit approval ("perfect", "approved", "do it")
     +0.5  the user moved on without objecting
      0.0  no human judgment followed (a task notification or slash command),
-          or a standing style preference with no complaint attached
-    -0.5  the outcome was wrong ("still failing") without a behavior complaint
+          a standing style preference with no complaint attached, or the
+          outcome was wrong ("still failing") without a behavior complaint
     -1.0  correction, interrupt or denied tool call
+
+The estimator treats any negative grade as a behavior correction, so an
+outcome complaint stays at zero rather than pushing style mass around.
     None  nothing followed the turn yet
 """
 
@@ -148,7 +151,7 @@ def judge_text(text: str) -> Endorsement:
     if _CORRECTION.search(head) or complaint:
         return Endorsement(-1.0, "corrected", hint)
     if _FAILED.search(head):
-        return Endorsement(-0.5, "failed", hint)
+        return Endorsement(0.0, "failed", hint)
     if hint:
         return Endorsement(0.0, "neutral", hint)
     if _APPROVAL.search(head):

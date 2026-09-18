@@ -21,7 +21,7 @@ from .transcript_fixtures import TranscriptBuilder
         ("what are you waiting for? proceed", -1.0, {"interaction_agency": "assumes_and_acts"}),
         ("ask me first before you delete anything", -1.0, {"interaction_agency": "asks_first"}),
         ("i am entirely lost", -1.0, {"communication_register": "plain_accessible"}),
-        ("still failing with the same error", -0.5, None),
+        ("still failing with the same error", 0.0, None),
         ("check the logs and report briefly", 0.0, {"communication_register": "terse"}),
         ("don't guess, if you don't know say so", -1.0, {"epistemic_style": "admits_ignorance"}),
     ],
