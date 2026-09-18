@@ -47,6 +47,7 @@ def heuristic_observation(
         endorsement=verdict.value,
         correction_hint=verdict.correction_hint,
         dim_confidence=dict(labels.confidence) or None,
+        model=turn.model,
     )
 
 
@@ -78,6 +79,7 @@ def llm_observation(
         confidence=round(label.confidence, 4),
         endorsement=endorsement,
         correction_hint=hint or None,
+        model=turn.model,
     )
 
 
