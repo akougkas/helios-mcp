@@ -16,6 +16,7 @@ import pytest
 from fastmcp import Client
 
 from helios_mcp.server import create_server
+from helios_mcp.taxonomy import list_dimensions
 
 # A reply the heuristic classifier reads as thorough/verbose, paired with a
 # correction endorsement.py maps straight to communication_register=terse
@@ -160,12 +161,7 @@ class TestFullMCPCycle:
             ).structured_content
             assert imported["status"] == "success"
             assert imported["persona"] == "developer-clone"
-            assert set(imported["distributions"]) == {
-                "epistemic_style",
-                "interaction_agency",
-                "communication_register",
-                "risk_caution",
-            }
+            assert set(imported["distributions"]) == set(list_dimensions())
             assert (helios_dir / "personas" / "developer-clone.yaml").is_file()
 
 

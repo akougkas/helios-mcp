@@ -172,13 +172,11 @@ class TestKeywordProject:
             for s in list_states(dim):
                 assert dists[dim][s] > 0.0
 
-    def test_empty_text_returns_near_uniform(self):
+    def test_empty_text_returns_species_defaults(self):
         dists = keyword_project([""])
+        species = BehavioralProfile.default_species().distributions
         for dim in list_dimensions():
-            states = list_states(dim)
-            expected = 1.0 / len(states)
-            for s in states:
-                assert abs(dists[dim][s] - expected) < 0.01
+            assert dists[dim].to_dict() == species[dim].to_dict()
 
     def test_multiple_blocks_combine(self):
         dists = keyword_project([
@@ -218,7 +216,7 @@ Technical language. Expert reader assumed.
         profile = import_from_markdown(md)
         assert isinstance(profile, BehavioralProfile)
         assert profile.agent_id == "claude"
-        assert len(profile.distributions) == 4
+        assert set(profile.distributions) == set(list_dimensions())
 
     def test_import_soul_md(self, tmp_path):
         md = tmp_path / "soul.md"
@@ -280,7 +278,7 @@ class TestImportFromText:
     def test_basic_import(self):
         profile = import_from_text("Be direct, concise, and technical.", name="dev")
         assert profile.agent_id == "dev"
-        assert len(profile.distributions) == 4
+        assert set(profile.distributions) == set(list_dimensions())
 
     def test_empty_raises(self):
         with pytest.raises(ValueError, match="empty"):

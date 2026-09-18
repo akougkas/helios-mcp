@@ -42,7 +42,7 @@ def export_dimensions(
     Raises:
         ValueError: If a requested dimension doesn't exist.
     """
-    dims = dimensions or list_dimensions()
+    dims = dimensions or [d for d in list_dimensions() if d in profile.distributions]
     for d in dims:
         if d not in profile.distributions:
             raise ValueError(

@@ -42,45 +42,8 @@ class BehavioralProfile:
 
     @classmethod
     def default_species(cls) -> BehavioralProfile:
-        """Balanced species-level base profile."""
-        return cls(
-            agent_id="base",
-            level="species",
-            distributions={
-                "epistemic_style": BehavioralDistribution("epistemic_style", {
-                    "confident": 0.45,
-                    "hedging": 0.25,
-                    "admits_ignorance": 0.20,
-                    "speculating": 0.10,
-                }),
-                "interaction_agency": BehavioralDistribution("interaction_agency", {
-                    "asks_first": 0.35,
-                    "assumes_and_acts": 0.20,
-                    "offers_options": 0.30,
-                    "decides_unilaterally": 0.05,
-                    "defers_to_user": 0.10,
-                }),
-                "communication_register": BehavioralDistribution(
-                    "communication_register",
-                    {
-                        "terse": 0.20,
-                        "moderate": 0.45,
-                        "thorough": 0.20,
-                        "technical_dense": 0.10,
-                        "plain_accessible": 0.05,
-                    },
-                ),
-                "risk_caution": BehavioralDistribution("risk_caution", {
-                    "acts_immediately": 0.15,
-                    "checks_before_acting": 0.45,
-                    "warns_frequently": 0.30,
-                    "refuses_ambiguity": 0.10,
-                }),
-            },
-            base_importance=0.7,
-            specialization_level=1,
-            description="Species-level base behavioral profile for all agents",
-        )
+        """The packaged species-level base profile, covering every dimension."""
+        return cls.load(Path(__file__).parent / "default_profiles" / "identity.yaml")
 
     def to_yaml_dict(self) -> dict[str, Any]:
         """Serialize to a YAML-serializable dict."""

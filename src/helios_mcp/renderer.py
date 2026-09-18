@@ -18,6 +18,11 @@ _DIMENSION_HEADINGS: dict[str, str] = {
     "interaction_agency": "Interaction agency",
     "communication_register": "Communication register",
     "risk_caution": "Risk and caution",
+    "structure": "Structure",
+    "sycophancy": "Candor",
+    "narration": "Narration",
+    "specificity": "Specificity",
+    "pushback": "Under pushback",
 }
 
 # A tendency below this share is noise at the resolution of prose.

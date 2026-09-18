@@ -11,6 +11,7 @@ import pytest
 from helios_mcp.distribution import BehavioralDistribution
 from helios_mcp.importer import import_from_text
 from helios_mcp.llm import build_taxonomy_description
+from helios_mcp.profile import BehavioralProfile
 from helios_mcp.projector import (
     build_projection_prompt,
     parse_projection_response,
@@ -89,7 +90,7 @@ def _valid_response() -> str:
 class TestParseProjectionResponse:
     def test_valid_json(self):
         raw = parse_projection_response(_valid_response())
-        assert set(raw.keys()) == set(list_dimensions())
+        assert set(raw.keys()) == set(json.loads(_valid_response()))
 
     def test_with_code_fences(self):
         fenced = f"```json\n{_valid_response()}\n```"
@@ -105,15 +106,22 @@ class TestParseProjectionResponse:
         with pytest.raises(ValueError, match="Failed to parse"):
             parse_projection_response("not json at all")
 
-    def test_missing_dimension_raises(self):
+    def test_missing_dimensions_take_species_defaults(self):
         partial = json.dumps({
             "epistemic_style": {
                 "confident": 0.5, "hedging": 0.2,
                 "admits_ignorance": 0.2, "speculating": 0.1,
             },
         })
-        with pytest.raises(ValueError, match="Missing dimension"):
-            parse_projection_response(partial)
+        dists = validate_and_normalize(parse_projection_response(partial))
+        species = BehavioralProfile.default_species().distributions
+        assert set(dists) == set(list_dimensions())
+        assert dists["epistemic_style"]["confident"] == pytest.approx(0.5, abs=0.01)
+        assert dists["structure"].to_dict() == species["structure"].to_dict()
+
+    def test_reply_without_known_dimensions_raises(self):
+        with pytest.raises(ValueError, match="no known dimension"):
+            parse_projection_response(json.dumps({"mood": {"happy": 1.0}}))
 
     def test_missing_state_raises(self):
         data = json.loads(_valid_response())
