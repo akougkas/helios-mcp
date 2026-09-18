@@ -46,7 +46,8 @@ def onboard(service: HeliosService, persona: str | None = None,
         raise FileNotFoundError(
             f"no declared preferences under {home or claude_home()}")
 
-    imported = import_declared(sources, name=f"{target}_user")
+    imported = import_declared(sources, name=f"{target}_user",
+                               helios_dir=service.helios_dir)
     user = BehavioralProfile(
         agent_id=f"{target}_user",
         level="user",

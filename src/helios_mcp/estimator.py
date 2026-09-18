@@ -53,7 +53,13 @@ from typing import Any
 from .atomic_ops import atomic_write_text
 from .drift import DEFAULT_CONFIG, DriftConfig
 from .security import persona_path
-from .store import SOURCES, ObservationStore, Proposal, TurnObservation
+from .store import (
+    SOURCES,
+    ObservationStore,
+    Proposal,
+    TurnObservation,
+    is_open_turn,
+)
 from .taxonomy import list_states
 
 logger = logging.getLogger(__name__)
@@ -104,17 +110,23 @@ def select_turns(observations: Iterable[TurnObservation], start_row: int = 0,
     a higher-precedence source does not make an already absorbed turn look new.
     Rows are numbered from ``start_row``, and the count returned includes it.
     """
-    rank = {s: i for i, s in enumerate(SOURCES)}
+    source_rank = {s: i for i, s in enumerate(SOURCES)}
+
+    def rank(obs: TurnObservation) -> tuple[int, bool]:
+        # Source first, so the label-source policy holds while a resumed turn
+        # waits for its model relabel; then a settled row over an open one.
+        return source_rank[obs.source], is_open_turn(obs.turn_id)
+
     chosen: dict[tuple[str, str], _Turn] = {}
     rows = start_row
     for row, obs in enumerate(observations, start_row):
         rows = row + 1
-        key = (obs.session_id, obs.turn_id)
+        key = obs.turn_key
         current = chosen.get(key)
         llm_row = row if obs.source == "llm" else None
         if current is None:
             chosen[key] = _Turn(row, obs, llm_row, obs.model)
-        elif rank[obs.source] < rank[current.obs.source]:
+        elif rank(obs) < rank(current.obs):
             chosen[key] = _Turn(current.first_row, obs,
                                 current.llm_row if llm_row is None else llm_row,
                                 current.model or obs.model)
@@ -310,7 +322,7 @@ def estimate_ledger(
         offset = end
         if obs is not None:
             new.append(obs)
-    if data is not None and any((o.session_id, o.turn_id) in seen for o in new):
+    if data is not None and any(o.turn_key in seen for o in new):
         # A new row for a turn already counted can change that turn's label,
         # model or position, which an append-only tally cannot express.
         return _rebuild(store, persona, proposals, marks, config, llm_labels, stamp)
@@ -318,7 +330,7 @@ def estimate_ledger(
     turns, rows = select_turns(new, rows)
     tally.add(turns, marks, config, llm_labels)
     if offset != start:
-        seen.update((t.obs.session_id, t.obs.turn_id) for t in turns)
+        seen.update(t.obs.turn_key for t in turns)
         _save_checkpoint(store, persona, stamp, offset, rows, seen, tally)
     return tally.evidence(rows, proposals, marks, config)
 
@@ -336,7 +348,7 @@ def _rebuild(store: ObservationStore, persona: str, proposals: list[Proposal],
     tally = _Tally()
     tally.add(turns, marks, config, llm_labels)
     if offset:
-        seen = {(t.obs.session_id, t.obs.turn_id) for t in turns}
+        seen = {t.obs.turn_key for t in turns}
         _save_checkpoint(store, persona, stamp, offset, count, seen, tally)
     return tally.evidence(count, proposals, marks, config)
 

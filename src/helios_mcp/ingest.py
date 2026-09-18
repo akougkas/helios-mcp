@@ -8,9 +8,9 @@ only the turns that are new.
 A turn's endorsement comes from what the user did next, which is unknown
 until the next prompt arrives. Because the ledger never rewrites a row, the
 newest turn is held back until something follows it, and is written with no
-endorsement only when the session ends (``final=True``). The final call also
-runs the model labeler over the whole session, adding ``llm`` rows that the
-estimator prefers over heuristic ones for the same turn.
+endorsement, under its open id, only when the session ends (``final=True``).
+The final call also runs the model labeler over the whole session, adding
+``llm`` rows that the estimator prefers over heuristic ones for the same turn.
 """
 
 from __future__ import annotations
@@ -18,13 +18,14 @@ from __future__ import annotations
 import hashlib
 import time
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from .classify import classify_turn
 from .endorsement import judge_turn, opener_hints
 from .llm import LLMClient, LLMTurnLabel, default_client, label_session
-from .store import ObservationStore, TurnObservation
+from .store import ObservationStore, TurnObservation, open_turn_id
 from .transcript import AgentTurn, UserInput, parse_transcript
 
 
@@ -93,12 +94,20 @@ def _human_followed(turn: AgentTurn) -> bool:
 
 
 def _settled(turns: Sequence[AgentTurn], final: bool) -> list[AgentTurn]:
-    """Turns whose endorsement can no longer change."""
-    if final or not turns:
+    """Turns whose endorsement can no longer change within this session run.
+
+    At the final call, a trailing turn nobody answered is written under its
+    open id, so a reply that arrives after the session is resumed still lands
+    under the plain id instead of being dropped as a duplicate.
+    """
+    if not turns:
+        return []
+    if turns[-1].next_input is not None:
         return list(turns)
-    if turns[-1].next_input is None:
+    if not final:
         return list(turns[:-1])
-    return list(turns)
+    last = replace(turns[-1], turn_id=open_turn_id(turns[-1].turn_id))
+    return [*turns[:-1], last]
 
 
 def ingest_session(
@@ -114,28 +123,30 @@ def ingest_session(
 
     A missing transcript or a truncated last line is not an error. The model
     labeler runs only when ``final`` is set, using ``client`` or the default
-    client when labeling is enabled.
+    client when labeling is enabled. Turns that already have a row from a
+    source are not classified again, so a Stop costs about one parse.
     """
     session = parse_transcript(Path(transcript_path), session_id)
     turns = [t for t in _settled(session.turns, final) if t.turn_id]
     if not turns:
         return 0
 
+    store = ObservationStore(helios_dir)
+    written = {
+        (k[2], k[3]) for k in store.keys(persona) if k[1] == session_id
+    }
     observations: list[TurnObservation] = []
     for turn in turns:
+        if (turn.turn_id, "heuristic") in written:
+            continue
         obs = heuristic_observation(persona, session_id, turn)
         if obs is not None:
             observations.append(obs)
 
-    store = ObservationStore(helios_dir)
     if final:
         # SessionEnd fires again when a session is resumed; only turns the
         # model has not labeled yet go back to it.
-        done = {
-            obs.turn_id for obs in store.iter(persona)
-            if obs.source == "llm" and obs.session_id == session_id
-        }
-        pending = [t for t in turns if t.turn_id not in done]
+        pending = [t for t in turns if (t.turn_id, "llm") not in written]
         if pending and client is None:
             client = default_client(helios_dir)
         if pending and client is not None:
@@ -210,10 +221,17 @@ def turns_from_messages(
 def observations_from_messages(
     *, persona: str, messages: Sequence[dict[str, Any]], session_id: str | None = None
 ) -> list[TurnObservation]:
-    """Observations for the ``observe_interaction`` tool, one per assistant turn."""
+    """Observations for the ``observe_interaction`` tool, one per answered turn.
+
+    A trailing assistant turn nobody has replied to yet is held back, as the
+    transcript path does: its row would be final, so the reply that arrives
+    when the client re-sends the longer conversation could never land.
+    """
     sid = session_id or "mcp"
     out: list[TurnObservation] = []
     for turn in turns_from_messages(messages, sid):
+        if turn.next_input is None:
+            continue
         obs = heuristic_observation(persona, sid, turn, source="mcp")
         if obs is not None:
             out.append(obs)

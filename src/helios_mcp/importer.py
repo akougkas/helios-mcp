@@ -248,7 +248,8 @@ _KEYWORD_MAP: dict[str, list[tuple[str, str, float]]] = {
     # maps to, whichever way the sentence around it is phrased.
     "prose": [("structure", "prose", 2.0)],
     "flatter": [("sycophancy", "candid", 2.0)],
-    "sycophan": [("sycophancy", "candid", 2.0)],
+    "sycophancy": [("sycophancy", "candid", 2.0)],
+    "sycophantic": [("sycophancy", "candid", 2.0)],
     "recap": [("narration", "silent_action", 1.5)],
     "pleasantries": [("narration", "silent_action", 1.5)],
     "concrete": [("specificity", "concrete", 1.5)],
@@ -256,6 +257,54 @@ _KEYWORD_MAP: dict[str, list[tuple[str, str, float]]] = {
     "push back": [("pushback", "holds_position", 1.5)],
     "pushback": [("pushback", "holds_position", 1.5)],
 }
+
+
+# Keywords whose state holds however the sentence is phrased: "no flattery"
+# and "never recap" still ask for candor and silence.
+_NEGATION_PROOF = frozenset({
+    "flatter", "sycophancy", "sycophantic", "recap", "pleasantries",
+})
+_NEGATOR = re.compile(
+    r"\b(?:not|never|no|don'?t|avoid|without|stop|nor)\b(?:\W+\w+){0,2}\W*$",
+    re.IGNORECASE,
+)
+_CLAUSE_END = re.compile(r"[.!?;:,\n]|\bbut\b", re.IGNORECASE)
+
+
+def _keyword_pattern(keyword: str) -> re.Pattern[str]:
+    """Whole-word match for a keyword and its common inflections.
+
+    "plain" must not fire inside "explain", nor "direct" inside "directory".
+    """
+    words = keyword.split()
+    head = r"\s+".join(re.escape(w) for w in words[:-1])
+    last = words[-1]
+    if last.endswith("e"):
+        tail = re.escape(last[:-1]) + r"(?:e|es|ed|ing|ely|er|ers|est|ity|ety|ion|y)"
+    else:
+        tail = re.escape(last) + (
+            r"(?:s|es|ed|ing|ly|ness|y|ity|ic|er|ers|\w(?:ing|ed))?"
+        )
+    return re.compile(r"\b" + (head + r"\s+" if head else "") + tail + r"\b",
+                      re.IGNORECASE)
+
+
+_KEYWORD_PATTERNS = {kw: _keyword_pattern(kw) for kw in _KEYWORD_MAP}
+
+
+def _negated(text: str, start: int) -> bool:
+    """Whether a negator sits within three words before ``start`` in its clause."""
+    before = text[max(0, start - 40):start]
+    clause = _CLAUSE_END.split(before)[-1]
+    return bool(_NEGATOR.search(clause))
+
+
+def _mentions(text: str, keyword: str) -> bool:
+    """Whether ``text`` states the keyword affirmatively at least once."""
+    for m in _KEYWORD_PATTERNS[keyword].finditer(text):
+        if keyword in _NEGATION_PROOF or not _negated(text, m.start()):
+            return True
+    return False
 
 
 def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]:
@@ -283,7 +332,7 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
     matched: set[str] = set()
 
     for keyword, contributions in _KEYWORD_MAP.items():
-        if keyword in full_text:
+        if _mentions(full_text, keyword):
             for dim, state, weight in contributions:
                 if dim not in weights:
                     continue
@@ -314,11 +363,15 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
 # ---------------------------------------------------------------------------
 
 def _project(
-    text_blocks: list[str], client: LLMClient | None
+    text_blocks: list[str], client: LLMClient | None, helios_dir: Path | None = None
 ) -> dict[str, BehavioralDistribution]:
-    """Model projection when a client is available, keyword heuristics otherwise."""
+    """Model projection when a client is available, keyword heuristics otherwise.
+
+    Without an explicit client, ``helios_dir`` decides whether the default one
+    may run, so ``llm: false`` in its config.yaml keeps the text local.
+    """
     if client is None:
-        client = default_client()
+        client = default_client(helios_dir)
     if client is not None:
         projected = project_with_llm(text_blocks, client)
         if projected is not None:
@@ -330,6 +383,7 @@ def import_from_markdown(
     path: Path,
     format: str = "auto",  # noqa: A002 - public param name; kept for callers
     client: LLMClient | None = None,
+    helios_dir: Path | None = None,
 ) -> BehavioralProfile:
     """Import a personality file into a Helios BehavioralProfile.
 
@@ -370,7 +424,7 @@ def import_from_markdown(
     text_blocks = extract_text_blocks(content, format)
 
     # Stage 2: project to distributions
-    distributions = _project(text_blocks, client)
+    distributions = _project(text_blocks, client, helios_dir)
 
     # Build profile
     persona_name = path.stem.lower().replace(" ", "_")
@@ -392,6 +446,7 @@ def import_from_text(
     name: str = "imported",
     format: str = "auto",  # noqa: A002 - public param name; kept for callers
     client: LLMClient | None = None,
+    helios_dir: Path | None = None,
 ) -> BehavioralProfile:
     """Import from raw text content (no file required).
 
@@ -412,7 +467,7 @@ def import_from_text(
         format = detect_format(text)  # noqa: A001
 
     text_blocks = extract_text_blocks(text, format)
-    distributions = _project(text_blocks, client)
+    distributions = _project(text_blocks, client, helios_dir)
 
     return BehavioralProfile(
         agent_id=name,
@@ -520,6 +575,7 @@ def import_declared(
     sources: list[Path],
     name: str = "declared",
     client: LLMClient | None = None,
+    helios_dir: Path | None = None,
 ) -> BehavioralProfile:
     """Project several declared artifacts together into one user-level profile.
 
@@ -532,7 +588,7 @@ def import_declared(
     return BehavioralProfile(
         agent_id=name,
         level="user",
-        distributions=_project(blocks, client),
+        distributions=_project(blocks, client, helios_dir),
         parent_id="base",
         specialization_level=3,
         base_importance=0.7,

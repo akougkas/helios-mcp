@@ -58,6 +58,25 @@ def _validate_labels(labels: dict[str, dict[str, float]]) -> None:
             raise ValueError(f"label for {dim} sums to {total:.4f}, not 1")
 
 
+# A turn the session ended on before anyone replied is written under
+# ``<turn_id>~open``. If the session is resumed and the reply arrives, the
+# settled rows land under the plain id, and the estimator prefers them over
+# the open ones from the same source. The ledger itself never rewrites a row.
+OPEN_SUFFIX = "~open"
+
+
+def open_turn_id(turn_id: str) -> str:
+    return turn_id + OPEN_SUFFIX
+
+
+def is_open_turn(turn_id: str) -> bool:
+    return turn_id.endswith(OPEN_SUFFIX)
+
+
+def base_turn_id(turn_id: str) -> str:
+    return turn_id.removesuffix(OPEN_SUFFIX)
+
+
 @dataclass(frozen=True)
 class TurnObservation:
     """One labeled agent turn. Validated on construction."""
@@ -105,6 +124,11 @@ class TurnObservation:
     @property
     def key(self) -> tuple[str, str, str, str]:
         return (self.persona, self.session_id, self.turn_id, self.source)
+
+    @property
+    def turn_key(self) -> tuple[str, str]:
+        """The turn this row describes, the same for its open and settled rows."""
+        return (self.session_id, base_turn_id(self.turn_id))
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), separators=(",", ":"), sort_keys=True)

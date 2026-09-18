@@ -195,6 +195,28 @@ class TestKeywordProject:
         agency = dists["interaction_agency"]
         assert agency["assumes_and_acts"] > agency["asks_first"]
 
+    def test_keywords_inside_other_words_do_not_count(self):
+        dists = keyword_project(["Explain the why. Keep files in the right directory."])
+        species = BehavioralProfile.default_species().distributions
+        for dim in ("communication_register", "epistemic_style"):
+            assert dists[dim].to_dict() == species[dim].to_dict()
+
+    def test_negated_keywords_do_not_count(self):
+        dists = keyword_project(["Never hedge. Don't be verbose."])
+        species = BehavioralProfile.default_species().distributions
+        for dim in ("communication_register", "epistemic_style"):
+            assert dists[dim].to_dict() == species[dim].to_dict()
+
+    def test_negation_ends_at_the_clause(self):
+        dists = keyword_project(["No jargon, plain English. Not verbose, but direct."])
+        assert dists["communication_register"].most_likely() == "plain_accessible"
+        assert dists["epistemic_style"].most_likely() == "confident"
+
+    def test_manner_keywords_hold_under_negation(self):
+        dists = keyword_project(["No flattery, never recap."])
+        assert dists["sycophancy"].most_likely() == "candid"
+        assert dists["narration"].most_likely() == "silent_action"
+
 
 # ---------------------------------------------------------------------------
 # Full import pipeline

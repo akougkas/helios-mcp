@@ -6,7 +6,7 @@ from pathlib import Path
 
 from helios_mcp.estimator import estimate
 from helios_mcp.ingest import ingest_session, observations_from_messages
-from helios_mcp.store import ObservationStore
+from helios_mcp.store import ObservationStore, base_turn_id
 from helios_mcp.transcript import parse_timestamp
 
 from .transcript_fixtures import TranscriptBuilder
@@ -102,21 +102,27 @@ def test_missing_or_truncated_transcripts(tmp_path: Path):
     assert ingest_session(helios, "dev", path, "s1", final=True) == 1
 
 
-def test_message_path_is_idempotent_when_the_conversation_is_resent(tmp_path: Path):
+def test_message_path_records_the_reply_when_the_conversation_is_resent(tmp_path: Path):
     store = ObservationStore(tmp_path)
     short = [
         {"role": "user", "content": "explain the bug"},
         {"role": "assistant", "content": LONG},
     ]
-    longer = [*short, {"role": "user", "content": "shorter please"},
-              {"role": "assistant", "content": "Off-by-one in the loop."}]
-    first = observations_from_messages(persona="dev", messages=short)
-    assert store.append(first) == 1
-    again = observations_from_messages(persona="dev", messages=longer)
-    assert again[0].turn_id == first[0].turn_id
-    assert again[0].correction_hint == {"communication_register": "terse"}
-    assert store.append(again) == 1
-    assert {o.source for o in again} == {"mcp"}
+    corrected = [*short, {"role": "user", "content": "no, too long. be terse"}]
+    longer = [*corrected, {"role": "assistant", "content": "Off-by-one in the loop."},
+              {"role": "user", "content": "thanks"}]
+
+    # The unanswered turn waits for its reply instead of being frozen without one.
+    assert store.append(observations_from_messages(persona="dev", messages=short)) == 0
+    assert store.append(observations_from_messages(persona="dev", messages=corrected)) == 1
+    assert store.append(observations_from_messages(persona="dev", messages=longer)) == 1
+    assert store.append(observations_from_messages(persona="dev", messages=longer)) == 0
+
+    first, second = store.iter("dev")
+    assert first.endorsement == -1.0
+    assert first.correction_hint == {"communication_register": "terse"}
+    assert second.endorsement == 1.0
+    assert {first.source, second.source} == {"mcp"}
 
 
 class CountingClient:
@@ -134,6 +140,25 @@ class CountingClient:
         return {"turns": [{"id": str(i), **label} for i in ids]}
 
 
+def test_reply_to_the_last_turn_lands_when_a_session_is_resumed(tmp_path: Path):
+    helios = tmp_path / "helios"
+    b = TranscriptBuilder()
+    b.prompt("rename the module")
+    b.tool("Bash", {"command": "git mv a.py b.py"}, "t1")
+    b.result("t1")
+    b.say("Renamed the module and updated every import that referenced it.")
+    path = b.write(tmp_path / "s.jsonl")
+    ingest_session(helios, "dev", path, "s1", final=True)
+    b.prompt("no, too long. be terse")   # the session is resumed
+    b.say("ok")
+    b.write(path)
+    ingest_session(helios, "dev", path, "s1")
+
+    ev = estimate(ObservationStore(helios).iter("dev"))
+    assert ev.turns == 1
+    assert ev.endorsed["communication_register"]["terse"] > 0
+
+
 def test_resumed_session_end_labels_only_new_turns(tmp_path: Path):
     helios = tmp_path / "helios"
     b = _verbose_session_with_corrections(2)
@@ -145,9 +170,12 @@ def test_resumed_session_end_labels_only_new_turns(tmp_path: Path):
     b.write(path)
     ingest_session(helios, "dev", path, "s1", final=True, client=client)
     ingest_session(helios, "dev", path, "s1", final=True, client=client)
-    assert client.seen == [3, 1]
+    # The turn the first run ended on was open; its reply now exists, so it
+    # goes back once with the new turn, and nothing goes back a third time.
+    assert client.seen == [3, 2]
     llm_ids = [r.turn_id for r in ObservationStore(helios).iter("dev") if r.source == "llm"]
-    assert len(llm_ids) == len(set(llm_ids)) == 4
+    assert len(llm_ids) == len(set(llm_ids)) == 5
+    assert len({base_turn_id(t) for t in llm_ids}) == 4
 
 
 def test_model_hints_need_a_human_reply_and_opener_hints_come_from_the_lexicon(tmp_path: Path):
@@ -172,3 +200,21 @@ def test_model_hints_need_a_human_reply_and_opener_hints_come_from_the_lexicon(t
         "risk_caution": "checks_before_acting",
     }
     assert last.correction_hint is None
+
+
+def test_stop_classifies_only_turns_without_a_row(tmp_path: Path, monkeypatch):
+    import helios_mcp.ingest as ingest_mod
+
+    helios = tmp_path / "helios"
+    b = _verbose_session_with_corrections(3)
+    path = b.write(tmp_path / "s.jsonl")
+    ingest_session(helios, "dev", path, "s1")
+    classified: list[str] = []
+    real = ingest_mod.classify_turn
+    monkeypatch.setattr(ingest_mod, "classify_turn",
+                        lambda t: (classified.append(t.turn_id), real(t))[1])
+    b.prompt("next task")
+    b.say("Done.")
+    b.prompt("thanks")
+    ingest_session(helios, "dev", b.write(path), "s1")
+    assert len(classified) == 2   # the answered turn before, and the new one
