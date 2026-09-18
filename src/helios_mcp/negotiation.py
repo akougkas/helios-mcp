@@ -153,6 +153,7 @@ class Negotiator:
             target=_target(drift, self.config),
             divergence=drift.divergence,
             credibility=drift.credibility,
+            tier=drift.tier or "strong",
         )
 
     @staticmethod
@@ -160,6 +161,8 @@ class Negotiator:
         if set(pending.changes) != set(changes):
             return False
         for dim, change in changes.items():
+            if pending.changes[dim].tier != change.tier:
+                return False
             states = list_states(dim)
             old = [pending.changes[dim].target[s] for s in states]
             new = [change.target[s] for s in states]
@@ -209,11 +212,18 @@ def describe(evaluation: Evaluation) -> tuple[str, dict[str, str]]:
     for dim, r in evaluation.endorsed.dimensions.items():
         declared = max(r.declared, key=r.declared.__getitem__)
         observed = max(r.posterior_mean, key=r.posterior_mean.__getitem__)
-        if r.drifted:
+        if r.tier == "strong":
             per_dim[dim] = (
                 f"Drifted: your preferred '{observed}' is now at "
                 f"{r.posterior_mean[observed]:.0%}, the profile says '{declared}' "
                 f"at {r.declared[declared]:.0%} ({r.credibility:.0%} credible)."
+            )
+        elif r.tier == "suggestion":
+            per_dim[dim] = (
+                f"Possibly shifting: you may prefer '{observed}' "
+                f"({r.posterior_mean[observed]:.0%}) over the profile's "
+                f"'{declared}' ({r.declared[declared]:.0%}); "
+                f"{r.credibility:.0%} credible so far."
             )
         elif r.evidence == 0:
             per_dim[dim] = "No evidence yet."
@@ -229,17 +239,21 @@ def describe(evaluation: Evaluation) -> tuple[str, dict[str, str]]:
                          + ", ".join(evaluation.cooling_down) + ".")
         return "\n".join(lines), per_dim
 
-    lines = [
-        f"Your preferences for '{evaluation.persona}' have moved away from its "
-        f"profile over {evaluation.evidence.turns} observed turns.",
-        "",
-    ]
+    if proposal.tier == "strong":
+        opening = (f"Your preferences for '{evaluation.persona}' have moved away "
+                   f"from its profile over {evaluation.evidence.turns} observed turns.")
+        closing = (f"Proposal {proposal.id} updates these dimensions to the observed "
+                   "preference. Accept or reject it; either way the decision is "
+                   "recorded.")
+    else:
+        opening = (f"A suggestion for '{evaluation.persona}', based on "
+                   f"{evaluation.evidence.turns} observed turns. The evidence is "
+                   "early, so it may be wrong.")
+        closing = (f"Suggestion {proposal.id} would update these dimensions. A quick "
+                   "no is fine and also teaches Helios something.")
+    lines = [opening, ""]
     for dim in proposal.changes:
         lines.append(f"- {DIMENSION_DESCRIPTIONS[dim]}: {per_dim[dim]}")
-    lines += [
-        "",
-        f"Proposal {proposal.id} updates these dimensions to the observed "
-        "preference. Accept or reject it; either way the decision is recorded.",
-    ]
+    lines += ["", closing]
     return "\n".join(lines), per_dim
 

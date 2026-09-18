@@ -6,7 +6,7 @@ import pytest
 
 from helios_mcp.bootstrap import BootstrapManager
 from helios_mcp.drift import js_divergence
-from helios_mcp.negotiation import Negotiator
+from helios_mcp.negotiation import Negotiator, describe
 from helios_mcp.store import ObservationStore, TurnObservation
 
 DIM = "communication_register"
@@ -19,6 +19,7 @@ def helios(tmp_path):
 
 
 def feed(helios, label, n, persona="developer", start=0, **kw):
+    kw.setdefault("endorsement", 1.0)
     ObservationStore(helios).append(
         TurnObservation(persona=persona, session_id="s", turn_id=f"t{start + i}",
                         timestamp=float(i), source="heuristic",
@@ -61,6 +62,26 @@ def test_evaluate_keeps_the_pending_proposal_id_while_the_target_holds(helios):
     first = neg.evaluate("developer").proposal
     assert first is not None
     assert neg.evaluate("developer").proposal == first
+
+
+def test_evidence_surfaces_a_suggestion_before_a_strong_proposal(helios):
+    neg = Negotiator(helios)
+    first = None
+    for n in range(1, 80):
+        feed(helios, TERSE, 1, start=n)
+        evaluation = neg.evaluate("developer", auto_accept=False)
+        if evaluation.proposal is not None:
+            first = evaluation
+            break
+    assert first is not None and first.proposal is not None
+    assert first.proposal.tier == "suggestion"
+    assert first.proposal.changes[DIM].credibility < neg.config.credibility_level
+    assert "Suggestion" in describe(first)[0]
+
+    feed(helios, TERSE, 60, start=100)
+    strong = neg.evaluate("developer", auto_accept=False).proposal
+    assert strong is not None and strong.tier == "strong"
+    assert strong.id != first.proposal.id
 
 
 def test_reject_is_persisted_committed_and_cools_down(helios):

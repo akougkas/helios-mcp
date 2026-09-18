@@ -28,6 +28,7 @@ FALLBACK_PERSONA = "default"
 class DimensionReport(TypedDict):
     divergence: float
     credibility: float
+    tier: str | None
     evidence: float
     dominant_declared: str
     dominant_observed: str
@@ -40,6 +41,7 @@ class DriftReport(TypedDict):
     turns: int
     negotiation_recommended: bool
     proposal_id: str | None
+    proposal_tier: str | None
     summary: str
     per_dimension: dict[str, str]
     endorsed: dict[str, DimensionReport]
@@ -54,6 +56,7 @@ class ObserveReport(TypedDict):
     turns: int
     negotiation_recommended: bool
     proposal_id: str | None
+    proposal_tier: str | None
     auto_accepted: list[str]
 
 
@@ -72,6 +75,7 @@ def _dimension_reports(assessment: DriftAssessment) -> dict[str, DimensionReport
         out[dim] = {
             "divergence": round(r.divergence, 5),
             "credibility": round(r.credibility, 3),
+            "tier": r.tier,
             "evidence": round(r.evidence, 2),
             "dominant_declared": max(r.declared, key=r.declared.__getitem__),
             "dominant_observed": max(r.posterior_mean,
@@ -198,6 +202,8 @@ class HeliosService:
             "turns": evaluation.evidence.turns,
             "negotiation_recommended": evaluation.proposal is not None,
             "proposal_id": evaluation.proposal.id if evaluation.proposal else None,
+            "proposal_tier": (evaluation.proposal.tier if evaluation.proposal
+                              else None),
             "summary": summary,
             "per_dimension": per_dim,
             "endorsed": _dimension_reports(evaluation.endorsed),
@@ -278,6 +284,8 @@ class HeliosService:
             "turns": evaluation.evidence.turns,
             "negotiation_recommended": evaluation.proposal is not None,
             "proposal_id": evaluation.proposal.id if evaluation.proposal else None,
+            "proposal_tier": (evaluation.proposal.tier if evaluation.proposal
+                              else None),
             "auto_accepted": evaluation.auto_accepted,
         }
 

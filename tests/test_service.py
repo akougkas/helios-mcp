@@ -15,7 +15,8 @@ DIM = "communication_register"
 def terse_turns(n, persona="developer"):
     return [TurnObservation(persona=persona, session_id="s", turn_id=f"t{i}",
                             timestamp=float(i), source="heuristic",
-                            labels={DIM: {"terse": 0.8, "moderate": 0.2}})
+                            labels={DIM: {"terse": 0.8, "moderate": 0.2}},
+                            endorsement=1.0)
             for i in range(n)]
 
 

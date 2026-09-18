@@ -91,7 +91,8 @@ def status_command(helios_dir: Path | None) -> None:
     click.echo(f"Default persona: {service.persona(None)}")
     for persona in service.list_personas():
         report = service.drift_report(persona)
-        pending = report["proposal_id"] or "none"
+        pending = (f"{report['proposal_id']} ({report['proposal_tier']})"
+                   if report["proposal_id"] else "none")
         click.echo(f"\n{persona}: {report['turns']} turns, pending proposal: {pending}")
         for dim, r in report["endorsed"].items():
             click.echo(

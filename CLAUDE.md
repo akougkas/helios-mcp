@@ -79,16 +79,16 @@ server.py (7 MCP tools)
 All live in `drift.DriftConfig`. Drift runs on the `endorsed` posterior only. With model labeling on, endorsed counts only turns that have an llm label; heuristic-only turns feed the fingerprint. With `HELIOS_LLM=0`, heuristic labels are authoritative.
 
 - Posterior per dimension: `Dirichlet(s * declared + counts)`, prior strength s = 25 turns
-- Evidence per turn: soft label * confidence ** 0.5
+- Evidence per turn: soft label * confidence ** 0.5, times the response grade for uncorrected turns: explicit approval (endorsement >= 0.75) 1.0, moved on (>= 0.25) 0.2, no response or an outcome complaint 0. Only endorsement <= -0.75 is a behavior correction
 - Drift score: JS divergence (nats, at most ln 2) between posterior mean and declared
-- Proposal: some dimension has P(JS(sample, declared) > 0.0125) >= 0.95 over 1000 seeded samples
+- Tiers over 1000 seeded samples of P(JS(sample, declared) > 0.0125): a suggestion at >= 0.8, a strong proposal at >= 0.95
 - Auto-accept (silent): P(JS < 0.0125) >= 0.9 and JS(mean, declared) >= 0.004
 - Standing preference (hint on an uncorrected turn): weight 1.0 toward the hinted state
 - Unhinted correction: 0.25 weight spread over the complement of the label
 - Rejection: 10 pseudo-counts toward the declared profile, 3-day cooldown per dimension
 - Probability floor on disk and in priors: 0.005
-- Simulated with hard labels on the default profiles, checking every turn: stationary FP < 1% over 200 turns (under 0.3% by turn 30); a 0.3-mass shift is detected at a median of 26 to 30 turns (80th percentile 38 to 44)
-- Founder corpus, 40 model-labeled sessions (375 turns): stationary FP 0 of 100 random session orders (it is 5% at s = 15 and 11% at s = 10, all within the first 10 sessions, because turns within a session are correlated); against the default developer profile, interaction_agency is proposed after session 5 and communication_register after session 11
+- Simulated with hard labels on the default profiles, every turn an approval, checking every turn: strong-tier stationary FP < 1% over 200 turns (under 0.3% by turn 30); a 0.3-mass shift is detected at a median of 26 to 30 turns (80th percentile 38 to 44)
+- Founder corpus, 200 model-labeled sessions (600 turns, 16 approvals, 99 hints, 75 corrections), 100 random session orders: stationary FP 2% for suggestions and 0% for strong proposals (23% for suggestions at 0.7, 98% at s = 15). Against the default developer profile, interaction_agency becomes a suggestion after session 59 and strong after session 122, and communication_register a suggestion after session 139. Without response grading the same corpus proposes agency after session 3, so explicit signals set the pace; the moved-on weight barely matters (0.1 to 0.3 gives sessions 59 to 61)
 
 ## Design Constraints
 

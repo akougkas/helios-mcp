@@ -9,7 +9,14 @@ Two sets of counts come out, one per posterior:
   cut time to the first plausible proposal from 19 sessions to 8 with no
   stationary false positives. Diagnostics only.
 - ``endorsed`` is what the user endorses. A turn the user did not correct
-  counts toward what the agent did. A corrected turn with a ``correction_hint``
+  counts toward what the agent did, weighted by how the user responded: an
+  explicit approval at ``approval_weight``, moving on without comment at
+  ``moved_on_weight``, and no response at ``neutral_weight``. Passive
+  acceptance is weak evidence because users tolerate styles they would not
+  choose; the founder's long accepted reports were fatigue, not approval.
+  Only a grade at or below ``CORRECTED`` is a behavior correction. The model
+  labeler grades "the outcome was wrong but the behavior was fine" at -0.5,
+  which says nothing about style. A corrected turn with a ``correction_hint``
   puts its weight on the hinted state instead. A corrected turn without a hint
   spreads ``unhinted_correction_weight`` of its weight over every state except
   the labeled one, in proportion to ``1 - label``, which moves mass away from
@@ -37,6 +44,21 @@ from .store import SOURCES, Proposal, TurnObservation
 from .taxonomy import list_states
 
 Counts = dict[str, dict[str, float]]
+
+CORRECTED = -0.75
+_APPROVED = 0.75
+_MOVED_ON = 0.25
+
+
+def grade_weight(endorsement: float | None, config: DriftConfig) -> float:
+    """Weight of an uncorrected turn's label, by what the user did next."""
+    if endorsement is None:
+        return config.neutral_weight
+    if endorsement >= _APPROVED:
+        return config.approval_weight
+    if endorsement >= _MOVED_ON:
+        return config.moved_on_weight
+    return config.neutral_weight
 
 
 @dataclass(frozen=True)
@@ -141,7 +163,7 @@ def estimate(
             dim for dim in {*obs.labels, *hints}
             if position >= marks.get(dim, 0)
         }
-        corrected = obs.endorsement is not None and obs.endorsement < 0
+        corrected = obs.endorsement is not None and obs.endorsement <= CORRECTED
         if not corrected:
             # A hint on an uncorrected turn is a standing preference ("keep it
             # brief"): it speaks for its dimensions at reduced weight, and the
@@ -149,8 +171,9 @@ def estimate(
             for dim, state in hints.items():
                 if dim in live:
                     _add(endorsed, dim, {state: 1.0}, config.standing_hint_weight)
+            grade = grade_weight(obs.endorsement, config)
             for dim in (live & obs.labels.keys()) - hints.keys():
-                _add(endorsed, dim, obs.labels[dim], weight(obs, dim))
+                _add(endorsed, dim, obs.labels[dim], grade * weight(obs, dim))
             continue
 
         strength = -(obs.endorsement or 0.0)
