@@ -29,11 +29,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _persona import resolve_persona  # noqa: E402
 
 _INGEST_TRIGGER_EVENTS = ("stop", "session-end")
-# Claude Code caps SessionEnd hooks at 60s regardless of a configured
-# timeout; Stop has no such cap (default 600s). Stay well under each.
-_INGEST_TIMEOUT_SECONDS = {"stop": 300, "session-end": 45}
+# Stop runs heuristic-only ingest and blocks this script for up to this
+# long (Claude Code has no timeout cap on Stop hooks; default is 600s).
+# session-end doesn't use this — see _trigger_ingest.
+_INGEST_TIMEOUT_SECONDS = 300
 
 _MAX_OBS_BYTES = 5_000_000
+_MAX_LOG_BYTES = 2_000_000
 _BACKUP_COUNT = 3
 
 _TEST_MARKERS = (
@@ -152,6 +154,34 @@ def _event_derived_fields(event_type: str, raw_json: dict[str, Any]) -> dict[str
     return fields
 
 
+def _rotate_if_needed(path: Path, max_bytes: int = _MAX_OBS_BYTES) -> None:
+    """Size-based rotation: path -> .1 -> .2 -> .3, oldest dropped."""
+    try:
+        if not path.exists() or path.stat().st_size < max_bytes:
+            return
+        for i in range(_BACKUP_COUNT - 1, 0, -1):
+            src = path.with_name(f"{path.name}.{i}")
+            dst = path.with_name(f"{path.name}.{i + 1}")
+            if src.exists():
+                src.replace(dst)
+        path.replace(path.with_name(f"{path.name}.1"))
+    except OSError:
+        pass  # never block the hook on rotation failure
+
+
+def _ingest_command(
+    persona: str, session_id: str, transcript_path: str, helios_dir: Path
+) -> list[str]:
+    source = os.environ.get("HELIOS_SOURCE", "helios-mcp")
+    return [
+        "uvx", "--from", source, "helios-mcp", "ingest",
+        "--persona", persona,
+        "--session-id", session_id,
+        "--transcript", transcript_path,
+        "--helios-dir", str(helios_dir),
+    ]
+
+
 def _trigger_ingest(
     event_type: str,
     persona: str,
@@ -167,10 +197,16 @@ def _trigger_ingest(
     ingest — this also keeps hook-handler.py's own tests fast, since none
     of them point transcript_path at a real file.
 
-    session-end passes --final: only the end of a session runs the Haiku
-    batch labeler over it, so a session's turns each get one heuristic
-    pass from repeated Stop firings and exactly one LLM pass at the end,
-    not one LLM call per turn.
+    Stop runs heuristic-only ingest and is fast, so it blocks this script
+    (which Claude Code already treats as async at the hook level) with a
+    bounded wait. session-end passes --final, which additionally runs the
+    Haiku batch labeler over the whole session — observed at 25-55s
+    against ingest's own 180s internal timeout, well past what a
+    SessionEnd hook is allowed to block for (Claude Code caps SessionEnd
+    hooks at 60s regardless of configuration). So --final is launched
+    fully detached (its own session, stdio to a bounded log file under
+    HELIOS_DIR/logs/) and this script returns immediately without
+    waiting on it; the labeler finishes on its own time.
     """
     if not session_id or not transcript_path:
         return
@@ -180,16 +216,24 @@ def _trigger_ingest(
     except OSError:
         return
 
-    source = os.environ.get("HELIOS_SOURCE", "helios-mcp")
-    cmd = [
-        "uvx", "--from", source, "helios-mcp", "ingest",
-        "--persona", persona,
-        "--session-id", session_id,
-        "--transcript", transcript_path,
-        "--helios-dir", str(helios_dir),
-    ]
+    cmd = _ingest_command(persona, session_id, transcript_path, helios_dir)
+
     if event_type == "session-end":
         cmd.append("--final")
+        log_path = helios_dir / "logs" / "ingest.log"
+        with contextlib.suppress(OSError):
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            _rotate_if_needed(log_path, max_bytes=_MAX_LOG_BYTES)
+            with log_path.open("a", encoding="utf-8") as log_file:
+                subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+        return
+
     # observe-only: ingest failing must never surface to the user
     with contextlib.suppress(
         OSError, subprocess.TimeoutExpired, subprocess.SubprocessError
@@ -197,24 +241,9 @@ def _trigger_ingest(
         subprocess.run(
             cmd,
             capture_output=True,
-            timeout=_INGEST_TIMEOUT_SECONDS[event_type],
+            timeout=_INGEST_TIMEOUT_SECONDS,
             check=False,
         )
-
-
-def _rotate_if_needed(obs_file: Path) -> None:
-    """Size-based rotation: persona.jsonl -> .1 -> .2 -> .3, oldest dropped."""
-    try:
-        if not obs_file.exists() or obs_file.stat().st_size < _MAX_OBS_BYTES:
-            return
-        for i in range(_BACKUP_COUNT - 1, 0, -1):
-            src = obs_file.with_name(f"{obs_file.name}.{i}")
-            dst = obs_file.with_name(f"{obs_file.name}.{i + 1}")
-            if src.exists():
-                src.replace(dst)
-        obs_file.replace(obs_file.with_name(f"{obs_file.name}.1"))
-    except OSError:
-        pass  # never block the hook on rotation failure
 
 
 def main() -> None:
