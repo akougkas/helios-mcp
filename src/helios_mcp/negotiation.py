@@ -1,30 +1,256 @@
-"""Negotiation engine for Helios v2.
+"""Negotiation: turn endorsed drift into persisted proposals and apply decisions.
 
-When behavioral drift crosses the threshold, the NegotiationEngine:
-1. Generates a natural language summary of what changed and why it matters
-2. Proposes a specific profile update (the observed distributions as the new declared)
-3. Applies accepted changes with a semantic git commit
-4. Rejects and logs if the human says no
-
-The negotiation is always human-in-the-loop. Helios proposes, the human decides.
+``Negotiator.evaluate`` reads the ledger, estimates evidence, assesses drift
+against the durable resolved profile (session overrides excluded), applies
+auto-accepts, and keeps at most one pending proposal per persona. ``accept``
+writes the user level (``personas/<p>_user.yaml``) as authoritative for the
+accepted dimensions so the resolved profile equals the proposal target, then
+commits. ``reject`` records the decision, which starts the cooldown and feeds
+the estimator's pseudo-counts toward the declared profile.
 """
+
 from __future__ import annotations
 
-import subprocess
-from dataclasses import dataclass
-from datetime import UTC, datetime
+import logging
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypedDict
 
+from .atomic_ops import git_commit
 from .distribution import BehavioralDistribution
-from .drift import DriftDetector, DriftResult
-from .observer import BehavioralObserver
+from .drift import (
+    DEFAULT_CONFIG,
+    DimensionDrift,
+    DriftAssessment,
+    DriftConfig,
+    assess,
+    js_divergence,
+    smooth,
+)
+from .estimator import Evidence, estimate
+from .hierarchy import IdentityHierarchy
 from .profile import BehavioralProfile
-from .taxonomy import DIMENSION_DESCRIPTIONS, list_dimensions
+from .security import persona_path
+from .store import ObservationStore, Proposal, ProposalStore, ProposedChange
+from .taxonomy import DIMENSION_DESCRIPTIONS, list_states
 
-# ---------------------------------------------------------------------------
-# NegotiationProposal dataclass
-# ---------------------------------------------------------------------------
+logger = logging.getLogger(__name__)
+
+# A pending proposal is kept, id and all, while its targets move less than this.
+# Otherwise every ingested turn would mint a new id under a reviewing user.
+_SAME_TARGET_JS = 1e-3
+
+
+@dataclass(frozen=True)
+class Evaluation:
+    persona: str
+    endorsed: DriftAssessment
+    fingerprint: DriftAssessment
+    evidence: Evidence
+    proposal: Proposal | None
+    auto_accepted: list[str] = field(default_factory=list)
+    cooling_down: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Decision:
+    proposal: Proposal
+    commit: str | None
+    profile_path: Path | None = None
+
+
+def _target(drift: DimensionDrift, config: DriftConfig) -> dict[str, float]:
+    states = list_states(drift.dimension)
+    lifted = smooth([drift.posterior_mean[s] for s in states], config.min_prob)
+    return dict(zip(states, lifted, strict=True))
+
+
+class Negotiator:
+    def __init__(self, helios_dir: Path, config: DriftConfig = DEFAULT_CONFIG,
+                 cooldown_seconds: float | None = None) -> None:
+        self.helios_dir = helios_dir
+        self.config = config
+        self.hierarchy = IdentityHierarchy(helios_dir)
+        self.ledger = ObservationStore(helios_dir)
+        self.proposals = (
+            ProposalStore(helios_dir) if cooldown_seconds is None
+            else ProposalStore(helios_dir, cooldown_seconds=cooldown_seconds)
+        )
+
+    def declared(self, persona: str) -> dict[str, dict[str, float]]:
+        profile = self.hierarchy.resolve(persona, include_session=False)
+        return {dim: d.to_dict() for dim, d in profile.distributions.items()}
+
+    def assess(self, persona: str) -> tuple[DriftAssessment, DriftAssessment, Evidence]:
+        """Endorsed and fingerprint assessments with the evidence behind them."""
+        evidence = estimate(self.ledger.iter(persona), self.proposals.all(persona),
+                            self.config)
+        declared = self.declared(persona)
+        return (
+            assess(declared, evidence.endorsed, self.config),
+            assess(declared, evidence.fingerprint, self.config),
+            evidence,
+        )
+
+    def evaluate(self, persona: str, auto_accept: bool = True,
+                 now: float | None = None) -> Evaluation:
+        """Assess drift, apply auto-accepts, and reconcile the pending proposal."""
+        now = time.time() if now is None else now
+        endorsed, fingerprint, evidence = self.assess(persona)
+
+        auto: list[str] = []
+        if auto_accept and endorsed.auto_accept_dimensions:
+            auto = endorsed.auto_accept_dimensions
+            changes = {d: self._change(endorsed.dimensions[d]) for d in auto}
+            silent = self.proposals.create_decided(
+                persona, changes, evidence.ledger_rows, "auto_accepted", now=now)
+            self._apply(persona, silent, auto)
+            endorsed, fingerprint, evidence = self.assess(persona)
+
+        cooling = [d for d in endorsed.drifted_dimensions
+                   if self.proposals.in_cooldown(persona, d, now)]
+        drifted = [d for d in endorsed.drifted_dimensions if d not in cooling]
+        pending = self.proposals.pending(persona)
+        proposal: Proposal | None = None
+        if drifted:
+            changes = {d: self._change(endorsed.dimensions[d]) for d in drifted}
+            if pending is not None and self._same(pending, changes):
+                proposal = pending
+            else:
+                proposal = self.proposals.create(
+                    persona, changes, evidence.ledger_rows, now=now)
+        elif pending is not None:
+            self.proposals.decide(persona, pending.id, "superseded",
+                                  reason="drift no longer credible", now=now)
+
+        return Evaluation(persona, endorsed, fingerprint, evidence, proposal,
+                          auto, cooling)
+
+    def accept(self, persona: str, proposal_id: str,
+               dimensions: list[str] | None = None) -> Decision:
+        decided = self.proposals.decide(persona, proposal_id, "accepted", dimensions)
+        path, sha = self._apply(persona, decided, list(decided.decided_dimensions))
+        return Decision(decided, sha, path)
+
+    def reject(self, persona: str, proposal_id: str, reason: str = "",
+               dimensions: list[str] | None = None) -> Decision:
+        decided = self.proposals.decide(persona, proposal_id, "rejected", dimensions,
+                                        reason=reason or "rejected by user")
+        sha = git_commit(
+            self.helios_dir, [self.proposals.path(persona)],
+            f"{persona}: rejected {', '.join(decided.decided_dimensions)} "
+            f"(proposal {decided.id})"
+            + (f"\n\n{decided.reason}" if decided.reason else ""),
+        )
+        return Decision(decided, sha)
+
+    # ------------------------------------------------------------------
+
+    def _change(self, drift: DimensionDrift) -> ProposedChange:
+        return ProposedChange(
+            declared=drift.declared,
+            target=_target(drift, self.config),
+            divergence=drift.divergence,
+            credibility=drift.credibility,
+        )
+
+    @staticmethod
+    def _same(pending: Proposal, changes: dict[str, ProposedChange]) -> bool:
+        if set(pending.changes) != set(changes):
+            return False
+        for dim, change in changes.items():
+            states = list_states(dim)
+            old = [pending.changes[dim].target[s] for s in states]
+            new = [change.target[s] for s in states]
+            if js_divergence(old, new) > _SAME_TARGET_JS:
+                return False
+        return True
+
+    def _apply(self, persona: str, proposal: Proposal,
+               dimensions: list[str]) -> tuple[Path, str | None]:
+        """Write targets to the user level and commit."""
+        path = persona_path(self.helios_dir / "personas", persona, "_user.yaml")
+        if path.exists():
+            user = BehavioralProfile.load(path)
+        else:
+            user = BehavioralProfile(
+                agent_id=f"{persona}_user", level="user", distributions={},
+                parent_id=persona, specialization_level=3,
+                description=f"Learned preferences for {persona}",
+            )
+        if user.inherit_weight != 0.0 and user.distributions:
+            # Switching an existing user level to authoritative would change
+            # what its other dimensions resolve to, so freeze them at their
+            # current resolved values first.
+            current = self.hierarchy.resolve(persona, include_session=False)
+            for dim in user.distributions:
+                user.distributions[dim] = current.distributions[dim]
+        user.inherit_weight = 0.0
+        for dim in dimensions:
+            user.distributions[dim] = BehavioralDistribution(
+                dim, proposal.changes[dim].target)
+        user.observation_count = proposal.observation_count
+        user.last_negotiation = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        user.save(path)
+
+        verb = "auto-accepted" if proposal.status == "auto_accepted" else "accepted"
+        sha = git_commit(
+            self.helios_dir, [path, self.proposals.path(persona)],
+            f"{persona}: {verb} {', '.join(dimensions)} "
+            f"(proposal {proposal.id}, {proposal.observation_count} ledger rows)",
+        )
+        return path, sha
+
+
+def describe(evaluation: Evaluation) -> tuple[str, dict[str, str]]:
+    """Plain-language summary of endorsed drift, plus one line per dimension."""
+    per_dim: dict[str, str] = {}
+    for dim, r in evaluation.endorsed.dimensions.items():
+        declared = max(r.declared, key=r.declared.__getitem__)
+        observed = max(r.posterior_mean, key=r.posterior_mean.__getitem__)
+        if r.drifted:
+            per_dim[dim] = (
+                f"Drifted: your preferred '{observed}' is now at "
+                f"{r.posterior_mean[observed]:.0%}, the profile says '{declared}' "
+                f"at {r.declared[declared]:.0%} ({r.credibility:.0%} credible)."
+            )
+        elif r.evidence == 0:
+            per_dim[dim] = "No evidence yet."
+        else:
+            per_dim[dim] = f"Consistent with the profile ({r.evidence:.0f} turns)."
+
+    proposal = evaluation.proposal
+    if proposal is None:
+        lines = [f"No credible drift for '{evaluation.persona}' "
+                 f"over {evaluation.evidence.turns} observed turns."]
+        if evaluation.cooling_down:
+            lines.append("Recently rejected and cooling down: "
+                         + ", ".join(evaluation.cooling_down) + ".")
+        return "\n".join(lines), per_dim
+
+    lines = [
+        f"Your preferences for '{evaluation.persona}' have moved away from its "
+        f"profile over {evaluation.evidence.turns} observed turns.",
+        "",
+    ]
+    for dim in proposal.changes:
+        lines.append(f"- {DIMENSION_DESCRIPTIONS[dim]}: {per_dim[dim]}")
+    lines += [
+        "",
+        f"Proposal {proposal.id} updates these dimensions to the observed "
+        "preference. Accept or reject it; either way the decision is recorded.",
+    ]
+    return "\n".join(lines), per_dim
+
+
+# Legacy engine. Removed once server and cli move to Negotiator.
+import subprocess  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
+from typing import TypedDict  # noqa: E402
+
+from .drift import DriftDetector, DriftResult  # noqa: E402
+from .observer import BehavioralObserver  # noqa: E402
+from .taxonomy import list_dimensions  # noqa: E402
 
 
 @dataclass

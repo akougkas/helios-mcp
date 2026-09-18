@@ -1,297 +1,91 @@
-"""Bootstrap and installation detection for Helios MCP."""
+"""First-run setup of HELIOS_DIR: layout, default profiles, and the initial commit."""
 
 import datetime
 import logging
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from . import __version__
-from .atomic_ops import atomic_write_yaml, validate_yaml_file
-from .config import HeliosConfig
+from .atomic_ops import atomic_write_yaml, git_commit
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_PROFILES = Path(__file__).parent / "default_profiles"
+DOMAIN_PERSONAS = ("developer", "researcher", "writer")
+
 
 class BootstrapManager:
-    """Manages first installation and subsequent boots."""
-    
+    """Creates a fresh installation and tracks boots in ``.helios_version``."""
+
     def __init__(self, helios_dir: Path, git_enabled: bool = True) -> None:
-        """Initialize bootstrap manager.
-        
-        Args:
-            helios_dir: Path to Helios configuration directory
-            git_enabled: Whether git operations are enabled
-        """
         self.helios_dir = helios_dir
         self.git_enabled = git_enabled
         self.version_file = helios_dir / ".helios_version"
-        self.config = HeliosConfig(
-            base_path=helios_dir / "base",
-            personas_path=helios_dir / "personas", 
-            learned_path=helios_dir / "learned",
-            temporary_path=helios_dir / "temporary"
-        )
-        
+
     def is_first_install(self) -> bool:
-        """Check if this is the first installation.
-        
-        Returns:
-            True if this is a fresh installation
-        """
         return not self.version_file.exists()
-    
+
     def bootstrap_installation(self) -> None:
-        """Bootstrap a fresh Helios installation.
-        
-        Creates directory structure, default configurations,
-        initializes git repository, and creates version file.
+        """Create the layout and default profiles, then commit them.
+
+        The version file is written last, so a failed bootstrap is retried on
+        the next start.
         """
-        try:
-            logger.info("Bootstrapping fresh Helios installation")
-            
-            # Create directory structure
-            self._create_directory_structure()
-            
-            # Initialize git repository if needed and enabled
-            if self.git_enabled:
-                self._initialize_git_repo()
-            else:
-                logger.debug(
-                    "Git operations disabled - skipping repository initialization"
-                )
-            
-            # Create default v2 behavioral profiles (species base + domain personas)
-            self._create_default_v2_profiles()
-            
-            # Create welcome persona
-            self._create_welcome_persona()
-            
-            # Create version file (this marks installation as complete)
-            self._create_version_file()
-            
-            logger.info("Helios installation bootstrap complete")
-            
-        except Exception as e:
-            logger.error(f"Bootstrap failed: {e}")
-            # Clean up on failure
-            self._cleanup_failed_bootstrap()
-            raise
-    
-    def get_installation_info(self) -> dict[str, Any]:
-        """Get installation information.
-        
-        Returns:
-            Dictionary with installation details
-        """
-        if not self.version_file.exists():
-            return {
-                "installed": False,
-                "version": None,
-                "install_date": None
-            }
-        
-        try:
-            with self.version_file.open('r', encoding='utf-8') as f:
-                import yaml
-                info = yaml.safe_load(f) or {}
-            
-            return {
-                "installed": True,
-                "version": info.get("version", "unknown"),
-                "install_date": info.get("install_date"),
-                "last_boot": info.get("last_boot")
-            }
-        except Exception as e:
-            logger.warning(f"Failed to read installation info: {e}")
-            return {
-                "installed": True,
-                "version": "unknown",
-                "install_date": "unknown",
-                "error": str(e)
-            }
-    
-    def update_last_boot(self) -> None:
-        """Update last boot timestamp in version file."""
-        try:
-            info = self.get_installation_info()
-            if info["installed"]:
-                # Preserve existing info, just update last_boot
-                version_data = {
-                    "version": info.get("version", __version__),
-                    "install_date": info.get("install_date"),
-                    "last_boot": datetime.datetime.now().isoformat()
-                }
-                atomic_write_yaml(self.version_file, version_data)
-                logger.debug("Updated last boot timestamp")
-        except Exception as e:
-            logger.warning(f"Failed to update last boot timestamp: {e}")
-    
-    def _create_directory_structure(self) -> None:
-        """Create Helios directory structure."""
-        directories = [
-            self.helios_dir,
-            self.config.base_path,
-            self.config.personas_path,
-            self.config.learned_path,
-            self.config.temporary_path
-        ]
-        
-        for directory in directories:
-            directory.mkdir(parents=True, exist_ok=True)
-            logger.debug(f"Created directory: {directory}")
-    
-    def _initialize_git_repo(self) -> None:
-        """Initialize git repository in helios directory."""
-        git_dir = self.helios_dir / ".git"
-        if git_dir.exists():
-            logger.debug("Git repository already exists")
-            return
-        
-        try:
-            # Initialize git repo
-            subprocess.run(
-                ["git", "init"],
-                cwd=self.helios_dir,
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            
-            # Create .gitignore
-            gitignore_content = """# Temporary files
-*.tmp
-*.temp
-*.lock
-
-# Backup files
-*.bak
-*.backup
-
-# System files
-.DS_Store
-Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-"""
-            gitignore_path = self.helios_dir / ".gitignore"
-            gitignore_path.write_text(gitignore_content, encoding='utf-8')
-            
-            # Set git config if not already set globally
-            try:
-                subprocess.run(["git", "config", "user.email"], 
-                             cwd=self.helios_dir, check=True, capture_output=True)
-            except subprocess.CalledProcessError:
-                # Set local config if global not set
-                subprocess.run(
-                    ["git", "config", "user.email", "helios@localhost"],
-                    cwd=self.helios_dir, check=True
-                )
-                subprocess.run(
-                    ["git", "config", "user.name", "Helios MCP"],
-                    cwd=self.helios_dir, check=True
-                )
-            
-            logger.debug("Initialized git repository")
-            
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            logger.warning(f"Failed to initialize git repository: {e}")
-            # Git initialization is optional - don't fail bootstrap
-    
-    def _create_welcome_persona(self) -> None:
-        """Create a welcome persona for first-time users."""
-        welcome_file = self.config.personas_path / "welcome.yaml"
-        
-        if welcome_file.exists() and validate_yaml_file(welcome_file):
-            logger.debug("Welcome persona already exists")
-            return
-        
-        welcome_config = {
-            "schema_version": "1.0.0",
-            "name": "welcome",
-            "base_importance": 0.8,
-            "specialization_level": 1,
-            "description": "Welcoming persona for new Helios users",
-            "behaviors": {
-                "communication": {
-                    "tone": "Friendly and helpful",
-                    "greeting": "Welcome to Helios! I'm here to help you get started.",
-                    "style": "Patient and encouraging"
-                },
-                "guidance": {
-                    "approach": "Start with basics, build complexity gradually",
-                    "examples": "Provide clear, working examples",
-                    "encouragement": "Acknowledge progress and celebrate successes"
-                }
-            },
-            "created": datetime.datetime.now().strftime("%Y-%m-%d"),
-            "version": "1.0.0"
-        }
-        
-        atomic_write_yaml(welcome_file, welcome_config)
-        logger.info("Created welcome persona")
-    
-    def _create_version_file(self) -> None:
-        """Create version file marking successful installation."""
-        version_data = {
+        for sub in ("base", "personas", "temporary"):
+            (self.helios_dir / sub).mkdir(parents=True, exist_ok=True)
+        written = self._install_default_profiles()
+        if self.git_enabled:
+            git_commit(self.helios_dir, written, "Initial behavioral profiles")
+        now = datetime.datetime.now().isoformat()
+        atomic_write_yaml(self.version_file, {
             "version": __version__,
-            "install_date": datetime.datetime.now().isoformat(),
-            "last_boot": datetime.datetime.now().isoformat(),
-            "bootstrap_complete": True,
+            "install_date": now,
+            "last_boot": now,
             "git_enabled": self.git_enabled,
-            "schema_version": "1.0.0"
-        }
-        
-        atomic_write_yaml(self.version_file, version_data)
-        logger.debug("Created version file")
-    
-    def _cleanup_failed_bootstrap(self) -> None:
-        """Clean up after failed bootstrap attempt."""
+        })
+        logger.info("Helios installation bootstrap complete")
+
+    def get_installation_info(self) -> dict[str, Any]:
+        if not self.version_file.exists():
+            return {"installed": False, "version": None, "install_date": None}
         try:
-            if self.version_file.exists():
-                self.version_file.unlink()
-            logger.debug("Cleaned up failed bootstrap")
-        except Exception as e:
-            logger.warning(f"Failed to clean up bootstrap: {e}")
+            info = yaml.safe_load(self.version_file.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError) as e:
+            logger.warning(f"Failed to read installation info: {e}")
+            return {"installed": True, "version": "unknown", "error": str(e)}
+        return {
+            "installed": True,
+            "version": info.get("version", "unknown"),
+            "install_date": info.get("install_date"),
+            "last_boot": info.get("last_boot"),
+        }
 
-    def _create_default_v2_profiles(self) -> None:
-        """Copy v2 default behavioral profiles into the Helios directory.
+    def update_last_boot(self) -> None:
+        info = self.get_installation_info()
+        if not info["installed"]:
+            return
+        try:
+            atomic_write_yaml(self.version_file, {
+                "version": info.get("version", __version__),
+                "install_date": info.get("install_date"),
+                "last_boot": datetime.datetime.now().isoformat(),
+            })
+        except OSError as e:
+            logger.warning(f"Failed to update last boot timestamp: {e}")
 
-        Copies identity.yaml to ~/.helios/base/ and domain personas to
-        ~/.helios/personas/ if they are absent or have an older schema version.
-        """
-        default_profiles_dir = Path(__file__).parent / "default_profiles"
-
-        # --- species-level base profile ---
-        identity_src = default_profiles_dir / "identity.yaml"
-        identity_dst = self.config.base_path / "identity.yaml"
-
-        needs_write = True
-        if identity_dst.exists():
-            try:
-                with open(identity_dst, encoding="utf-8") as f:
-                    existing = yaml.safe_load(f) or {}
-                if existing.get("schema_version") == "2.0":
-                    needs_write = False
-            except Exception:
-                pass
-
-        if needs_write and identity_src.exists():
-            identity_dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(identity_src, identity_dst)
-            logger.info("Created v2 base identity profile")
-
-        # --- domain personas ---
-        persona_names = ("developer", "researcher", "writer")
-        for name in persona_names:
-            src = default_profiles_dir / f"{name}.yaml"
-            dst = self.config.personas_path / f"{name}.yaml"
-            if not dst.exists() and src.exists():
-                dst.parent.mkdir(parents=True, exist_ok=True)
+    def _install_default_profiles(self) -> list[Path]:
+        """Copy default profiles that are absent. Never overwrites user edits."""
+        pairs = [(_DEFAULT_PROFILES / "identity.yaml",
+                  self.helios_dir / "base" / "identity.yaml")]
+        pairs += [(_DEFAULT_PROFILES / f"{name}.yaml",
+                   self.helios_dir / "personas" / f"{name}.yaml")
+                  for name in DOMAIN_PERSONAS]
+        written = []
+        for src, dst in pairs:
+            if not dst.exists():
                 shutil.copy2(src, dst)
-                logger.info(f"Created v2 domain persona: {name}")
+                written.append(dst)
+        return written

@@ -145,3 +145,16 @@ def test_second_bootstrap_is_idempotent_and_preserves_user_edits(
 
     developer_after = yaml.safe_load(developer_file.read_text(encoding="utf-8"))
     assert developer_after["description"] == "USER EDITED DEVELOPER PERSONA"
+
+
+def test_bootstrap_commits_the_initial_profiles(tmp_path: Path) -> None:
+    import subprocess
+
+    BootstrapManager(tmp_path).bootstrap_installation()
+    tracked = subprocess.run(
+        ["git", "-C", str(tmp_path), "ls-files"],
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    assert "base/identity.yaml" in tracked
+    assert "personas/developer.yaml" in tracked
+    assert ".gitignore" in tracked

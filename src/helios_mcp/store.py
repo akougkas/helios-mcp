@@ -300,6 +300,30 @@ class ProposalStore:
             self._write(persona, [*existing, proposal])
         return proposal
 
+    def create_decided(self, persona: str, changes: dict[str, ProposedChange],
+                       observation_count: int, status: ProposalStatus,
+                       reason: str | None = None,
+                       now: float | None = None) -> Proposal:
+        """Persist a proposal that was decided without review, like an auto-accept.
+
+        Unlike ``create``, this leaves any pending proposal alone.
+        """
+        now = time.time() if now is None else now
+        proposal = Proposal(
+            id=secrets.token_hex(6),
+            persona=validate_persona_name(persona),
+            created_at=now,
+            changes=changes,
+            observation_count=observation_count,
+            status=status,
+            decided_at=now,
+            decided_dimensions=tuple(changes),
+            reason=reason,
+        )
+        with _file_lock(self.path(persona)):
+            self._write(persona, [*self.all(persona), proposal])
+        return proposal
+
     def decide(self, persona: str, proposal_id: str, status: ProposalStatus,
                dimensions: Iterable[str] | None = None,
                reason: str | None = None, now: float | None = None) -> Proposal:
