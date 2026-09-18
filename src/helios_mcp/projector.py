@@ -1,8 +1,8 @@
 """LLM-assisted projection for Helios v2.
 
-Constructs a prompt that asks Claude to map natural language personality
-descriptions to probability distributions over behavioral dimensions.
-Falls back to keyword-based heuristic if no LLM is available.
+Constructs a prompt that asks a model to map natural language personality
+descriptions to probability distributions over behavioral dimensions. The
+importer falls back to keyword heuristics when no model is available.
 
 The projection prompt includes the full taxonomy with state descriptions
 and asks for float weights summing to 1.0 per dimension.
@@ -14,13 +14,8 @@ import json
 import re
 
 from .distribution import BehavioralDistribution
-from .importer import keyword_project
-from .taxonomy import (
-    DIMENSION_DESCRIPTIONS,
-    STATE_LABELS,
-    list_dimensions,
-    list_states,
-)
+from .llm import LLMClient, build_taxonomy_description, projection_schema
+from .taxonomy import list_dimensions, list_states
 
 # ---------------------------------------------------------------------------
 # Prompt construction
@@ -60,18 +55,6 @@ _SYSTEM_PROMPT = (
     "\n"
     "No explanation. No markdown. Just the JSON object."
 )
-
-
-def build_taxonomy_description() -> str:
-    """Build a human-readable taxonomy description for the projection prompt."""
-    lines: list[str] = []
-    for dim in list_dimensions():
-        desc = DIMENSION_DESCRIPTIONS[dim]
-        lines.append(f"\n**{dim}**: {desc}")
-        for state in list_states(dim):
-            label = STATE_LABELS[dim][state]
-            lines.append(f"  - {state}: {label}")
-    return "\n".join(lines)
 
 
 def build_projection_prompt(text_blocks: list[str]) -> tuple[str, str]:
@@ -187,27 +170,18 @@ def validate_and_normalize(
 # Main projection function
 # ---------------------------------------------------------------------------
 
-def project_to_distributions(
-    text_blocks: list[str],
-    llm_response: str | None = None,
-) -> dict[str, BehavioralDistribution]:
-    """Project text blocks to behavioral distributions.
-
-    If an LLM response is provided, parses and validates it.
-    Otherwise, falls back to keyword-based heuristic projection.
-
-    Args:
-        text_blocks: Personality-relevant text blocks.
-        llm_response: Optional pre-obtained LLM response text.
-            When integrating with Claude API, the caller obtains the
-            response and passes it here for parsing.
-
-    Returns:
-        Dict mapping dimension → BehavioralDistribution.
-    """
-    if llm_response is not None:
-        raw = parse_projection_response(llm_response)
-        return validate_and_normalize(raw)
-
-    # Fallback: keyword-based heuristic
-    return keyword_project(text_blocks)
+def project_with_llm(
+    text_blocks: list[str], client: LLMClient
+) -> dict[str, BehavioralDistribution] | None:
+    """Project text blocks through the model, or None if the call failed."""
+    if not any(block.strip() for block in text_blocks):
+        return None
+    system, user = build_projection_prompt(text_blocks)
+    data = client.complete_json(system, user, projection_schema())
+    if data is None:
+        return None
+    try:
+        raw = parse_projection_response(json.dumps(data))
+    except ValueError:
+        return None
+    return validate_and_normalize(raw)

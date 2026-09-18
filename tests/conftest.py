@@ -5,8 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from helios_mcp.config import HeliosConfig
-
 
 @pytest.fixture
 def temp_helios_dir():
@@ -17,12 +15,7 @@ def temp_helios_dir():
         yield helios_path
 
 
-@pytest.fixture
-def helios_config(temp_helios_dir):
-    """Create HeliosConfig with temporary directory."""
-    return HeliosConfig(
-        base_path=temp_helios_dir / "base",
-        personas_path=temp_helios_dir / "personas",
-        learned_path=temp_helios_dir / "learned",
-        temporary_path=temp_helios_dir / "temporary",
-    )
+@pytest.fixture(autouse=True)
+def _no_model_calls(monkeypatch):
+    """Tests never spawn the model CLI; tests that exercise it inject a fake client."""
+    monkeypatch.setenv("HELIOS_LLM", "0")

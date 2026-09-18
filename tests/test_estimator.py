@@ -68,3 +68,21 @@ def test_rejection_adds_pseudo_counts_toward_declared_until_a_later_accept():
     assert ev.endorsed[DIM]["moderate"] > 0
     ev = estimate([turn("t1")], [proposal("rejected", 1), proposal("accepted", 1)])
     assert "moderate" not in ev.endorsed.get(DIM, {})
+
+
+def test_standing_preference_counts_toward_hint_at_reduced_weight():
+    ev = estimate([TurnObservation(
+        persona="dev", session_id="s", turn_id="t1", timestamp=0, source="llm",
+        labels={DIM: THOROUGH, "risk_caution": {"acts_immediately": 1.0}},
+        endorsement=0.5, correction_hint={DIM: "terse"})])
+    assert ev.endorsed[DIM] == {"terse": 0.5}
+    assert ev.endorsed["risk_caution"] == {"acts_immediately": 1.0}
+
+
+def test_dim_confidence_overrides_turn_confidence_per_dimension():
+    ev = estimate([TurnObservation(
+        persona="dev", session_id="s", turn_id="t1", timestamp=0, source="heuristic",
+        labels={DIM: THOROUGH, "risk_caution": {"acts_immediately": 1.0}},
+        confidence=0.6, dim_confidence={DIM: 0.2})])
+    assert ev.endorsed[DIM] == {"thorough": 0.2}
+    assert ev.fingerprint["risk_caution"] == {"acts_immediately": 0.6}

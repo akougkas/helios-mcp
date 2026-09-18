@@ -5,7 +5,8 @@ into Helios BehavioralProfile objects with probability distributions.
 
 Two-stage pipeline:
 1. Parse markdown into structured text blocks (personality-relevant sections)
-2. Map text blocks to probability distributions via keyword heuristics
+2. Map text blocks to probability distributions through the model client,
+   with keyword heuristics as the fallback
 
 Format detection supports: CLAUDE.md, soul.md, agents.md, gemini.md,
 and generic markdown personality files.
@@ -18,7 +19,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .distribution import BehavioralDistribution
+from .llm import LLMClient, default_client
 from .profile import BehavioralProfile
+from .projector import project_with_llm
 from .taxonomy import list_dimensions, list_states
 
 # ---------------------------------------------------------------------------
@@ -288,15 +291,30 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
 # Main import function
 # ---------------------------------------------------------------------------
 
+def _project(
+    text_blocks: list[str], client: LLMClient | None
+) -> dict[str, BehavioralDistribution]:
+    """Model projection when a client is available, keyword heuristics otherwise."""
+    if client is None:
+        client = default_client()
+    if client is not None:
+        projected = project_with_llm(text_blocks, client)
+        if projected is not None:
+            return projected
+    return keyword_project(text_blocks)
+
+
 def import_from_markdown(
     path: Path,
     format: str = "auto",  # noqa: A002 - public param name; kept for callers
+    client: LLMClient | None = None,
 ) -> BehavioralProfile:
     """Import a personality file into a Helios BehavioralProfile.
 
     Two-stage pipeline:
     1. Parse the file, detect format, extract personality-relevant blocks
-    2. Project text blocks to probability distributions via keyword heuristics
+    2. Project text blocks to distributions through the model client, falling
+       back to keyword heuristics when labeling is disabled or the call fails
 
     Args:
         path: Path to the markdown/personality file.
@@ -330,7 +348,7 @@ def import_from_markdown(
     text_blocks = extract_text_blocks(content, format)
 
     # Stage 2: project to distributions
-    distributions = keyword_project(text_blocks)
+    distributions = _project(text_blocks, client)
 
     # Build profile
     persona_name = path.stem.lower().replace(" ", "_")
@@ -351,6 +369,7 @@ def import_from_text(
     text: str,
     name: str = "imported",
     format: str = "auto",  # noqa: A002 - public param name; kept for callers
+    client: LLMClient | None = None,
 ) -> BehavioralProfile:
     """Import from raw text content (no file required).
 
@@ -371,7 +390,7 @@ def import_from_text(
         format = detect_format(text)  # noqa: A001
 
     text_blocks = extract_text_blocks(text, format)
-    distributions = keyword_project(text_blocks)
+    distributions = _project(text_blocks, client)
 
     return BehavioralProfile(
         agent_id=name,
