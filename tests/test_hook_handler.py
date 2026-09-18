@@ -2,11 +2,15 @@
 
 Validates that hook-handler.py writes privacy-safe JSONL observation
 records without depending on the full helios-mcp CLI stack. This is the
-hot path that Claude Code invokes on every hook event, so every test here
-runs the script as a real subprocess the way Claude Code does — not by
-importing it, since it deliberately avoids being an importable module.
+hot path that Claude Code invokes on every hook event, so most tests here
+run the script as a real subprocess the way Claude Code does. A few tests
+load it as a module instead (it isn't meant to be imported in production,
+only executed) to reach internal helpers directly — persona-validator
+agreement with helios_mcp.security, and _trigger_ingest with subprocess.run
+mocked out so tests never actually shell out to uvx.
 """
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -18,7 +22,25 @@ import pytest
 
 from helios_mcp.security import validate_persona_name as pkg_validate_persona_name
 
-HANDLER = Path(__file__).parent.parent / "helios-plugin" / "hooks" / "hook-handler.py"
+HOOKS_DIR = Path(__file__).parent.parent / "helios-plugin" / "hooks"
+HANDLER = HOOKS_DIR / "hook-handler.py"
+SESSION_START_CONTEXT = HOOKS_DIR / "session-start-context.py"
+PERSONA_MODULE = HOOKS_DIR / "_persona.py"
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_hook_handler_module():
+    return _load_module(HANDLER, "hook_handler")
+
+
+def _load_persona_module():
+    return _load_module(PERSONA_MODULE, "helios_hook_persona")
 
 
 @pytest.fixture
@@ -184,11 +206,42 @@ class TestHookHandlerPrivacy:
         assert line["command_kind"] == "n/a"
         assert line["is_test_command"] is False
 
-    def test_post_tool_failure_marks_success_false(self, helios_dir):
+    def test_post_tool_failure_marks_success_and_error(self, helios_dir):
         data = {"tool_name": "Bash", "tool_input": {"command": "false"}}
         _run_handler("post-tool-failure", data, helios_dir)
         line = _record(helios_dir)
         assert line["success"] is False
+        assert line["is_error"] is True
+
+    def test_tool_response_error_shape_sets_is_error_not_is_denied(self, helios_dir):
+        """A failed pytest run is a tool error, not a permission denial —
+        conflating the two would feed false 'user said no' signals into
+        drift. Only an explicit permission_decision/decision field may
+        set is_denied."""
+        data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "pytest"},
+            "tool_response": {"is_error": True, "error": "assertion failed"},
+        }
+        _run_handler("post-tool", data, helios_dir)
+        line = _record(helios_dir)
+        assert line["is_error"] is True
+        assert line["is_denied"] is False
+
+    @pytest.mark.parametrize("key", ["permission_decision", "decision"])
+    def test_explicit_permission_decision_sets_is_denied(self, helios_dir, key):
+        data = {"tool_name": "Bash", "tool_input": {"command": "rm -rf /"}, key: "deny"}
+        _run_handler("post-tool", data, helios_dir)
+        line = _record(helios_dir)
+        assert line["is_denied"] is True
+        assert line["is_error"] is False
+
+    def test_successful_tool_has_no_error_or_denial(self, helios_dir):
+        data = {"tool_name": "Bash", "tool_input": {"command": "echo hi"}}
+        _run_handler("post-tool", data, helios_dir)
+        line = _record(helios_dir)
+        assert line["is_error"] is False
+        assert line["is_denied"] is False
 
 
 class TestHookHandlerPersonaResolution:
@@ -275,17 +328,15 @@ class TestHookHandlerPersonaResolution:
         ],
     )
     def test_local_validator_agrees_with_package_validator(self, name):
-        """hook-handler.py duplicates helios_mcp.security's persona
-        whitelist rather than importing it (stdlib-only hot path). This
-        pins the two implementations to the same accept/reject decision
-        for every case in P1's own test matrix."""
-        import importlib.util
+        """The plugin's stdlib-only _persona.py duplicates
+        helios_mcp.security's persona whitelist rather than importing it
+        (hook scripts run under a bare python3 that may not have
+        helios_mcp installed). This pins the two implementations to the
+        same accept/reject decision for every case in P1's own test
+        matrix."""
+        persona_module = _load_persona_module()
 
-        spec = importlib.util.spec_from_file_location("hook_handler", HANDLER)
-        hook_handler = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(hook_handler)
-
-        local_result = hook_handler._validate_persona_name(name)
+        local_result = persona_module.validate_persona_name(name)
         try:
             package_result = pkg_validate_persona_name(name)
         except Exception:
@@ -319,6 +370,173 @@ class TestHookHandlerRotation:
         assert obs_file.exists()
         new_content = obs_file.read_text().strip()
         assert new_content.count("\n") == 0  # only the new record
+
+
+class TestHookHandlerIngestTrigger:
+    """_trigger_ingest shells out to `uvx --from ... helios-mcp ingest`.
+    Every test here mocks subprocess.run so nothing actually invokes uvx —
+    real invocation is exercised only in the sandboxed end-to-end runs."""
+
+    def test_no_op_without_transcript_file(self, tmp_path, monkeypatch):
+        hook_handler = _load_hook_handler_module()
+        calls = []
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append((a, k)))
+        hook_handler._trigger_ingest(
+            "stop", "developer", "sess-1", str(tmp_path / "missing.jsonl"), tmp_path
+        )
+        assert calls == []
+
+    def test_no_op_without_session_id_or_transcript(self, tmp_path, monkeypatch):
+        hook_handler = _load_hook_handler_module()
+        calls = []
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append((a, k)))
+        transcript = tmp_path / "t.jsonl"
+        transcript.write_text("{}\n")
+        hook_handler._trigger_ingest("stop", "developer", "", str(transcript), tmp_path)
+        hook_handler._trigger_ingest("stop", "developer", "sess-1", "", tmp_path)
+        assert calls == []
+
+    def test_stop_invokes_ingest_without_final(self, tmp_path, monkeypatch):
+        hook_handler = _load_hook_handler_module()
+        calls = []
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append((a, k)))
+        transcript = tmp_path / "t.jsonl"
+        transcript.write_text("{}\n")
+        monkeypatch.setenv("HELIOS_SOURCE", "/path/to/worktree")
+
+        hook_handler._trigger_ingest(
+            "stop", "developer", "sess-1", str(transcript), tmp_path
+        )
+
+        assert len(calls) == 1
+        cmd = calls[0][0][0]
+        assert cmd[:4] == ["uvx", "--from", "/path/to/worktree", "helios-mcp"]
+        assert "ingest" in cmd
+        assert cmd[cmd.index("--persona") + 1] == "developer"
+        assert cmd[cmd.index("--session-id") + 1] == "sess-1"
+        assert cmd[cmd.index("--transcript") + 1] == str(transcript)
+        assert cmd[cmd.index("--helios-dir") + 1] == str(tmp_path)
+        assert "--final" not in cmd
+        assert calls[0][1]["timeout"] == 300
+
+    def test_session_end_invokes_ingest_with_final(self, tmp_path, monkeypatch):
+        hook_handler = _load_hook_handler_module()
+        calls = []
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append((a, k)))
+        transcript = tmp_path / "t.jsonl"
+        transcript.write_text("{}\n")
+
+        hook_handler._trigger_ingest(
+            "session-end", "developer", "sess-1", str(transcript), tmp_path
+        )
+
+        assert len(calls) == 1
+        cmd = calls[0][0][0]
+        assert "--final" in cmd
+        assert calls[0][1]["timeout"] == 45
+
+    def test_default_source_is_package_name(self, tmp_path, monkeypatch):
+        hook_handler = _load_hook_handler_module()
+        calls = []
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append((a, k)))
+        monkeypatch.delenv("HELIOS_SOURCE", raising=False)
+        transcript = tmp_path / "t.jsonl"
+        transcript.write_text("{}\n")
+
+        hook_handler._trigger_ingest(
+            "stop", "developer", "sess-1", str(transcript), tmp_path
+        )
+
+        cmd = calls[0][0][0]
+        assert cmd[cmd.index("--from") + 1] == "helios-mcp"
+
+    def test_ingest_failure_never_raises(self, tmp_path, monkeypatch):
+        hook_handler = _load_hook_handler_module()
+
+        def _raise(*a, **k):
+            raise subprocess.TimeoutExpired(cmd="uvx", timeout=1)
+
+        monkeypatch.setattr(subprocess, "run", _raise)
+        transcript = tmp_path / "t.jsonl"
+        transcript.write_text("{}\n")
+
+        hook_handler._trigger_ingest(
+            "stop", "developer", "sess-1", str(transcript), tmp_path
+        )  # must not raise
+
+
+class TestSessionStartContext:
+    def _run(self, stdin_data: dict, helios_dir: Path, extra_env: dict | None = None):
+        env = os.environ.copy()
+        env["HELIOS_DIR"] = str(helios_dir)
+        env.pop("HELIOS_PERSONA", None)
+        env.pop("HELIOS_DISABLE", None)
+        if extra_env:
+            env.update(extra_env)
+        return subprocess.run(
+            [sys.executable, str(SESSION_START_CONTEXT)],
+            input=json.dumps(stdin_data),
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=5,
+        )
+
+    def test_injects_rendered_markdown_as_plain_text(self, helios_dir):
+        (helios_dir / "rendered").mkdir(parents=True)
+        (helios_dir / "rendered" / "default.md").write_text("Be terse.\n")
+        result = self._run({}, helios_dir)
+        assert result.returncode == 0
+        assert result.stdout.strip() == "Be terse."
+        # SessionStart's documented stdout contract is plain text, not the
+        # hookSpecificOutput JSON envelope UserPromptSubmit uses.
+        assert "hookSpecificOutput" not in result.stdout
+
+    def test_silent_no_op_when_rendered_file_missing(self, helios_dir):
+        result = self._run({}, helios_dir)
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_uses_persona_from_cwd_marker(self, helios_dir, tmp_path):
+        (helios_dir / "rendered").mkdir(parents=True)
+        (helios_dir / "rendered" / "coder.md").write_text("Coder profile.")
+        marker_dir = tmp_path / "proj"
+        marker_dir.mkdir()
+        (marker_dir / ".helios-persona").write_text("coder\n")
+        result = self._run({"cwd": str(marker_dir)}, helios_dir)
+        assert result.stdout.strip() == "Coder profile."
+
+    def test_disable_env_produces_no_output(self, helios_dir):
+        (helios_dir / "rendered").mkdir(parents=True)
+        (helios_dir / "rendered" / "default.md").write_text("Should not appear.")
+        result = self._run({}, helios_dir, extra_env={"HELIOS_DISABLE": "1"})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_malformed_stdin_does_not_crash(self, helios_dir):
+        env = os.environ.copy()
+        env["HELIOS_DIR"] = str(helios_dir)
+        result = subprocess.run(
+            [sys.executable, str(SESSION_START_CONTEXT)],
+            input="not json",
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=5,
+        )
+        assert result.returncode == 0
+
+    def test_fast_enough_to_run_synchronously(self, helios_dir):
+        (helios_dir / "rendered").mkdir(parents=True)
+        (helios_dir / "rendered" / "default.md").write_text("x" * 2000)
+        times = []
+        for _ in range(5):
+            start = time.time()
+            self._run({}, helios_dir)
+            times.append((time.time() - start) * 1000)
+        # Generous bound for CI/subprocess overhead: the script itself
+        # does one stdin read and one small file read.
+        assert sum(times) / len(times) < 150
 
 
 class TestHookHandlerAllEventTypes:
