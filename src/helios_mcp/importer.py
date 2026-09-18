@@ -314,11 +314,15 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
 # ---------------------------------------------------------------------------
 
 def _project(
-    text_blocks: list[str], client: LLMClient | None
+    text_blocks: list[str], client: LLMClient | None, helios_dir: Path | None = None
 ) -> dict[str, BehavioralDistribution]:
-    """Model projection when a client is available, keyword heuristics otherwise."""
+    """Model projection when a client is available, keyword heuristics otherwise.
+
+    Without an explicit client, ``helios_dir`` decides whether the default one
+    may run, so ``llm: false`` in its config.yaml keeps the text local.
+    """
     if client is None:
-        client = default_client()
+        client = default_client(helios_dir)
     if client is not None:
         projected = project_with_llm(text_blocks, client)
         if projected is not None:
@@ -330,6 +334,7 @@ def import_from_markdown(
     path: Path,
     format: str = "auto",  # noqa: A002 - public param name; kept for callers
     client: LLMClient | None = None,
+    helios_dir: Path | None = None,
 ) -> BehavioralProfile:
     """Import a personality file into a Helios BehavioralProfile.
 
@@ -370,7 +375,7 @@ def import_from_markdown(
     text_blocks = extract_text_blocks(content, format)
 
     # Stage 2: project to distributions
-    distributions = _project(text_blocks, client)
+    distributions = _project(text_blocks, client, helios_dir)
 
     # Build profile
     persona_name = path.stem.lower().replace(" ", "_")
@@ -392,6 +397,7 @@ def import_from_text(
     name: str = "imported",
     format: str = "auto",  # noqa: A002 - public param name; kept for callers
     client: LLMClient | None = None,
+    helios_dir: Path | None = None,
 ) -> BehavioralProfile:
     """Import from raw text content (no file required).
 
@@ -412,7 +418,7 @@ def import_from_text(
         format = detect_format(text)  # noqa: A001
 
     text_blocks = extract_text_blocks(text, format)
-    distributions = _project(text_blocks, client)
+    distributions = _project(text_blocks, client, helios_dir)
 
     return BehavioralProfile(
         agent_id=name,
@@ -520,6 +526,7 @@ def import_declared(
     sources: list[Path],
     name: str = "declared",
     client: LLMClient | None = None,
+    helios_dir: Path | None = None,
 ) -> BehavioralProfile:
     """Project several declared artifacts together into one user-level profile.
 
@@ -532,7 +539,7 @@ def import_declared(
     return BehavioralProfile(
         agent_id=name,
         level="user",
-        distributions=_project(blocks, client),
+        distributions=_project(blocks, client, helios_dir),
         parent_id="base",
         specialization_level=3,
         base_importance=0.7,

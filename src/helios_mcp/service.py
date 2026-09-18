@@ -247,7 +247,8 @@ class HeliosService:
 
         if name:
             validate_persona_name(name)
-        profile = import_from_markdown(source, format=fmt)
+        profile = import_from_markdown(source, format=fmt,
+                                       helios_dir=self.helios_dir)
         persona = validate_persona_name(name or profile.agent_id)
         profile.agent_id = persona
         out = persona_path(self.helios_dir / "personas", persona, ".yaml")

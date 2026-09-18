@@ -141,3 +141,24 @@ def test_init_cli_reports_missing_sources(tmp_path):
 
     assert result.exit_code != 0
     assert "no declared preferences under" in result.output
+
+
+def test_config_llm_false_keeps_declared_text_local(tmp_path, monkeypatch):
+    # With the env opt-out absent and a claude binary on PATH, only config.yaml
+    # stands between the user's CLAUDE.md and the model subprocess.
+    import helios_mcp.llm as llm
+
+    monkeypatch.delenv("HELIOS_LLM", raising=False)
+    monkeypatch.delenv("HELIOS_DISABLE", raising=False)
+    monkeypatch.setattr(llm.shutil, "which", lambda _: "/usr/bin/claude")
+    spawned = []
+    monkeypatch.setattr(llm.ClaudeCLIClient, "complete_json",
+                        lambda self, *a: spawned.append(a))
+    helios_dir = tmp_path / ".helios"
+    service = HeliosService(helios_dir)
+    (helios_dir / "config.yaml").write_text("llm: false\n", encoding="utf-8")
+
+    onboard(service, home=_home(tmp_path))
+    service.import_profile(tmp_path / "home" / "CLAUDE.md", name="imported")
+
+    assert spawned == []
