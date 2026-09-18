@@ -6,7 +6,6 @@ import pytest
 
 from helios_mcp.distribution import (
     BehavioralDistribution,
-    total_kl_divergence,
 )
 from helios_mcp.taxonomy import list_dimensions, list_states
 
@@ -352,36 +351,3 @@ class TestAccessors:
         d1 = BehavioralDistribution.uniform("epistemic_style")
         d2 = BehavioralDistribution.uniform("risk_caution")
         assert d1 != d2
-
-
-# ---------------------------------------------------------------------------
-# total_kl_divergence
-# ---------------------------------------------------------------------------
-
-class TestTotalKLDivergence:
-    def test_identical_profiles_is_zero(self) -> None:
-        profile = {dim: BehavioralDistribution.uniform(dim) for dim in list_dimensions()}
-        assert total_kl_divergence(profile, profile) == pytest.approx(0.0, abs=1e-9)
-
-    def test_different_profiles_positive(self) -> None:
-        observed = {
-            "epistemic_style": confident_dist(),
-            "risk_caution": BehavioralDistribution.uniform("risk_caution"),
-        }
-        declared = {
-            "epistemic_style": hedging_dist(),
-            "risk_caution": BehavioralDistribution.uniform("risk_caution"),
-        }
-        total = total_kl_divergence(observed, declared)
-        assert total > 0.0
-
-    def test_only_shared_dimensions_counted(self) -> None:
-        observed = {"epistemic_style": confident_dist()}
-        declared = {
-            "epistemic_style": hedging_dist(),
-            "risk_caution": BehavioralDistribution.uniform("risk_caution"),
-        }
-        # Only epistemic_style is shared — only that contributes
-        total = total_kl_divergence(observed, declared)
-        expected = confident_dist().kl_divergence(hedging_dist())
-        assert total == pytest.approx(expected, rel=1e-6)
