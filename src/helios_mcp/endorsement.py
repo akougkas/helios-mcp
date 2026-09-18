@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from .classify import classify_turn
+from .taxonomy import list_dimensions
 from .transcript import AgentTurn
 
 # A requested state holding less than this much of the turn's own label means
@@ -60,6 +61,11 @@ _REG = "communication_register"
 _AGENCY = "interaction_agency"
 _RISK = "risk_caution"
 _EPI = "epistemic_style"
+_STRUCT = "structure"
+_SYCO = "sycophancy"
+_NARR = "narration"
+_SPEC = "specificity"
+_PUSH = "pushback"
 
 _HINT_RULES: tuple[_HintRule, ...] = (
     _rule(r"\b(?:too long|too verbose|too wordy|wall of text|shorter|"
@@ -115,6 +121,27 @@ _HINT_RULES: tuple[_HintRule, ...] = (
     _rule(r"\b(?:don'?t (?:make (?:things|stuff) up|guess)|you'?re guessing|"
           r"made (?:that|it|this) up|hallucinat\w*|if you don'?t know,? say)\b",
           _EPI, "admits_ignorance", True),
+    _rule(r"\b(?:just say it|say it plainly)\b", _EPI, "confident", True),
+    _rule(r"\b(?:too many (?:bullets|bullet points|headers|headings|tables|lists)|"
+          r"stop (?:using|with the) (?:bullets|bullet points|headers|headings|tables)|"
+          r"no (?:more )?(?:bullets|bullet points|headers|headings)|fewer bullets|"
+          r"less formatting)\b", _STRUCT, "prose", True),
+    _rule(r"\b(?:(?:write|answer|respond) in prose|as prose|in paragraphs)\b",
+          _STRUCT, "prose", False),
+    _rule(r"\b(?:don'?t flatter|stop (?:flattering|praising|sucking up|"
+          r"being (?:so )?sycophantic|telling me i'?m (?:absolutely )?right)|"
+          r"no (?:flattery|praise)|skip the (?:praise|compliments|flattery)|"
+          r"sycophan\w*)", _SYCO, "candid", True),
+    _rule(r"\b(?:stop (?:summari[sz]ing|recapping|narrating|announcing)|"
+          r"don'?t (?:summari[sz]e|recap|narrate|announce)|no (?:recap|summary) "
+          r"(?:at the end|needed)|skip the (?:recap|summary|preamble)|"
+          r"get to the point|cut to the chase)\b", _NARR, "silent_action", True),
+    _rule(r"\b(?:too vague|be (?:more )?(?:specific|concrete)|"
+          r"(?:with|give me|cite) (?:the )?(?:file paths|line numbers|numbers))\b",
+          _SPEC, "concrete", False),
+    _rule(r"\b(?:stop agreeing|don'?t (?:just )?agree with (?:me|everything)|"
+          r"push back (?:if|when)|tell me (?:if|when) i'?m wrong|"
+          r"stop caving|don'?t cave)\b", _PUSH, "holds_position", False),
 )
 
 _CORRECTION = re.compile(
@@ -146,12 +173,14 @@ _APPROVAL = re.compile(
 def hints_from_text(text: str) -> tuple[dict[str, str], bool]:
     """Style hints requested in ``text`` and whether any is a complaint.
 
-    When several rules hit the same dimension, the first listed wins.
+    When several rules hit the same dimension, the first listed wins. Rules for
+    dimensions the taxonomy does not define are ignored.
     """
+    known = set(list_dimensions())
     hints: dict[str, str] = {}
     complaint = False
     for rule in _HINT_RULES:
-        if rule.dimension in hints:
+        if rule.dimension in hints or rule.dimension not in known:
             continue
         if rule.pattern.search(text):
             hints[rule.dimension] = rule.state

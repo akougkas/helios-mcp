@@ -224,6 +224,9 @@ For every turn produce:
    gives evidence for, describing the agent's behavior in that turn. Use null
    for a dimension the turn says nothing about. Spread mass when uncertain;
    put more than 0.8 on one state only for unambiguous evidence.
+   Judge structure, narration and sycophancy from the prose the agent wrote,
+   not from tool calls. Label pushback only when the turn's input disputed
+   something the agent said or did; otherwise pushback is null.
 2. confidence in [0, 1]: how much evidence the turn carries overall.
 3. endorsement in [-1, 1], judged only from what the user did next:
    1 explicit approval; 0.5 the user moved on without objecting; 0 no human
