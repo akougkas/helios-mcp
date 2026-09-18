@@ -301,7 +301,8 @@ class TestCLIBootstrapAndStatus:
         helios_dir.mkdir()
         result = runner.invoke(main, ["status", "--helios-dir", str(helios_dir)])
         assert result.exit_code == 0
-        assert "No profiles found" in result.output
+        # Any command on a fresh directory bootstraps it.
+        assert "developer: 0 turns" in result.output
 
     def test_negotiate_no_observations(self, runner, tmp_path):
         helios_dir = tmp_path / "helios"
@@ -309,4 +310,4 @@ class TestCLIBootstrapAndStatus:
         (helios_dir / "base").mkdir()
         result = runner.invoke(main, ["negotiate", "developer", "--helios-dir", str(helios_dir)])
         assert result.exit_code == 0
-        assert "No observations" in result.output
+        assert "over 0 observed turns" in result.output
