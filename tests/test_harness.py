@@ -101,8 +101,8 @@ class TestGetContext:
         harness = BehavioralHarness(persona="developer", helios_dir=helios_dir)
         ctx = harness.get_context()
         # Renderer always emits dimension headings
-        assert "EPISTEMIC STYLE" in ctx
-        assert "INTERACTION AGENCY" in ctx
+        assert "Epistemic style" in ctx
+        assert "Interaction agency" in ctx
 
 
 # ---------------------------------------------------------------------------

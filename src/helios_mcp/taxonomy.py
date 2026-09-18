@@ -1,7 +1,7 @@
 """Behavioral taxonomy for Helios v2.
 
 Defines the four core behavioral dimensions and their discrete state spaces.
-This is the scientific foundation — everything else (distributions, drift,
+This is the scientific foundation: everything else (distributions, drift,
 inheritance, observation) references these definitions.
 
 The four dimensions cover the fundamental axes of AI agent behavior:
@@ -51,21 +51,21 @@ BEHAVIORAL_TAXONOMY: Final[dict[str, list[str]]] = {
 # Human-readable descriptions for each dimension (used in negotiation summaries)
 DIMENSION_DESCRIPTIONS: Final[dict[str, str]] = {
     "epistemic_style": (
-        "how the agent handles uncertainty — whether it states things "
+        "how the agent handles uncertainty: whether it states things "
         "confidently, hedges frequently, admits ignorance readily, or "
         "speculates openly"
     ),
     "interaction_agency": (
-        "how autonomous the agent is — whether it asks before acting, "
+        "how autonomous the agent is: whether it asks before acting, "
         "makes assumptions and proceeds, offers options, decides alone, "
         "or defers fully to the user"
     ),
     "communication_register": (
-        "the structure and density of outputs — from terse and minimal "
+        "the structure and density of outputs, from terse and minimal "
         "to thorough and comprehensive, technical-dense or plain-accessible"
     ),
     "risk_caution": (
-        "how the agent weighs safety vs speed — whether it acts immediately, "
+        "how the agent weighs safety vs speed: whether it acts immediately, "
         "checks before consequential actions, warns proactively, or "
         "refuses to proceed under ambiguity"
     ),
@@ -87,9 +87,9 @@ STATE_LABELS: Final[dict[str, dict[str, str]]] = {
         "defers_to_user":       "minimize your own judgment and maximize user control",
     },
     "communication_register": {
-        "terse":            "be concise — minimal words, maximum information density",
+        "terse":            "be concise: minimal words, maximum information density",
         "moderate":         "use balanced response length appropriate to the question",
-        "thorough":         "be comprehensive — explain context, reasoning, and"
+        "thorough":         "be comprehensive: explain context, reasoning, and"
                             " implications",
         "technical_dense":  "use domain-specific terminology, assume an expert reader",
         "plain_accessible": "use plain language, assume a non-expert reader",
