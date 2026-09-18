@@ -5,12 +5,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from helios_mcp.calibrate import (
+    CORPUS_PERSONA,
     agreement_report,
     heuristic_report,
     iter_transcripts,
     label_corpus,
+    ledger_report,
 )
+from helios_mcp.store import ObservationStore, TurnObservation
 from helios_mcp.transcript import parse_transcript
 
 from .transcript_fixtures import TranscriptBuilder
@@ -76,3 +81,40 @@ def test_label_corpus_is_resumable(tmp_path: Path):
     status = json.loads((out / "status.json").read_text())
     assert status["finished"] is not None
     assert SECRET not in (out / "observations" / "corpus.jsonl").read_text()
+
+
+def _obs(turn: str, source: str, label: dict[str, float], hint=None) -> TurnObservation:
+    return TurnObservation(
+        persona=CORPUS_PERSONA, session_id="s", turn_id=turn, timestamp=1.0,
+        source=source, labels={"structure": label}, endorsement=0.5,
+        correction_hint=hint,
+    )
+
+
+PROSE = {"prose": 0.8, "light_structure": 0.1, "heavy_structure": 0.1}
+HEAVY = {"prose": 0.1, "light_structure": 0.1, "heavy_structure": 0.8}
+
+
+def test_ledger_report_pairs_rows_and_maps_heuristic_to_model_space(tmp_path: Path):
+    # The heuristic calls every turn prose; the model says half are heavy.
+    rows = []
+    for i in range(4):
+        rows.append(_obs(f"t{i}", "heuristic", PROSE, {"structure": "prose"}))
+        rows.append(_obs(f"t{i}", "llm", PROSE if i % 2 else HEAVY,
+                         {"structure": "prose"} if i == 0 else None))
+    rows.append(_obs("unpaired", "heuristic", PROSE))
+    ObservationStore(tmp_path).append(rows)
+
+    report = ledger_report(tmp_path)
+    assert report["paired_turns"] == 4
+    assert report["heuristic_hint_precision"]["structure.prose"]["precision"] == 0.25
+    assert report["argmax_agreement"]["structure"] == 0.5
+
+    bias = report["bias_map"]["structure"]
+    for row in bias.values():
+        assert sum(row.values()) == pytest.approx(1.0, abs=1e-3)
+    assert bias["prose"]["heavy_structure"] > 0.3
+    # Too little heuristic mass on the other states to estimate, so identity.
+    assert bias["light_structure"] == {
+        "prose": 0.0, "light_structure": 1.0, "heavy_structure": 0.0,
+    }
