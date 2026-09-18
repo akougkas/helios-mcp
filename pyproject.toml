@@ -21,7 +21,7 @@ classifiers = [
 dependencies = [
     # Capped below 3 deliberately: fastmcp 3.x and 4.x are separate major
     # rewrites, and 2.12 already provides the tool annotations and output
-    # schemas this server publishes. See the SDK note in PLAN.md.
+    # schemas this server publishes.
     "fastmcp>=2.12,<3",
     "pyyaml>=6.0.3",
     "click>=8.2",

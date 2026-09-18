@@ -2,9 +2,16 @@
 
 import math
 
+import pytest
+
 from helios_mcp.drift import DEFAULT_CONFIG, DriftConfig
-from helios_mcp.estimator import estimate
-from helios_mcp.store import Proposal, ProposedChange, TurnObservation
+from helios_mcp.estimator import estimate, estimate_ledger
+from helios_mcp.store import (
+    ObservationStore,
+    Proposal,
+    ProposedChange,
+    TurnObservation,
+)
 
 DIM = "communication_register"
 # Linear in confidence, full-weight corrections: the bookkeeping is easy to read.
@@ -132,3 +139,43 @@ def test_model_label_after_an_accept_counts_from_its_own_row():
     ledger = [turn("t1", "heuristic", TERSE), turn("t1", "llm", THOROUGH)]
     ev = estimate(ledger, [proposal("accepted", 1)], config=LINEAR, llm_labels=True)
     assert ev.endorsed[DIM] == {"thorough": 1.0}
+
+
+@pytest.mark.parametrize("llm", [False, True])
+def test_ledger_checkpoint_always_equals_a_full_estimate(tmp_path, monkeypatch, llm):
+    store = ObservationStore(tmp_path)
+    starts: list[int] = []
+    scan = store.scan
+    monkeypatch.setattr(store, "scan", lambda p, start=0: (starts.append(start),
+                                                           scan(p, start))[1])
+    proposals = [proposal("accepted", 2)]
+    steps = [
+        [turn("t1", confidence=0.3), turn("t2", endorsement=-1.0)],
+        [turn("t3", model="m-a", label=TERSE)],   # new turns only
+        [turn("t1", "llm", TERSE)],                # relabel of a counted turn
+        [turn("t2", "mcp", model="m-b")],          # model backfill only
+        [turn("t4", endorsement=0.5)],
+    ]
+    for i, batch in enumerate(steps):
+        store.append(batch)
+        if i == 3:
+            with store.path("dev").open("a") as f:
+                f.write("not json\n")
+        assert estimate_ledger(store, "dev", proposals, LINEAR, llm) == estimate(
+            store.iter("dev"), proposals, LINEAR, llm)
+    # A Stop that only adds new turns reads just the new bytes.
+    starts.clear()
+    store.append([turn("t5")])
+    estimate_ledger(store, "dev", proposals, LINEAR, llm)
+    assert starts and starts[0] > 0
+
+
+def test_ledger_checkpoint_notices_a_rewritten_ledger(tmp_path):
+    store = ObservationStore(tmp_path)
+    store.append([turn("t1"), turn("t2")])
+    estimate_ledger(store, "dev")
+    store.path("dev").unlink()
+    store.index_path("dev").unlink()
+    store.append([turn("t1", label=TERSE), turn("t9", label=TERSE),
+                  turn("t8", label=TERSE)])
+    assert estimate_ledger(store, "dev") == estimate(store.iter("dev"))

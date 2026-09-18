@@ -196,3 +196,18 @@ def test_save_never_writes_a_degenerate_state(tmp_path: Path) -> None:
     loaded = BehavioralProfile.load(path).distributions["risk_caution"]
     assert min(loaded.probs) > 0.001
     assert abs(sum(loaded.probs) - 1.0) < 1e-9
+
+
+def test_loads_are_independent_and_follow_rewrites(tmp_path: Path) -> None:
+    path = tmp_path / "x.yaml"
+    BehavioralProfile(agent_id="x", level="user", distributions={
+        "risk_caution": BehavioralDistribution.point_mass(
+            "risk_caution", "acts_immediately")}).save(path)
+    first = BehavioralProfile.load(path)
+    first.distributions.clear()
+    first.agent_id = "mutated"
+    assert BehavioralProfile.load(path).agent_id == "x"
+    assert "risk_caution" in BehavioralProfile.load(path).distributions
+
+    BehavioralProfile(agent_id="y", level="user", distributions={}).save(path)
+    assert BehavioralProfile.load(path).agent_id == "y"

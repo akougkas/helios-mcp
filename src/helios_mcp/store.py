@@ -37,18 +37,23 @@ SOURCES: tuple[str, ...] = ("llm", "heuristic", "mcp")
 
 _LABEL_SUM_TOLERANCE = 1e-3
 
+# Every ledger read validates every row, so the state lookup is precomputed.
+_STATE_SETS = {dim: frozenset(states) for dim, states in BEHAVIORAL_TAXONOMY.items()}
+
 
 def _validate_labels(labels: dict[str, dict[str, float]]) -> None:
     for dim, dist in labels.items():
-        states = BEHAVIORAL_TAXONOMY.get(dim)
+        states = _STATE_SETS.get(dim)
         if states is None:
             raise ValueError(f"unknown dimension {dim!r}")
-        unknown = set(dist) - set(states)
-        if unknown:
-            raise ValueError(f"unknown states for {dim}: {sorted(unknown)}")
-        if any(not math.isfinite(p) or p < 0 for p in dist.values()):
+        if not dist.keys() <= states:
+            unknown = sorted(dist.keys() - states)
+            raise ValueError(f"unknown states for {dim}: {unknown}")
+        values = dist.values()
+        total = sum(values)
+        # A NaN or infinity makes the sum non-finite, so one check covers both.
+        if not math.isfinite(total) or (values and min(values) < 0):
             raise ValueError(f"label for {dim} has negative or non-finite mass")
-        total = sum(dist.values())
         if abs(total - 1.0) > _LABEL_SUM_TOLERANCE:
             raise ValueError(f"label for {dim} sums to {total:.4f}, not 1")
 
@@ -142,6 +147,9 @@ class ObservationStore:
     def path(self, persona: str) -> Path:
         return persona_path(self.root, persona, ".jsonl")
 
+    def index_path(self, persona: str) -> Path:
+        return persona_path(self.root, persona, ".keys")
+
     def append(self, observations: Iterable[TurnObservation]) -> int:
         """Append observations not already in the ledger. Returns the new-row count.
 
@@ -156,12 +164,14 @@ class ObservationStore:
         for persona, batch in by_persona.items():
             path = self.path(persona)
             with _file_lock(path):
-                seen = {obs.key for obs in self.iter(persona)}
+                seen = self._keys_locked(persona)
                 lines = []
+                keys = []
                 for obs in batch:
                     if obs.key in seen:
                         continue
                     seen.add(obs.key)
+                    keys.append(obs.key[1:])
                     lines.append(obs.to_json() + "\n")
                 if lines:
                     with path.open("a", encoding="utf-8") as f:
@@ -170,26 +180,95 @@ class ObservationStore:
                         if f.tell() > 0 and not _ends_with_newline(path):
                             f.write("\n")
                         f.writelines(lines)
+                    with self.index_path(persona).open("a", encoding="utf-8") as f:
+                        f.write(json.dumps([path.stat().st_size, keys],
+                                           separators=(",", ":")) + "\n")
                 added += len(lines)
         return added
 
+    def keys(self, persona: str) -> set[tuple[str, str, str, str]]:
+        """Keys of every valid row, from the index without parsing the ledger."""
+        with _file_lock(self.path(persona)):
+            return self._keys_locked(persona)
+
+    def _keys_locked(self, persona: str) -> set[tuple[str, str, str, str]]:
+        """Read the key index, rebuilding it when it does not cover the ledger.
+
+        The index holds one line per append: the ledger size after that append
+        and the keys it added. It is valid only when its last size equals the
+        ledger's current size. A crash between the two writes, a torn index
+        line, or rows written by anything else leave it stale, and then one
+        full scan rewrites it. Caller holds the ledger lock.
+        """
+        path = self.path(persona)
+        index = self.index_path(persona)
+        size = path.stat().st_size if path.exists() else 0
+        keys: set[tuple[str, str, str, str]] = set()
+        covered = 0
+        try:
+            with index.open("r", encoding="utf-8") as f:
+                for line in f:
+                    covered, batch = json.loads(line)
+                    keys.update((persona, *k) for k in batch)
+        except FileNotFoundError:
+            covered = -1
+        except (ValueError, TypeError):
+            covered = -1
+        if covered == size:
+            return keys
+        keys = {obs.key for obs in self.iter(persona)}
+        if size == 0:
+            index.unlink(missing_ok=True)
+        else:
+            entry = [size, sorted(k[1:] for k in keys)]
+            atomic_write_text(index, json.dumps(entry, separators=(",", ":")) + "\n")
+        return keys
+
     def iter(self, persona: str) -> Iterator[TurnObservation]:
         """Yield every valid row in ledger order, skipping corrupt lines."""
+        for _, _, obs in self.scan(persona):
+            if obs is not None:
+                yield obs
+
+    def scan(self, persona: str, start: int = 0,
+             ) -> Iterator[tuple[int, int, TurnObservation | None]]:
+        """Yield ``(offset, end, row)`` for each complete line from byte ``start``.
+
+        ``row`` is None for a corrupt line. A last line without its newline is
+        a write in progress or a torn crash remnant, so it is left for a later
+        read; the next append starts on a fresh line either way.
+        """
         path = self.path(persona)
         if not path.exists():
             return
-        with path.open("r", encoding="utf-8") as f:
-            for lineno, line in enumerate(f, 1):
-                if not line.strip():
-                    continue
-                try:
-                    yield TurnObservation.from_dict(json.loads(line))
-                except (ValueError, KeyError, TypeError) as exc:
-                    logger.warning("skipping corrupt ledger line %s:%d: %s",
-                                   path, lineno, exc)
+        with path.open("rb") as f:
+            f.seek(start)
+            offset = start
+            for line in f:
+                end = offset + len(line)
+                if not line.endswith(b"\n"):
+                    return
+                if line.strip():
+                    yield offset, end, self._parse(path, offset, line)
+                offset = end
+
+    def read_at(self, persona: str, offset: int) -> TurnObservation | None:
+        """The row starting at byte ``offset``, or None if it is not valid."""
+        with self.path(persona).open("rb") as f:
+            f.seek(offset)
+            return self._parse(self.path(persona), offset, f.readline())
+
+    @staticmethod
+    def _parse(path: Path, offset: int, line: bytes) -> TurnObservation | None:
+        try:
+            return TurnObservation.from_dict(json.loads(line))
+        except (ValueError, KeyError, TypeError) as exc:
+            logger.warning("skipping corrupt ledger line %s@%d: %s", path, offset, exc)
+            return None
 
     def count(self, persona: str) -> int:
-        return sum(1 for _ in self.iter(persona))
+        """Valid rows in the ledger."""
+        return len(self.keys(persona))
 
 
 def _ends_with_newline(path: Path) -> bool:
