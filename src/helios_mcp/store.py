@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from .atomic_ops import atomic_write_text
-from .security import validate_persona_name
+from .security import persona_path, validate_persona_name
 from .taxonomy import BEHAVIORAL_TAXONOMY
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ class ObservationStore:
         self.root = Path(helios_dir) / "observations"
 
     def path(self, persona: str) -> Path:
-        return self.root / f"{validate_persona_name(persona)}.jsonl"
+        return persona_path(self.root, persona, ".jsonl")
 
     def append(self, observations: Iterable[TurnObservation]) -> int:
         """Append observations not already in the ledger. Returns the new-row count.
@@ -245,7 +245,7 @@ class ProposalStore:
         self.root = Path(self.helios_dir) / "proposals"
 
     def path(self, persona: str) -> Path:
-        return self.root / f"{validate_persona_name(persona)}.json"
+        return persona_path(self.root, persona, ".json")
 
     def all(self, persona: str) -> list[Proposal]:
         """Every proposal for ``persona``, oldest first."""
@@ -298,6 +298,30 @@ class ProposalStore:
                 for p in self.all(persona)
             ]
             self._write(persona, [*existing, proposal])
+        return proposal
+
+    def create_decided(self, persona: str, changes: dict[str, ProposedChange],
+                       observation_count: int, status: ProposalStatus,
+                       reason: str | None = None,
+                       now: float | None = None) -> Proposal:
+        """Persist a proposal that was decided without review, like an auto-accept.
+
+        Unlike ``create``, this leaves any pending proposal alone.
+        """
+        now = time.time() if now is None else now
+        proposal = Proposal(
+            id=secrets.token_hex(6),
+            persona=validate_persona_name(persona),
+            created_at=now,
+            changes=changes,
+            observation_count=observation_count,
+            status=status,
+            decided_at=now,
+            decided_dimensions=tuple(changes),
+            reason=reason,
+        )
+        with _file_lock(self.path(persona)):
+            self._write(persona, [*self.all(persona), proposal])
         return proposal
 
     def decide(self, persona: str, proposal_id: str, status: ProposalStatus,
