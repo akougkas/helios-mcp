@@ -275,7 +275,8 @@ class TestProjectWithLLM:
     def test_samples_are_averaged_and_failed_calls_skipped(self):
         replies = iter([
             {"structure": {"prose": 0.9, "light_structure": 0.05, "heavy_structure": 0.05}},
-            {"structure": {"prose": 0.1, "light_structure": 0.05, "heavy_structure": 0.85}},
+            {"structure": {"prose": 0.1, "light_structure": 0.05, "heavy_structure": 0.85},
+             "pushback": {"holds_position": 0.9, "concedes_with_reason": 0.05, "capitulates": 0.05}},
             None,
         ])
 
@@ -287,6 +288,8 @@ class TestProjectWithLLM:
         assert dists is not None
         assert dists["structure"]["prose"] == pytest.approx(0.5, abs=0.01)
         assert dists["structure"]["heavy_structure"] == pytest.approx(0.45, abs=0.01)
+        # A dimension only one run gave is that run's, not diluted by the default.
+        assert dists["pushback"]["holds_position"] == pytest.approx(0.9, abs=0.01)
 
     def test_import_uses_client_and_falls_back_to_keywords(self):
         text = "# Style\nBe thorough and comprehensive in every answer."
