@@ -27,6 +27,7 @@ UserKind = Literal["prompt", "notification", "command", "interrupt"]
 _INTERRUPT_PREFIX = "[Request interrupted by user"
 _DENIAL_FEEDBACK_MARKER = "the user said:\n"
 _REJECTED_MARKER = "The user doesn't want to proceed with this tool use."
+_NOT_DENIALS = frozenset({"AskUserQuestion"})
 
 # Wrappers that mark user records produced by the harness rather than typed
 # by a person. Slash commands are kept as "command" so a /clear still closes
@@ -249,8 +250,13 @@ class _Builder:
         text = _result_text(block)
         is_error = bool(block.get("is_error"))
         denial_kind = rec.get("toolDenialKind")
-        denied = denial_kind == "user-rejected" or (
-            denial_kind is None and is_error and text.startswith(_REJECTED_MARKER)
+        # toolDenialKind is authoritative where the CLI writes it; older
+        # transcripts only have the rejection text. Declining a question the
+        # agent asked is the user answering in chat, not refusing an action,
+        # and auto-mode blocks are a classifier's decision, not the user's.
+        denied = call.name not in _NOT_DENIALS and (
+            denial_kind == "user-rejected"
+            or (denial_kind is None and is_error and text.startswith(_REJECTED_MARKER))
         )
         feedback = None
         if denied and _DENIAL_FEEDBACK_MARKER in text:
