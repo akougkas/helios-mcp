@@ -125,3 +125,11 @@ def test_declined_question_and_auto_mode_block_are_not_user_denials():
     turn = parse_records(b.records).turns[0]
     assert [c.tool_use_id for c in turn.denials] == ["p1"]
     assert turn.denials[0].denial_feedback == "no, keep the old schema"
+
+
+def test_denial_in_a_headless_session_is_not_the_person_refusing():
+    b = TranscriptBuilder()
+    b.prompt("clean up", entrypoint="sdk-cli")
+    b.tool("Bash", {"command": "rm -rf build"}, "t1")
+    b.deny("t1")["entrypoint"] = "sdk-cli"
+    assert parse_records(b.records).turns[0].denials == []
