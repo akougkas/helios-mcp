@@ -36,7 +36,8 @@ def test_child_runs_lean_and_hook_free(tmp_path: Path):
     record = tmp_path / "record.json"
     exe = _fake_cli(tmp_path, f"""
 json.dump({{"argv": sys.argv[1:], "stdin": sys.stdin.read(),
-           "disable": os.environ.get("HELIOS_DISABLE"), "llm": os.environ.get("HELIOS_LLM")}},
+           "disable": os.environ.get("HELIOS_DISABLE"), "llm": os.environ.get("HELIOS_LLM"),
+           "thinking": os.environ.get("MAX_THINKING_TOKENS")}},
           open({str(record)!r}, "w"))
 print(json.dumps([{{"type": "system"}}, {RESULT!r}]))
 """)
@@ -45,6 +46,7 @@ print(json.dumps([{{"type": "system"}}, {RESULT!r}]))
     seen = json.loads(record.read_text())
     assert seen["disable"] == "1"
     assert seen["llm"] == "0"
+    assert seen["thinking"] == "0"
     assert seen["stdin"] == "the prompt"
     argv = seen["argv"]
     for flag in ("-p", "--safe-mode", "--no-session-persistence", "--strict-mcp-config"):
