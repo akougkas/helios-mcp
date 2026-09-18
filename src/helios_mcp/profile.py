@@ -1,7 +1,9 @@
 """Behavioral profile — a complete v2 behavioral identity across all 4 dimensions."""
 from __future__ import annotations
 
+import copy
 import datetime
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,9 @@ from .drift import DEFAULT_CONFIG, smooth
 from .taxonomy import list_dimensions
 
 SCHEMA_VERSION = "2.0"
+
+
+_PARSED: dict[str, tuple[tuple[int, int, int], dict[str, Any]]] = {}
 
 
 @dataclass
@@ -96,10 +101,21 @@ class BehavioralProfile:
 
     @classmethod
     def load(cls, path: Path) -> BehavioralProfile:
-        """Load a BehavioralProfile from a YAML file."""
-        with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        return cls.from_yaml_dict(data)
+        """Load a BehavioralProfile from a YAML file.
+
+        Every tool call resolves the hierarchy, and YAML parsing dominated it,
+        so parsed files are cached by identity and mtime. Each call still
+        builds a fresh profile, because callers mutate what they load.
+        """
+        st = os.stat(path)
+        stamp = (st.st_ino, st.st_size, st.st_mtime_ns)
+        key = str(Path(path).resolve())
+        cached = _PARSED.get(key)
+        if cached is None or cached[0] != stamp:
+            with open(path, encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            _PARSED[key] = cached = (stamp, data)
+        return cls.from_yaml_dict(copy.deepcopy(cached[1]))
 
     def save(self, path: Path) -> None:
         """Atomically write this profile as YAML.
