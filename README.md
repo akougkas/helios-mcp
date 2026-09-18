@@ -89,8 +89,21 @@ until a human (or the calling agent, on the human's behalf) accepts it by that
 id, at which point the target profile is written to the persona's user-level
 YAML and committed to git so every behavioral change has a history and can be
 rolled back. A rejection is recorded too, with a cooldown per dimension so a
-declined proposal doesn't re-fire immediately. Exact thresholds live in
-`drift.DriftConfig` and are documented in [`CLAUDE.md`](CLAUDE.md#key-thresholds).
+declined proposal doesn't re-fire immediately.
+
+Explicit signals move faster than passive ones. A correction that names what
+you want, or a standing preference stated on an uncorrected turn, weighs 2.5
+turns against the usual one, so a handful of consistent hints on a dimension
+reaches a suggestion in about 5 and a strong proposal in about 7, without
+waiting on volume alone. And a dimension that `init` or `import` took directly
+from a declared source (`CLAUDE.md`, the active output style, recorded as
+`declared_dimensions` on the profile) only moves on those same explicit
+signals: an uncorrected turn that merely matches or drifts from a declared
+dimension carries no endorsed weight there, so passing on Helios's own
+rendered suggestion can't quietly outvote what you wrote down yourself.
+`status` marks these dimensions `declared: explicit signals only`. Exact
+thresholds live in `drift.DriftConfig` and are documented in
+[`CLAUDE.md`](CLAUDE.md#key-thresholds).
 
 ## MCP tools
 
@@ -171,16 +184,28 @@ uv run helios-mcp ingest --persona NAME --session-id ID --transcript PATH [--fin
                                           # internal: labels a transcript into the ledger, run by the plugin's hooks
 ```
 
+### Environment variables
+
+| Variable | Effect |
+|---|---|
+| `HELIOS_DIR` | Where profiles, the ledger and proposals live. Default `~/.helios`. |
+| `HELIOS_SOURCE` | Local checkout path for `uvx --from`, so the plugin's `.mcp.json` can run an unpublished build. |
+| `HELIOS_LLM` | Set to `0` to skip the Haiku batch labeler; heuristic labels stay authoritative. Same as `llm: false` in `HELIOS_DIR/config.yaml`. |
+| `HELIOS_PERSONA` | Overrides persona resolution in the plugin's hooks, ahead of a `.helios-persona` file or the stored default. |
+| `HELIOS_DISABLE` | Set to `1` to make every hook and the Haiku subprocess a no-op. The labeler subprocess sets this on itself so it never re-triggers Helios's own hooks. |
+| `HELIOS_TRUST_HEADLESS` | Set to `1` to make a headless `claude -p` session's user turns count as the person's own feedback instead of machine input. For scripted lab sessions only; system, notification, peer, coordinator and scheduled input are still always treated as machine input regardless of this variable. |
+
 ## Project status
 
 The behavioral math is solid: taxonomy, distributions, hierarchy blending,
 Dirichlet/JS drift, and negotiation are implemented and covered by an
 extensive test suite (see the [CI workflow](.github/workflows/ci.yml) for the
 current pass/fail state, since a hardcoded count in prose goes stale). Hook
-capture, transcript labeling, declared-artifact import, and plugin packaging
-are wired end to end. The package is at `0.4.0b2` and classified as alpha:
-per-model fingerprinting and ledger scaling for long-running personas are
-still open, and it's not yet on PyPI or the Anthropic plugin marketplace.
+capture, transcript labeling, declared-artifact import, per-model fingerprint
+tracking, and plugin packaging are wired end to end and have run against the
+founder's own real session history. The package is at `0.5.0b1` and
+classified as beta: it's not yet on PyPI or the Anthropic plugin marketplace,
+and long-running, ongoing dogfooding is still open.
 
 ## Development
 

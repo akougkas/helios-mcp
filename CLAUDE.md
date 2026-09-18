@@ -125,14 +125,12 @@ All live in `drift.DriftConfig`. Drift runs on the `endorsed` posterior only. Wi
 
 ## Current Roadmap
 
-Done: hook-based observation, heuristic + Haiku labeling, the nine-dimension taxonomy, Dirichlet/JS drift with suggestion/strong tiers, negotiation and auto-accept, declared-artifact import (CLAUDE.md + active output style), and plugin packaging (hooks + skill + MCP bundle).
+Done: hook-based observation, heuristic + Haiku labeling, the nine-dimension taxonomy, Dirichlet/JS drift with suggestion/strong tiers, negotiation and auto-accept, declared-artifact import (CLAUDE.md + active output style), plugin packaging (hooks + skill + MCP bundle), per-model fingerprinting with counter-tendency rendering, ledger key indexing so a Stop hook reads only new rows, declared-dimension gating, and weighted explicit-signal hints. A one-shot replay of the founder's own 60 most recent real sessions surfaced a genuine strong-tier proposal end to end.
 
 Open:
 
-1. Per-model fingerprinting: track the agent's tendencies per model and render a short counter-tendency block where a model's fingerprint deviates from the endorsed preference.
-2. Ledger scaling for long-running personas (index or partition the JSONL ledger so a Stop hook stays cheap as it grows).
-3. Local dogfooding on the founder's real sessions, watching for false positives and proposal pacing.
-4. Distribution: Anthropic marketplace submission, PyPI, standalone skill.
+1. Ongoing local dogfooding: run Helios against the founder's live sessions over time rather than a single replay, watching for false positives and proposal pacing as the ledger grows.
+2. Distribution: Anthropic marketplace submission, PyPI.
 
 ## Reference
 

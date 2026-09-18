@@ -1,6 +1,6 @@
 [project]
 name = "helios-mcp"
-version = "0.4.0b2"
+version = "0.5.0b1"
 description = "Behavioral genome for AI agents with drift detection and profile negotiation"
 readme = "README.md"
 authors = [
@@ -10,7 +10,7 @@ requires-python = ">=3.13"
 license = { text = "MIT" }
 keywords = ["mcp", "ai", "configuration", "behavior", "inheritance"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
