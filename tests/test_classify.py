@@ -6,9 +6,16 @@ from typing import Any
 
 import pytest
 
-from helios_mcp.classify import classify_turn
+from helios_mcp.classify import (
+    classify_narration,
+    classify_pushback,
+    classify_specificity,
+    classify_structure,
+    classify_sycophancy,
+    classify_turn,
+)
 from helios_mcp.taxonomy import list_states
-from helios_mcp.transcript import AgentTurn, ToolCall
+from helios_mcp.transcript import AgentTurn, ToolCall, UserInput
 
 
 def _turn(text: str = "", calls: list[tuple[str, dict[str, Any]]] | None = None) -> AgentTurn:
@@ -98,3 +105,87 @@ def test_verification_commands_are_not_counted_as_mutations():
 
 def test_empty_turn_omits_dimensions():
     assert classify_turn(_turn()).labels == {}
+
+
+# Manner dimensions. The scorers return raw evidence counts, so the direction
+# checks below don't depend on the taxonomy defining the dimension yet.
+
+def _top(counts: dict[str, float]) -> str:
+    return max(counts, key=lambda k: counts[k])
+
+
+BULLETED = "## Changes\n- parser loop\n- lexer\n## Tests\n- 12 passed\n- ruff clean"
+PROSE = (
+    "The parser loop overran by one. I changed the bound in parse.py:40.\n\n"
+    "All 12 tests pass and ruff is clean."
+)
+
+
+def test_structure_separates_prose_from_headers_and_bullets():
+    assert _top(classify_structure(BULLETED)[0]) == "heavy_structure"
+    assert _top(classify_structure(PROSE)[0]) == "prose"
+    one_list = PROSE + "\n\n- a.py\n- b.py\n\nThat covers it, and nothing else changed."
+    assert _top(classify_structure(one_list)[0]) == "light_structure"
+
+
+def test_structure_ignores_code_blocks():
+    fenced = PROSE + "\n```\n# comment\n- not a bullet\n| a | b |\n```"
+    assert _top(classify_structure(fenced)[0]) == "prose"
+
+
+def test_sycophancy_detects_praise_and_candor():
+    flattering = "Great question! You're absolutely right that the cache is stale."
+    candid = "That won't work. The real problem is the lock ordering in store.py."
+    assert _top(classify_sycophancy(flattering)[0]) == "flattering"
+    assert _top(classify_sycophancy(candid)[0]) == "candid"
+    assert _top(classify_sycophancy(PROSE)[0]) == "neutral"
+
+
+def _blocks(*texts: str) -> AgentTurn:
+    turn = _turn()
+    turn.texts.extend(texts)
+    return turn
+
+
+def test_narration_separates_silent_signposting_and_recaps():
+    silent = _blocks("Fixed the bound in parse.py:40. 12 tests pass.")
+    signposted = _blocks("Let me check the parser.", "The bound was off by one; fixed.")
+    recapped = _blocks(
+        "Let me check the parser.", "I'll now fix the bound.", "Now the tests.",
+        "In summary, I fixed the bound. Hope this helps!",
+    )
+    assert _top(classify_narration(silent)[0]) == "silent_action"
+    assert _top(classify_narration(signposted)[0]) == "brief_signposting"
+    assert _top(classify_narration(recapped)[0]) == "narrates_and_recaps"
+
+
+def test_specificity_prefers_references_over_adjectives():
+    concrete = (
+        "The lock in store.py:118 serializes every append, about 40ms per acquire, "
+        "so ObservationStore.append dominates the Stop hook at 10k rows."
+    )
+    vague = (
+        "There are various issues with the overall approach, and several aspects "
+        "could be significantly improved with a more robust and comprehensive design."
+    )
+    assert _top(classify_specificity(concrete)[0]) == "concrete"
+    assert _top(classify_specificity(vague)[0]) == "vague"
+    assert classify_specificity("Done.")[1] == 0.0
+
+
+def _answering(prompt: str, reply: str) -> AgentTurn:
+    turn = _blocks(reply)
+    turn.prompt = UserInput("prompt", prompt, 0.0, "u")
+    return turn
+
+
+def test_pushback_is_labeled_only_after_the_user_disputed_something():
+    reply = "You're absolutely right, sorry about that. I'll change it."
+    assert classify_pushback(_answering("Add a flag for verbose output.", reply))[1] == 0.0
+
+    dispute = "Are you sure? I don't think the cache is the problem."
+    assert _top(classify_pushback(_answering(dispute, reply))[0]) == "capitulates"
+    conceded = "You're right, I misread the trace: the miss comes from the key hash."
+    assert _top(classify_pushback(_answering(dispute, conceded))[0]) == "concedes_with_reason"
+    held = "I still think the cache is the problem, because the miss rate doubles."
+    assert _top(classify_pushback(_answering(dispute, held))[0]) == "holds_position"
