@@ -83,6 +83,7 @@ class TranscriptBuilder:
             message={
                 "id": msg_id or f"msg_{len(self.records)}",
                 "role": "assistant",
+                "model": "claude-test",
                 "stop_reason": "tool_use",
                 "content": [{"type": "tool_use", "id": tool_id, "name": name, "input": tool_input}],
             },

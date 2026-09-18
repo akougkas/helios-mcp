@@ -12,10 +12,13 @@ Grades:
           a standing style preference with no complaint attached, or the
           outcome was wrong ("still failing") without a behavior complaint
     -1.0  correction, interrupt or denied tool call
-
-The estimator treats any negative grade as a behavior correction, so an
-outcome complaint stays at zero rather than pushing style mass around.
     None  nothing followed the turn yet
+
+The estimator counts only grades at or below -0.75 as behavior corrections,
+and weighs uncorrected turns by grade: an approval is strong evidence, moving
+on is weak, and zero or None is none. Explicit signals, meaning approvals and
+style hints, are what move the endorsed posterior, so their recall matters
+most.
 """
 
 from __future__ import annotations
@@ -69,13 +72,16 @@ _PUSH = "pushback"
 
 _HINT_RULES: tuple[_HintRule, ...] = (
     _rule(r"\b(?:too long|too verbose|too wordy|wall of text|shorter|"
-          r"less verbose|fewer words|stop explaining|tl;?dr)\b", _REG, "terse", True),
-    _rule(r"\b(?:be (?:more )?(?:concise|brief|terse)|keep it (?:short|brief|tight)|"
-          r"briefly|brief (?:summary|update|answer)|one line|in a sentence|"
-          r"short answer|"
-          r"just the answer)\b", _REG, "terse", False),
+          r"less verbose|fewer words|stop explaining|tl;?dr|too much (?:text|detail)|"
+          r"stop rambling|rambling|no essays?|cut the fluff|no fluff)\b",
+          _REG, "terse", True),
+    _rule(r"\b(?:be (?:more )?(?:concise|brief|terse)|keep (?:it|them|answers|"
+          r"replies|responses|reports) (?:short|brief|tight|concise)|"
+          r"briefly|brief (?:summary|update|answer)|just the answer)\b",
+          _REG, "terse", False),
     _rule(r"\b(?:too short|too terse|more detail|more details|elaborate|"
-          r"explain (?:more|why|in detail)|walk me through|expand on)\b",
+          r"explain (?:more|why|in detail|your reasoning)|walk me through|"
+          r"expand on|more context)\b",
           _REG, "thorough", False),
     _rule(r"\b(?:i (?:am|'m) (?:entirely |completely |totally )?lost|"
           r"i (?:do not|don't) (?:understand|follow)|what does (?:that|this) mean|"
@@ -89,10 +95,15 @@ _HINT_RULES: tuple[_HintRule, ...] = (
           r"(?:you )?(?:do not|don't) need to ask|what are you waiting for|"
           r"why are you (?:asking|waiting)|timebox|"
           r"you have enough (?:info\w*|context|data|to (?:go|start|proceed|write))|"
-          r"stop (?:reading|exploring|investigating|researching|analy[sz]ing|planning)|"
+          r"stop (?:reading|exploring|investigating|researching|analy[sz]ing|planning|"
+          r"deliberating|overthinking)|"
+          r"(?:do not|don'?t) (?:deliberate|overthink)|"
           r"enough (?:reading|research|exploring|planning))\b",
           _AGENCY, "assumes_and_acts", True),
-    _rule(r"\b(?:do it yourself|take control|i trust you|your call)\b",
+    _rule(r"(?<!not )(?<!n't )\b(?:do it yourself|"
+          r"(?:fix|handle|decide) (?:it|this|that|them) yourself|"
+          r"take control|i trust (?:you|your)|your call|"
+          r"(?:you have|with) full autonomy|(?:don'?t|no need to) wait for me)\b",
           _AGENCY, "assumes_and_acts", False),
     _rule(r"\b(?:you should have (?:asked|checked)|why didn'?t you (?:ask|check)|"
           r"without (?:asking|checking with) me(?: first)?)\b",
@@ -105,7 +116,8 @@ _HINT_RULES: tuple[_HintRule, ...] = (
           _AGENCY, "decides_unilaterally", False),
     _rule(r"\b(?:let me decide|i(?:'ll| will) decide|my call|do as i say|"
           r"you will do as i say)\b", _AGENCY, "defers_to_user", True),
-    _rule(r"\b(?:did you (?:test|check|verify)|you broke)\b",
+    _rule(r"\b(?:did you (?:actually )?(?:test|check|verify|run)|you broke|"
+          r"have you (?:actually |even )?(?:tested|checked|verified|run))\b",
           _RISK, "checks_before_acting", True),
     _rule(r"\b(?:be careful|double[- ]check|verify (?:first|before)|"
           r"test (?:it )?before|check first|"
@@ -116,32 +128,52 @@ _HINT_RULES: tuple[_HintRule, ...] = (
     _rule(r"\b(?:stop warning|skip the (?:caveats|warnings)|too cautious|"
           r"stop being (?:so )?careful|move faster)\b",
           _RISK, "acts_immediately", True),
+    _rule(r"\b(?:warn me (?:if|when|before|about)|flag (?:any )?(?:risks|issues|"
+          r"problems)|what could go wrong)\b", _RISK, "warns_frequently", False),
     _rule(r"\b(?:stop hedging|don'?t hedge|be (?:more )?(?:direct|decisive)|"
-          r"commit to an answer)\b", _EPI, "confident", True),
+          r"commit to an answer|no hedging)\b", _EPI, "confident", True),
     _rule(r"\b(?:don'?t (?:make (?:things|stuff) up|guess)|you'?re guessing|"
-          r"made (?:that|it|this) up|hallucinat\w*|if you don'?t know,? say)\b",
-          _EPI, "admits_ignorance", True),
+          r"made (?:that|it|this) up|making (?:that|it|this|things|stuff) up|"
+          r"hallucinat\w*|if you don'?t know,? say|out of your ass|"
+          r"don'?t bullshit)\b", _EPI, "admits_ignorance", True),
     _rule(r"\b(?:just say it|say it plainly)\b", _EPI, "confident", True),
+    _rule(r"\b(?:just pick (?:one)?|pick one|"
+          r"(?:give me|what'?s|what is) your recommendation|"
+          r"what (?:do|would) you recommend|one (?:right )?answer)\b",
+          _EPI, "confident", False),
     _rule(r"\b(?:too many (?:bullets|bullet points|headers|headings|tables|lists)|"
           r"stop (?:using|with the) (?:bullets|bullet points|headers|headings|tables)|"
           r"no (?:more )?(?:bullets|bullet points|headers|headings)|fewer bullets|"
-          r"less formatting)\b", _STRUCT, "prose", True),
-    _rule(r"\b(?:(?:write|answer|respond) in prose|as prose|in paragraphs)\b",
+          r"less formatting|too much formatting)\b", _STRUCT, "prose", True),
+    _rule(r"\b(?:(?:write|answer|respond|reply) in (?:prose|paragraphs|full "
+          r"sentences)|as prose|in paragraphs|not (?:as )?a (?:bulleted )?list)\b",
           _STRUCT, "prose", False),
-    _rule(r"\b(?:don'?t flatter|stop (?:flattering|praising|sucking up|"
+    _rule(r"\b(?:don'?t flatter|stop (?:flattering|praising|sucking up|apologi[sz]ing|"
           r"being (?:so )?sycophantic|telling me i'?m (?:absolutely )?right)|"
-          r"no (?:flattery|praise)|skip the (?:praise|compliments|flattery)|"
-          r"sycophan\w*)", _SYCO, "candid", True),
+          r"no (?:flattery|praise)|skip the (?:praise|compliments|flattery|"
+          r"pleasantries)|cut the (?:praise|pleasantries)|sycophan\w*)",
+          _SYCO, "candid", True),
+    _rule(r"\b(?:be (?:honest|candid|blunt|brutally honest)|don'?t sugarcoat|"
+          r"(?:tell|give) me (?:the )?(?:truth|straight))\b",
+          _SYCO, "candid", False),
     _rule(r"\b(?:stop (?:summari[sz]ing|recapping|narrating|announcing)|"
           r"don'?t (?:summari[sz]e|recap|narrate|announce)|no (?:recap|summary) "
           r"(?:at the end|needed)|skip the (?:recap|summary|preamble)|"
+          r"stop telling me what you(?:'re| are) (?:going|about) to|"
           r"get to the point|cut to the chase)\b", _NARR, "silent_action", True),
-    _rule(r"\b(?:too vague|be (?:more )?(?:specific|concrete)|"
-          r"(?:with|give me|cite) (?:the )?(?:file paths|line numbers|numbers))\b",
+    _rule(r"\b(?:what are you doing|what(?: i|')s happening|what is going on|"
+          r"i need an update|(?:give me|send) (?:an? )?(?:status|update)|"
+          r"keep me (?:posted|updated|informed))\b",
+          _NARR, "brief_signposting", False),
+    _rule(r"\b(?:too vague|(?<!must )(?<!should )be (?:more )?(?:specific|concrete)|"
+          r"be precise|with (?:the )?(?:file paths|line numbers)|"
+          r"(?:give me|cite|show me) (?:the )?(?:file paths|line numbers|numbers|"
+          r"evidence))\b",
           _SPEC, "concrete", False),
     _rule(r"\b(?:stop agreeing|don'?t (?:just )?agree with (?:me|everything)|"
           r"push back (?:if|when)|tell me (?:if|when) i'?m wrong|"
-          r"stop caving|don'?t cave)\b", _PUSH, "holds_position", False),
+          r"stop caving|don'?t (?:cave|fold|back down)|stand your ground|"
+          r"if you disagree,? (?:say|tell))\b", _PUSH, "holds_position", False),
 )
 
 _CORRECTION = re.compile(
@@ -165,9 +197,21 @@ _FAILED = re.compile(
 _APPROVAL = re.compile(
     r"^\s*(?:thanks?|thank you|thx|great|perfect|excellent|awesome|nice|good|"
     r"lgtm|looks good|love it|exactly|yes|yep|yeah|sure|ok(?:ay)?|approved?|"
-    r"agreed|confirmed|go(?: ahead)?|proceed|do it|ship it|correct|right)\b",
+    r"agreed|confirmed|go(?: ahead)?|proceed|do it|ship it|correct|right)\b"
+    # Praise or acceptance later in the opening ("Your objection is accepted.
+    # Now do the doc fix") approves the turn just as much as a leading "yes".
+    r"|\b(?:(?:is|are|was|were|been) (?:accepted|approved)|"
+    r"(?:scope|plan|proposal|objection|fix|change|work|approach|design|report) "
+    r"(?:is )?(?:accepted|approved)|"
+    r"(?:good|great|nice|excellent|solid) (?:job|work|catch|call|point|ideas?|find)|"
+    r"well done|thank you|thanks|lgtm|looks good|love (?:it|this)|spot on|"
+    r"exactly (?:right|what i)|that works|works (?:now|great|perfectly)|"
+    r"you(?:'re| are) right|makes sense)\b",
     re.IGNORECASE,
 )
+# Approval phrases count only in the opening of a reply; deep inside a long
+# brief they usually quote or instruct rather than judge the turn.
+_APPROVAL_SPAN = 200
 
 
 def hints_from_text(text: str) -> tuple[dict[str, str], bool]:
@@ -199,7 +243,7 @@ def judge_text(text: str) -> Endorsement:
         return Endorsement(0.0, "failed", hint)
     if hint:
         return Endorsement(0.0, "neutral", hint)
-    if _APPROVAL.search(head):
+    if _APPROVAL.search(head[:_APPROVAL_SPAN]):
         return Endorsement(1.0, "endorsed")
     return Endorsement(0.5, "continued")
 
