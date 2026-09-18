@@ -128,9 +128,11 @@ def test_structure_separates_prose_from_headers_and_bullets():
     assert _top(classify_structure(one_list)[0]) == "light_structure"
 
 
-def test_structure_ignores_code_blocks():
+def test_code_blocks_and_bold_lead_ins_are_light_structure():
     fenced = PROSE + "\n```\n# comment\n- not a bullet\n| a | b |\n```"
-    assert _top(classify_structure(fenced)[0]) == "prose"
+    assert _top(classify_structure(fenced)[0]) == "light_structure"
+    lead_in = "**Parser.** The bound was off by one.\n\n**Tests.** All 12 pass."
+    assert _top(classify_structure(lead_in)[0]) == "light_structure"
 
 
 def test_sycophancy_detects_praise_and_candor():
@@ -138,7 +140,7 @@ def test_sycophancy_detects_praise_and_candor():
     candid = "That won't work. The real problem is the lock ordering in store.py."
     assert _top(classify_sycophancy(flattering)[0]) == "flattering"
     assert _top(classify_sycophancy(candid)[0]) == "candid"
-    assert _top(classify_sycophancy(PROSE)[0]) == "neutral"
+    assert classify_sycophancy(PROSE)[1] == 0.0
 
 
 def _blocks(*texts: str) -> AgentTurn:
@@ -150,12 +152,14 @@ def _blocks(*texts: str) -> AgentTurn:
 def test_narration_separates_silent_signposting_and_recaps():
     silent = _blocks("Fixed the bound in parse.py:40. 12 tests pass.")
     signposted = _blocks("Let me check the parser.", "The bound was off by one; fixed.")
+    colon = _blocks("The redirect is missing. Fixing:", "Fixed; audio plays.")
     recapped = _blocks(
         "Let me check the parser.", "I'll now fix the bound.", "Now the tests.",
         "In summary, I fixed the bound. Hope this helps!",
     )
     assert _top(classify_narration(silent)[0]) == "silent_action"
     assert _top(classify_narration(signposted)[0]) == "brief_signposting"
+    assert _top(classify_narration(colon)[0]) == "brief_signposting"
     assert _top(classify_narration(recapped)[0]) == "narrates_and_recaps"
 
 
