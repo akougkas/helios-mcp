@@ -232,7 +232,12 @@ class TestPluginInstallReadiness:
             for entry in entries:
                 for hook in entry["hooks"]:
                     assert hook["type"] == "command"
-                    assert hook.get("async") is True
+                    # Every capture hook (calls hook-handler.py) must be
+                    # async/non-blocking. The one documented exception is
+                    # the SessionStart context-injection hook, which has
+                    # to be synchronous for Claude Code to read its stdout.
+                    if "hook-handler.py" in hook["command"]:
+                        assert hook.get("async") is True
 
     def test_mcp_json_valid(self):
         path = PLUGIN_DIR / ".mcp.json"
@@ -247,21 +252,27 @@ class TestPluginInstallReadiness:
         assert "description:" in content
         assert "user-invocable: true" in content
 
-    def test_handler_script_standalone(self):
-        """Handler script should work with just stdlib (no helios_mcp imports)."""
-        content = (PLUGIN_DIR / "hooks" / "hook-handler.py").read_text()
-        assert "from helios_mcp" not in content
-        assert "import helios_mcp" not in content
+    def test_hook_scripts_have_no_helios_mcp_dependency(self):
+        """Every hooks/*.py script must run under a bare python3 that may
+        not have helios_mcp installed, so none of them may import it —
+        checked via ast rather than a substring search, since a substring
+        check false-positives on any script whose comments or docstrings
+        merely mention helios_mcp.security (as hook-handler.py's does, to
+        explain why it doesn't import it)."""
+        import ast
 
-    def test_all_convention_dirs_exist(self):
-        """Convention-based discovery requires these paths to exist."""
-        assert (PLUGIN_DIR / "hooks" / "hooks.json").exists()
-        assert (PLUGIN_DIR / ".mcp.json").exists()
-        assert (PLUGIN_DIR / "skills").is_dir()
-        assert (PLUGIN_DIR / "agents").is_dir()
-
-    def test_agent_definition_exists(self):
-        assert (PLUGIN_DIR / "agents" / "helios-observer.md").is_file()
+        for script in (PLUGIN_DIR / "hooks").glob("*.py"):
+            tree = ast.parse(script.read_text(), filename=str(script))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    names = {alias.name.split(".")[0] for alias in node.names}
+                elif isinstance(node, ast.ImportFrom):
+                    names = {(node.module or "").split(".")[0]}
+                else:
+                    continue
+                assert "helios_mcp" not in names, (
+                    f"{script.name} imports helios_mcp: {ast.dump(node)}"
+                )
 
 
 class TestStandaloneSkillReadiness:

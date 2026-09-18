@@ -5,8 +5,9 @@ Called by Claude Code via hooks.json on every hook event. Reads JSON from
 stdin, derives a small set of privacy-safe features, and appends one JSONL
 record per event. Runs under the bare `python3` on PATH, not necessarily
 inside the project's managed venv, so this file stays stdlib-only and
-duplicates the persona-validation rules in helios_mcp.security rather than
-importing that package. tests/test_hook_handler.py asserts the two agree.
+imports persona resolution from the sibling _persona.py module rather
+than from helios_mcp.security. tests/test_hook_handler.py asserts
+_persona.py agrees with the package's own validator.
 
 Exit code 0 always (observe-only, never block, never raise past main()).
 
@@ -15,22 +16,22 @@ tool_response content to disk. Only derived, bounded features — lengths,
 counts, and small closed-vocabulary categories — cross into HELIOS_DIR.
 """
 
+import contextlib
 import json
 import os
-import re
+import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
-# Mirrors helios_mcp.security.SAFE_PERSONA_NAME_PATTERN exactly. Kept in
-# sync by tests/test_hook_handler.py, which imports both and fuzzes them
-# against the same input set.
-_SAFE_PERSONA_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,50}$")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _persona import resolve_persona  # noqa: E402
 
-_DEFAULT_PERSONA_FILENAME = "default_persona"
-_PERSONA_MARKER_FILENAME = ".helios-persona"
-_MAX_PERSONA_WALK_DEPTH = 64  # bound the upward directory walk
+_INGEST_TRIGGER_EVENTS = ("stop", "session-end")
+# Claude Code caps SessionEnd hooks at 60s regardless of a configured
+# timeout; Stop has no such cap (default 600s). Stay well under each.
+_INGEST_TIMEOUT_SECONDS = {"stop": 300, "session-end": 45}
 
 _MAX_OBS_BYTES = 5_000_000
 _BACKUP_COUNT = 3
@@ -51,63 +52,6 @@ _INSTALL_MARKERS = (
     "uv add", "uv sync", "uv pip install", "apt install", "apt-get install",
     "brew install", "cargo add",
 )
-
-
-def _validate_persona_name(name: str) -> str | None:
-    """Return name if it passes the persona-name whitelist, else None.
-
-    Never raises — this is the hot path and must never block a hook.
-    """
-    if not isinstance(name, str):
-        return None
-    if name != name.strip():
-        return None
-    if not _SAFE_PERSONA_NAME_PATTERN.match(name):
-        return None
-    return name
-
-
-def _read_first_line(path: Path) -> str | None:
-    try:
-        if not path.is_file():
-            return None
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-    first_line = text.splitlines()[0] if text.splitlines() else ""
-    return first_line.strip()
-
-
-def _resolve_persona(cwd: str, helios_dir: Path) -> str:
-    """HELIOS_PERSONA env > .helios-persona walking up from cwd > \
-HELIOS_DIR/default_persona > "default"."""
-    env_persona = _validate_persona_name(os.environ.get("HELIOS_PERSONA", ""))
-    if env_persona:
-        return env_persona
-
-    if cwd:
-        try:
-            current = Path(cwd).resolve()
-        except OSError:
-            current = None
-        if current is not None:
-            for _ in range(_MAX_PERSONA_WALK_DEPTH):
-                candidate = _read_first_line(current / _PERSONA_MARKER_FILENAME)
-                if candidate:
-                    validated = _validate_persona_name(candidate)
-                    if validated:
-                        return validated
-                if current.parent == current:
-                    break
-                current = current.parent
-
-    default_file_persona = _read_first_line(helios_dir / _DEFAULT_PERSONA_FILENAME)
-    if default_file_persona:
-        validated = _validate_persona_name(default_file_persona)
-        if validated:
-            return validated
-
-    return "default"
 
 
 def _classify_command(command: str) -> str:
@@ -143,22 +87,35 @@ def _tool_derived_fields(raw_json: dict[str, Any]) -> dict[str, Any]:
 
 
 def _looks_denied(raw_json: dict[str, Any]) -> bool:
-    """Best-effort permission-denial signal from documented-shape fields.
+    """Best-effort permission-denial signal from explicit decision fields.
 
-    Only inspects a small set of plausible keys for a truthy/deny-like
-    value; never retains the value itself, only the derived boolean.
+    A denial is the user or the permission system refusing to let a tool
+    run. It is distinct from the tool running and failing (that's
+    is_error below) — conflating the two would feed a failed pytest run
+    into the same signal as a rejected proposal. Only inspects
+    permission-decision-shaped fields; never retains the value itself,
+    only the derived boolean. Transcript parsing (observe's ingest
+    pipeline) is the authoritative source for denials — this is a
+    lightweight corroborating signal only.
     """
     for key in ("permission_decision", "decision"):
         value = raw_json.get(key)
         if isinstance(value, str) and value.lower() in ("deny", "block", "denied"):
             return True
+    return False
 
+
+def _looks_error(raw_json: dict[str, Any]) -> bool:
+    """Best-effort tool-failure signal from the tool_response shape.
+
+    Only inspects a small set of plausible keys for a truthy error-like
+    value; never retains the value itself, only the derived boolean.
+    """
     tool_response = raw_json.get("tool_response")
     if isinstance(tool_response, dict):
-        for key in ("is_error", "isError", "error", "denied"):
+        for key in ("is_error", "isError", "error"):
             if tool_response.get(key):
                 return True
-
     return False
 
 
@@ -168,6 +125,7 @@ def _event_derived_fields(event_type: str, raw_json: dict[str, Any]) -> dict[str
     if event_type in ("post-tool", "post-tool-failure", "pre-tool"):
         fields.update(_tool_derived_fields(raw_json))
         fields["success"] = event_type != "post-tool-failure"
+        fields["is_error"] = (not fields["success"]) or _looks_error(raw_json)
         fields["is_denied"] = _looks_denied(raw_json)
 
     elif event_type == "prompt-submit":
@@ -192,6 +150,56 @@ def _event_derived_fields(event_type: str, raw_json: dict[str, Any]) -> dict[str
         )
 
     return fields
+
+
+def _trigger_ingest(
+    event_type: str,
+    persona: str,
+    session_id: str,
+    transcript_path: str,
+    helios_dir: Path,
+) -> None:
+    """Fire-and-forget `helios-mcp ingest` for a finished turn/session.
+
+    Runs via `uvx --from ${HELIOS_SOURCE:-helios-mcp}` so a local checkout
+    works during development and a published PyPI release works later
+    (see .mcp.json). Only fires when there is an actual transcript file to
+    ingest — this also keeps hook-handler.py's own tests fast, since none
+    of them point transcript_path at a real file.
+
+    session-end passes --final: only the end of a session runs the Haiku
+    batch labeler over it, so a session's turns each get one heuristic
+    pass from repeated Stop firings and exactly one LLM pass at the end,
+    not one LLM call per turn.
+    """
+    if not session_id or not transcript_path:
+        return
+    try:
+        if not Path(transcript_path).is_file():
+            return
+    except OSError:
+        return
+
+    source = os.environ.get("HELIOS_SOURCE", "helios-mcp")
+    cmd = [
+        "uvx", "--from", source, "helios-mcp", "ingest",
+        "--persona", persona,
+        "--session-id", session_id,
+        "--transcript", transcript_path,
+        "--helios-dir", str(helios_dir),
+    ]
+    if event_type == "session-end":
+        cmd.append("--final")
+    # observe-only: ingest failing must never surface to the user
+    with contextlib.suppress(
+        OSError, subprocess.TimeoutExpired, subprocess.SubprocessError
+    ):
+        subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=_INGEST_TIMEOUT_SECONDS[event_type],
+            check=False,
+        )
 
 
 def _rotate_if_needed(obs_file: Path) -> None:
@@ -237,7 +245,7 @@ def main() -> None:
     permission_mode = raw_json.get("permission_mode", "")
     permission_mode = permission_mode if isinstance(permission_mode, str) else ""
 
-    persona = _resolve_persona(cwd, helios_dir)
+    persona = resolve_persona(cwd, helios_dir)
 
     record: dict[str, Any] = {
         "event_type": event_type,
@@ -258,6 +266,9 @@ def main() -> None:
             f.write(json.dumps(record) + "\n")
     except OSError:
         pass  # observe-only: a write failure must never surface to the user
+
+    if event_type in _INGEST_TRIGGER_EVENTS:
+        _trigger_ingest(event_type, persona, session_id, transcript_path, helios_dir)
 
 
 if __name__ == "__main__":

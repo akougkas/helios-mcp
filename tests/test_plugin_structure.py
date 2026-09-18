@@ -12,30 +12,10 @@ import pytest
 PLUGIN_DIR = Path(__file__).parent.parent / "helios-plugin"
 SKILL_DIR = Path(__file__).parent.parent / "helios-skill"
 
-
-# ---------------------------------------------------------------------------
-# 3.1 Plugin directory layout
-# ---------------------------------------------------------------------------
-
-
-class TestPluginLayout:
-    def test_plugin_dir_exists(self):
-        assert PLUGIN_DIR.is_dir()
-
-    def test_claude_plugin_dir(self):
-        assert (PLUGIN_DIR / ".claude-plugin").is_dir()
-
-    def test_hooks_dir(self):
-        assert (PLUGIN_DIR / "hooks").is_dir()
-
-    def test_skills_dir(self):
-        assert (PLUGIN_DIR / "skills" / "helios").is_dir()
-
-    def test_agents_dir(self):
-        assert (PLUGIN_DIR / "agents").is_dir()
-
-    def test_mcp_json_exists(self):
-        assert (PLUGIN_DIR / ".mcp.json").is_file()
+# Deliberately no plain "does this file/dir exist" test class here: every
+# fixture below (manifest, hooks, skill_content, ...) reads the same paths
+# and fails with a clear error if they're missing, so a dedicated
+# existence-only test would just be a slower, less informative duplicate.
 
 
 # ---------------------------------------------------------------------------
@@ -143,14 +123,27 @@ class TestHooksConfig:
                 for hook in entry["hooks"]:
                     assert hook["type"] == "command"
 
-    def test_all_hooks_are_async(self, hooks):
-        """All observation hooks should be async (non-blocking)."""
+    def test_capture_hooks_are_async(self, hooks):
+        """Every hook that invokes hook-handler.py (observation capture)
+        must be async — it must never block the user's session. The
+        SessionStart context-injection hook is the one deliberate
+        exception: Claude Code only reads a hook's stdout as context if
+        it waits for that hook to finish, so it has to be synchronous."""
         for event_type, entries in hooks["hooks"].items():
             for entry in entries:
                 for hook in entry["hooks"]:
-                    assert hook.get("async") is True, (
-                        f"{event_type} hook is not async"
-                    )
+                    if "hook-handler.py" in hook["command"]:
+                        assert hook.get("async") is True, (
+                            f"{event_type} capture hook is not async"
+                        )
+
+    def test_session_start_context_hook_is_sync(self, hooks):
+        session_start_hooks = hooks["hooks"]["SessionStart"][0]["hooks"]
+        context_hooks = [
+            h for h in session_start_hooks if "session-start-context.py" in h["command"]
+        ]
+        assert len(context_hooks) == 1
+        assert context_hooks[0].get("async") is not True
 
     def test_hooks_use_plugin_root_variable(self, hooks):
         """Commands should reference ${CLAUDE_PLUGIN_ROOT} for portability."""
@@ -161,21 +154,18 @@ class TestHooksConfig:
                         f"{event_type} hook does not use ${{CLAUDE_PLUGIN_ROOT}}"
                     )
 
-    def test_hooks_use_bundled_handler(self, hooks):
-        """Commands should call the bundled hook-handler.py, not traverse paths."""
+    def test_hooks_use_bundled_scripts(self, hooks):
+        """Commands should call a bundled hooks/*.py script, not traverse paths."""
+        bundled_scripts = {p.name for p in (PLUGIN_DIR / "hooks").glob("*.py")}
         for event_type, entries in hooks["hooks"].items():
             for entry in entries:
                 for hook in entry["hooks"]:
                     assert "/../" not in hook["command"], (
                         f"{event_type} hook uses path traversal"
                     )
-                    assert "hook-handler.py" in hook["command"], (
-                        f"{event_type} hook does not call bundled handler"
+                    assert any(script in hook["command"] for script in bundled_scripts), (
+                        f"{event_type} hook does not call a bundled hooks/*.py script"
                     )
-
-    def test_hook_handler_script_exists(self):
-        handler = PLUGIN_DIR / "hooks" / "hook-handler.py"
-        assert handler.is_file()
 
     def test_hook_handler_is_executable_python(self):
         handler = PLUGIN_DIR / "hooks" / "hook-handler.py"
@@ -304,15 +294,6 @@ class TestObserverAgent:
 
 
 class TestStandaloneSkill:
-    def test_skill_dir_exists(self):
-        assert SKILL_DIR.is_dir()
-
-    def test_has_skill_md(self):
-        assert (SKILL_DIR / "SKILL.md").is_file()
-
-    def test_has_mcp_json(self):
-        assert (SKILL_DIR / ".mcp.json").is_file()
-
     def test_skill_md_matches_plugin(self):
         plugin_skill = (PLUGIN_DIR / "skills" / "helios" / "SKILL.md").read_text()
         standalone_skill = (SKILL_DIR / "SKILL.md").read_text()

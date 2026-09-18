@@ -67,6 +67,11 @@
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/hook-handler.py session-start",
             "async": true
+          },
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.py",
+            "async": false
           }
         ]
       }
