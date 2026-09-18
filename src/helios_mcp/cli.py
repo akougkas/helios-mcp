@@ -255,6 +255,8 @@ def init_command(persona: str | None, home: Path | None, project_dir: Path | Non
     for dim, summary in result["distributions"].items():
         click.echo(f"  {dim:<24} {summary['dominant']} "
                    f"(entropy {summary['entropy']:.2f})")
+    if result["kept_accepted"]:
+        click.echo("Kept your accepted " + ", ".join(result["kept_accepted"]))
     click.echo(f"Saved to: {result['saved_to']}")
     click.echo(f"Rendered to: {result['rendered_to']}")
 

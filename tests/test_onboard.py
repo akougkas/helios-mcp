@@ -9,6 +9,7 @@ from helios_mcp.hierarchy import IdentityHierarchy
 from helios_mcp.onboard import onboard
 from helios_mcp.profile import BehavioralProfile
 from helios_mcp.service import HeliosService
+from helios_mcp.store import TurnObservation
 
 CLAUDE_MD = "# CLAUDE.md\n\n## Style\n\nBe terse and direct. Verify before acting.\n"
 
@@ -65,6 +66,26 @@ def test_onboard_rerun_overwrites_without_duplicating(tmp_path):
     personas_dir = helios_dir / "personas"
     assert sorted(p.name for p in personas_dir.glob("developer_user*")) == \
         ["developer_user.yaml"]
+
+
+def test_onboard_rerun_keeps_accepted_dimensions(tmp_path, monkeypatch):
+    monkeypatch.setenv("HELIOS_LLM", "0")
+    service = HeliosService(tmp_path / ".helios")
+    home = _home(tmp_path, "Be thorough and explain your reasoning in detail.\n")
+    onboard(service, home=home)
+    dim = "communication_register"
+    service.ledger.append(
+        TurnObservation("developer", "s", f"t{i}", float(i), "heuristic",
+                        {dim: {"terse": 1.0}}, endorsement=1.0)
+        for i in range(120))
+    service.accept("developer", service.drift_report("developer")["proposal_id"])
+    accepted = service.negotiator.declared("developer")
+
+    result = onboard(service, home=home)
+    assert result["kept_accepted"] == [dim]
+    after = service.negotiator.declared("developer")
+    assert after[dim] == pytest.approx(accepted[dim])
+    assert after[dim]["terse"] > 0.5
 
 
 def test_onboard_includes_active_output_style(tmp_path):
