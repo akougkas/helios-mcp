@@ -23,7 +23,7 @@ from pathlib import Path
 from .distribution import BehavioralDistribution
 from .llm import LLMClient, default_client
 from .profile import BehavioralProfile
-from .projector import project_with_llm
+from .projector import Projection, project_with_llm
 from .taxonomy import list_dimensions, list_states
 
 # ---------------------------------------------------------------------------
@@ -308,6 +308,11 @@ def _mentions(text: str, keyword: str) -> bool:
 
 
 def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]:
+    """The distributions of :func:`keyword_projection`."""
+    return keyword_projection(text_blocks).distributions
+
+
+def keyword_projection(text_blocks: list[str]) -> Projection:
     """Map text blocks to behavioral distributions via keyword matching.
 
     Scans all text blocks for keywords and accumulates weighted
@@ -321,7 +326,7 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
         text_blocks: List of personality-relevant text extracted from markdown.
 
     Returns:
-        Dict mapping dimension name to BehavioralDistribution.
+        A Projection whose addressed dimensions are those a keyword matched.
     """
     # Accumulate weights per dimension per state
     weights: dict[str, dict[str, float]] = {}
@@ -355,7 +360,7 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
             normalized = dict.fromkeys(weights[dim], 1.0 / n)
         dists[dim] = BehavioralDistribution(dim, normalized)
 
-    return dists
+    return Projection(dists, tuple(d for d in list_dimensions() if d in matched))
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +369,7 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
 
 def _project(
     text_blocks: list[str], client: LLMClient | None, helios_dir: Path | None = None
-) -> dict[str, BehavioralDistribution]:
+) -> Projection:
     """Model projection when a client is available, keyword heuristics otherwise.
 
     Without an explicit client, ``helios_dir`` decides whether the default one
@@ -376,7 +381,7 @@ def _project(
         projected = project_with_llm(text_blocks, client)
         if projected is not None:
             return projected
-    return keyword_project(text_blocks)
+    return keyword_projection(text_blocks)
 
 
 def import_from_markdown(
@@ -424,14 +429,15 @@ def import_from_markdown(
     text_blocks = extract_text_blocks(content, format)
 
     # Stage 2: project to distributions
-    distributions = _project(text_blocks, client, helios_dir)
+    projection = _project(text_blocks, client, helios_dir)
 
     # Build profile
     persona_name = path.stem.lower().replace(" ", "_")
     profile = BehavioralProfile(
         agent_id=persona_name,
         level="user",
-        distributions=distributions,
+        distributions=projection.distributions,
+        declared_dimensions=projection.addressed,
         parent_id="base",
         specialization_level=3,
         base_importance=0.7,
@@ -467,12 +473,13 @@ def import_from_text(
         format = detect_format(text)  # noqa: A001
 
     text_blocks = extract_text_blocks(text, format)
-    distributions = _project(text_blocks, client, helios_dir)
+    projection = _project(text_blocks, client, helios_dir)
 
     return BehavioralProfile(
         agent_id=name,
         level="user",
-        distributions=distributions,
+        distributions=projection.distributions,
+        declared_dimensions=projection.addressed,
         parent_id="base",
         specialization_level=3,
         base_importance=0.7,
@@ -585,10 +592,12 @@ def import_declared(
     blocks = [b for path in sources for b in _declared_blocks(path) if b.strip()]
     if not blocks:
         raise ValueError("No declared preferences to import")
+    projection = _project(blocks, client, helios_dir)
     return BehavioralProfile(
         agent_id=name,
         level="user",
-        distributions=_project(blocks, client, helios_dir),
+        distributions=projection.distributions,
+        declared_dimensions=projection.addressed,
         parent_id="base",
         specialization_level=3,
         base_importance=0.7,

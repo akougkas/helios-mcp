@@ -553,7 +553,13 @@ def build_taxonomy_description() -> str:
 def projection_schema() -> dict[str, Any]:
     return {
         "type": "object",
-        "properties": {d: _distribution_schema(d) for d in list_dimensions()},
-        "required": list_dimensions(),
+        "properties": {
+            "addressed": {
+                "type": "array",
+                "items": {"type": "string", "enum": list_dimensions()},
+            },
+            **{d: _distribution_schema(d) for d in list_dimensions()},
+        },
+        "required": ["addressed", *list_dimensions()],
         "additionalProperties": False,
     }

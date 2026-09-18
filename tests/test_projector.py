@@ -261,12 +261,12 @@ class FakeClient:
 class TestProjectWithLLM:
     def test_structured_reply_becomes_distributions(self):
         client = FakeClient(json.loads(_valid_response()))
-        dists = project_with_llm(["Be direct."], client)
-        assert dists is not None
-        assert dists["epistemic_style"]["confident"] > 0.5
+        projection = project_with_llm(["Be direct."], client)
+        assert projection is not None
+        assert projection.distributions["epistemic_style"]["confident"] > 0.5
         system, prompt, schema = client.calls[0]
         assert "Be direct." in prompt
-        assert set(schema["required"]) == set(list_dimensions())
+        assert set(schema["required"]) == {"addressed", *list_dimensions()}
 
     def test_failed_or_malformed_reply_returns_none(self):
         assert project_with_llm(["x"], FakeClient(None)) is None
@@ -284,8 +284,9 @@ class TestProjectWithLLM:
             def complete_json(self, system, prompt, schema):
                 return next(replies)
 
-        dists = project_with_llm(["Write in prose."], Sequenced(), samples=3)
-        assert dists is not None
+        projection = project_with_llm(["Write in prose."], Sequenced(), samples=3)
+        assert projection is not None
+        dists = projection.distributions
         assert dists["structure"]["prose"] == pytest.approx(0.5, abs=0.01)
         assert dists["structure"]["heavy_structure"] == pytest.approx(0.45, abs=0.01)
         # A dimension only one run gave is that run's, not diluted by the default.
@@ -297,3 +298,62 @@ class TestProjectWithLLM:
         assert modeled.distributions["communication_register"]["terse"] == pytest.approx(0.35, abs=0.01)
         fallback = import_from_text(text, client=FakeClient(None))
         assert fallback.distributions["communication_register"]["thorough"] > 0.2
+
+
+def _spread(dim):
+    states = list_states(dim)
+    return {s: 1.0 / len(states) for s in states}
+
+
+class TestAddressed:
+    def test_unaddressed_dims_take_the_default_and_are_not_declared(self):
+        reply = {d: _spread(d) for d in list_dimensions()}
+        reply["communication_register"] = {
+            "terse": 0.8, "moderate": 0.05, "thorough": 0.05,
+            "technical_dense": 0.05, "plain_accessible": 0.05,
+        }
+        reply["addressed"] = ["communication_register"]
+        projection = project_with_llm(["Be terse."], FakeClient(reply))
+        assert projection is not None
+        assert projection.addressed == ("communication_register",)
+        assert projection.distributions["communication_register"]["terse"] > 0.7
+        species = BehavioralProfile.default_species().distributions
+        # The near-uniform spread for a silent dim is dropped for the default.
+        assert projection.distributions["sycophancy"].to_dict() == species["sycophancy"].to_dict()
+
+    def test_addressed_needs_at_least_half_the_runs(self):
+        base = {d: _spread(d) for d in list_dimensions()}
+        replies = iter([
+            {**base, "addressed": ["structure", "pushback"]},
+            {**base, "addressed": ["structure"]},
+            {**base, "addressed": ["structure", "narration"]},
+        ])
+
+        class Sequenced:
+            def complete_json(self, system, prompt, schema):
+                return next(replies)
+
+        projection = project_with_llm(["x"], Sequenced(), samples=3)
+        assert projection is not None
+        assert projection.addressed == ("structure",)
+
+    def test_malformed_addressed_rejects_the_reply(self):
+        with pytest.raises(ValueError, match="addressed"):
+            parse_projection_response(json.dumps(
+                {"structure": _spread("structure"), "addressed": "structure"}))
+
+    def test_keyword_import_declares_the_matched_dims(self):
+        profile = import_from_text("# Style\nBe concise.", client=FakeClient(None))
+        assert "communication_register" in profile.declared_dimensions
+        assert "sycophancy" not in profile.declared_dimensions
+
+    def test_import_declared_records_the_model_list(self, tmp_path):
+        from helios_mcp.importer import import_declared
+
+        src = tmp_path / "CLAUDE.md"
+        src.write_text("# Style\nWrite in prose, no bullets.\n")
+        reply = {d: _spread(d) for d in list_dimensions()}
+        reply["addressed"] = ["structure"]
+        profile = import_declared([src], client=FakeClient(reply))
+        assert profile.declared_dimensions == ("structure",)
+        assert profile.projected_dimensions() == ("structure",)
