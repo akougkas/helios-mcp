@@ -240,3 +240,32 @@ def test_approved_turns_still_count_on_a_declared_dimension(helios):
     feed(helios, TERSE, 5, endorsement=1.0)
     evidence = Negotiator(helios).evidence("developer")
     assert evidence.endorsed[DIM]["terse"] == pytest.approx(4.0)
+
+
+def test_a_few_consistent_hints_are_enough_to_suggest(helios):
+    # A user who asks five times for no recaps has stated a preference; the
+    # agent's recapping turns themselves carry no weight once corrected.
+    neg = Negotiator(helios)
+    store = ObservationStore(helios)
+
+    def hint(i):
+        store.append([TurnObservation(
+            persona="developer", session_id="s", turn_id=f"t{i}",
+            timestamp=float(i), source="heuristic",
+            labels={"narration": {"narrates_and_recaps": 1.0}},
+            endorsement=-1.0 if i % 2 else 0.5,  # corrections and standing asks
+            correction_hint={"narration": "silent_action"})])
+
+    def tier():
+        return neg.evaluate("developer", auto_accept=False).endorsed.dimensions[
+            "narration"].tier
+
+    for i in range(2):
+        hint(i)
+    assert tier() is None
+    for i in range(2, 5):
+        hint(i)
+    assert tier() == "suggestion"
+    for i in range(5, 8):
+        hint(i)
+    assert tier() == "strong"

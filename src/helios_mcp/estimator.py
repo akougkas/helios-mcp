@@ -24,9 +24,11 @@ Two sets of counts come out, one per posterior:
   on real sessions corrected turns look stylistically like all other turns:
   most corrections are about content, and at full weight they pull every
   dimension toward uniform. A hint on an uncorrected turn is a standing
-  preference and adds ``standing_hint_weight`` toward the hinted state in
-  place of that dimension's label. Rejected proposals add ``rejection_strength``
-  pseudo-counts of the profile that was declared when the user said no.
+  preference and adds toward the hinted state in place of that dimension's
+  label. Both kinds of hint weigh ``hint_weight`` turns each, because a user
+  who names the style they want has said more than any single turn shows.
+  Rejected proposals add ``rejection_strength`` pseudo-counts of the profile
+  that was declared when the user said no.
 
 Accepting a proposal absorbs the evidence it was computed from into the
 declared profile. Counting that evidence again against the new profile would
@@ -211,7 +213,7 @@ class _Tally:
                 # the rest of the turn counts as uncorrected.
                 for dim, state in hints.items():
                     if dim in live:
-                        _add(endorsed, dim, {state: 1.0}, config.standing_hint_weight)
+                        _add(endorsed, dim, {state: 1.0}, config.hint_weight)
                 grade = grade_weight(obs.endorsement, config)
                 approved = (obs.endorsement is not None
                             and obs.endorsement >= _APPROVED)
@@ -229,7 +231,7 @@ class _Tally:
                 # not mention get no evidence from this turn either way.
                 for dim, state in hints.items():
                     if dim in live:
-                        _add(endorsed, dim, {state: 1.0}, strength)
+                        _add(endorsed, dim, {state: 1.0}, strength * config.hint_weight)
             else:
                 for dim in live & obs.labels.keys():
                     _add(endorsed, dim, _complement(dim, obs.labels[dim]),

@@ -62,6 +62,11 @@ class DriftConfig:
     model-labeled corpus, where passive turns weigh ``moved_on_weight``,
     stationary sessions in random order raise a suggestion in 2% of runs and
     a strong proposal in none; a suggestion level of 0.7 raises that to 23%.
+
+    ``hint_weight`` makes a stated preference count for more than one turn:
+    five hints against a declared state holding a third of the mass raise a
+    suggestion and seven a strong proposal. On the corpus labeled with the
+    current hint prompt it costs 4% stationary suggestions and no strong ones.
     """
 
     prior_strength: float = 25.0
@@ -72,7 +77,7 @@ class DriftConfig:
     auto_accept_level: float = 0.9
     auto_accept_min_change: float = 0.004
     rejection_strength: float = 10.0
-    standing_hint_weight: float = 1.0
+    hint_weight: float = 2.5
     approval_weight: float = 1.0
     moved_on_weight: float = 0.2
     neutral_weight: float = 0.0
