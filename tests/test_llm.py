@@ -118,7 +118,9 @@ def test_label_session_validates_and_keys_by_turn_id():
     ]}
     client = FakeClient([reply])
     out = label_session(turns, client)
-    assert set(out) == {turns[0].turn_id}
+    assert set(out) == {turns[0].turn_id, turns[1].turn_id}
+    assert out[turns[1].turn_id].labels == {}
+    assert out[turns[1].turn_id].endorsement is None
     first = out[turns[0].turn_id]
     assert first.labels["epistemic_style"]["confident"] == pytest.approx(0.75)
     assert first.confidence == 1.0

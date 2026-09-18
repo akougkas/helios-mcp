@@ -519,8 +519,9 @@ def label_session(
             if parsed is None or parsed[0] not in wanted:
                 continue
             index, label = parsed
-            if label.labels or label.endorsement is not None:
-                results[turns[index].turn_id] = label
+            # An empty label is still an answer. Ingest writes a row for it,
+            # so a resumed SessionEnd does not send the turn back.
+            results[turns[index].turn_id] = label
     return results
 
 
