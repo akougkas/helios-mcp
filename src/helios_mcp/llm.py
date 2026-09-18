@@ -102,7 +102,14 @@ class ClaudeCLIClient:
     def complete_json(
         self, system: str, prompt: str, schema: dict[str, Any]
     ) -> dict[str, Any] | None:
-        env = {**os.environ, "HELIOS_DISABLE": "1", "HELIOS_LLM": "0"}
+        # Extended thinking made a 3-turn batch take 127s and cost 4x more with
+        # no better labels, and pushed larger batches past the timeout.
+        env = {
+            **os.environ,
+            "HELIOS_DISABLE": "1",
+            "HELIOS_LLM": "0",
+            "MAX_THINKING_TOKENS": "0",
+        }
         with tempfile.TemporaryDirectory(prefix="helios-llm-") as cwd:
             try:
                 proc = subprocess.run(
