@@ -170,7 +170,7 @@ class TestSessionSimulation:
         assert expected.issubset(event_types)
 
     def test_tool_events_have_no_raw_content(self, session_dir):
-        """Capture stores derived features only — never the raw hook
+        """Capture stores derived features only, never the raw hook
         envelope. This replaces a prior version of this test that
         round-tripped stored records through parse_hook_stdin(record["data"],
         ...): that depended on hook-handler.py persisting the full raw
@@ -294,7 +294,7 @@ class TestStandaloneSkillReadiness:
         plugin-loaded MCP server's tools are named
         mcp__plugin_<plugin>_<server>__<tool>, while the same server
         configured directly (as the standalone skill's own .mcp.json
-        does) is named mcp__<server>__<tool> — no plugin_ component.
+        does) is named mcp__<server>__<tool>, with no plugin_ component.
         Confirmed against current docs. Everything else must match."""
         plugin_skill = (PLUGIN_DIR / "skills" / "helios" / "SKILL.md").read_text()
         standalone_skill = (self.SKILL_DIR / "SKILL.md").read_text()

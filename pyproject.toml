@@ -1,6 +1,6 @@
 [project]
 name = "helios-mcp"
-version = "0.4.0b1"
+version = "0.4.0b2"
 description = "Behavioral genome for AI agents with drift detection and profile negotiation"
 readme = "README.md"
 authors = [
@@ -24,8 +24,13 @@ dependencies = [
     # schemas this server publishes. See the SDK note in PLAN.md.
     "fastmcp>=2.12,<3",
     "pyyaml>=6.0.3",
-    "gitpython>=3.1.62",
     "click>=8.2",
+    # server.py imports these directly (ToolAnnotations, Field) rather than
+    # only through fastmcp, so they're declared even though fastmcp already
+    # pulls them in transitively. An undeclared direct import breaks the
+    # moment fastmcp's own pin on either of them moves.
+    "mcp>=1.13",
+    "pydantic>=2.11",
 ]
 
 [project.urls]
