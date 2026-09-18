@@ -77,7 +77,8 @@ _HINT_RULES: tuple[_HintRule, ...] = (
           _REG, "terse", True),
     _rule(r"\b(?:be (?:more )?(?:concise|brief|terse)|keep (?:it|them|answers|"
           r"replies|responses|reports) (?:short|brief|tight|concise)|"
-          r"just the answer)\b", _REG, "terse", False),
+          r"briefly|brief (?:summary|update|answer)|just the answer)\b",
+          _REG, "terse", False),
     _rule(r"\b(?:too short|too terse|more detail|more details|elaborate|"
           r"explain (?:more|why|in detail|your reasoning)|walk me through|"
           r"expand on|more context)\b",
@@ -99,7 +100,8 @@ _HINT_RULES: tuple[_HintRule, ...] = (
           r"(?:do not|don'?t) (?:deliberate|overthink)|"
           r"enough (?:reading|research|exploring|planning))\b",
           _AGENCY, "assumes_and_acts", True),
-    _rule(r"(?<!not )(?<!n't )\b(?:do it yourself|(?:fix|handle|decide) (?:it|this|that|them) yourself|"
+    _rule(r"(?<!not )(?<!n't )\b(?:do it yourself|"
+          r"(?:fix|handle|decide) (?:it|this|that|them) yourself|"
           r"take control|i trust (?:you|your)|your call|"
           r"(?:you have|with) full autonomy|(?:don'?t|no need to) wait for me)\b",
           _AGENCY, "assumes_and_acts", False),
@@ -135,7 +137,8 @@ _HINT_RULES: tuple[_HintRule, ...] = (
           r"hallucinat\w*|if you don'?t know,? say|out of your ass|"
           r"don'?t bullshit)\b", _EPI, "admits_ignorance", True),
     _rule(r"\b(?:just say it|say it plainly)\b", _EPI, "confident", True),
-    _rule(r"\b(?:just pick (?:one)?|pick one|(?:give me|what'?s|what is) your recommendation|"
+    _rule(r"\b(?:just pick (?:one)?|pick one|"
+          r"(?:give me|what'?s|what is) your recommendation|"
           r"what (?:do|would) you recommend|one (?:right )?answer)\b",
           _EPI, "confident", False),
     _rule(r"\b(?:too many (?:bullets|bullet points|headers|headings|tables|lists)|"
