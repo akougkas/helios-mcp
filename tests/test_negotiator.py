@@ -195,3 +195,17 @@ def test_racing_accepts_keep_both_dimensions_and_commit_only_their_files(
         ["git", "-C", str(helios), "log", "--name-only", "--format="],
         capture_output=True, text=True, check=True).stdout.split()
     assert "notes.txt" not in committed
+
+
+def test_a_shift_under_a_held_lead_names_the_state_that_gained():
+    from helios_mcp.drift import DimensionDrift
+    from helios_mcp.negotiation import _shift
+
+    declared = {"prose": 0.84, "light_structure": 0.10, "heavy_structure": 0.06}
+    mean = {"prose": 0.51, "light_structure": 0.43, "heavy_structure": 0.06}
+    r = DimensionDrift("structure", declared, mean, evidence=40.0, divergence=0.05,
+                       credibility=0.9, closeness=0.0, drifted=True,
+                       auto_accept=False, tier="suggestion")
+    text = _shift(r)
+    assert text.startswith("'light_structure' has grown from 10%")
+    assert "prefer 'prose'" not in text
