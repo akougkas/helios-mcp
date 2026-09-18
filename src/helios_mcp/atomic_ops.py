@@ -40,18 +40,6 @@ def atomic_write_yaml(path: Path, data: dict[str, Any]) -> None:
     )
 
 
-def validate_yaml_file(path: Path) -> bool:
-    """Check that a YAML file exists and parses without error."""
-    if not path.exists():
-        return False
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            yaml.safe_load(f)
-        return True
-    except (yaml.YAMLError, OSError):
-        return False
-
-
 _GIT_IDENTITY = {
     "GIT_AUTHOR_NAME": "helios",
     "GIT_AUTHOR_EMAIL": "helios@localhost",

@@ -394,27 +394,3 @@ def _normalize(probs: dict[str, float]) -> dict[str, float]:
         raise ValueError("Cannot normalize: all probabilities are zero.")
     return {k: v / total for k, v in probs.items()}
 
-
-def total_kl_divergence(
-    observed: dict[str, BehavioralDistribution],
-    declared: dict[str, BehavioralDistribution],
-) -> float:
-    """Compute total KL-divergence across all behavioral dimensions.
-
-    Used by the drift detector to compute the overall divergence score
-    between an observed behavioral fingerprint and a declared profile.
-
-    D_total = sum over dimensions of D_KL(observed_dim || declared_dim)
-
-    Args:
-        observed: Dict mapping dimension → observed distribution.
-        declared: Dict mapping dimension → declared distribution.
-
-    Returns:
-        Total KL-divergence across all shared dimensions.
-    """
-    total = 0.0
-    for dimension in observed:
-        if dimension in declared:
-            total += observed[dimension].kl_divergence(declared[dimension])
-    return total
