@@ -14,6 +14,8 @@ and generic markdown personality files.
 
 from __future__ import annotations
 
+import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -242,6 +244,17 @@ _KEYWORD_MAP: dict[str, list[tuple[str, str, float]]] = {
     "refuse": [("risk_caution", "refuses_ambiguity", 2.0)],
     "ambiguity": [("risk_caution", "refuses_ambiguity", 1.5)],
     "strict": [("risk_caution", "refuses_ambiguity", 1.0)],
+    # Manner dimensions. Each keyword almost always states the preference it
+    # maps to, whichever way the sentence around it is phrased.
+    "prose": [("structure", "prose", 2.0)],
+    "flatter": [("sycophancy", "candid", 2.0)],
+    "sycophan": [("sycophancy", "candid", 2.0)],
+    "recap": [("narration", "silent_action", 1.5)],
+    "pleasantries": [("narration", "silent_action", 1.5)],
+    "concrete": [("specificity", "concrete", 1.5)],
+    "line number": [("specificity", "concrete", 1.5)],
+    "push back": [("pushback", "holds_position", 1.5)],
+    "pushback": [("pushback", "holds_position", 1.5)],
 }
 
 
@@ -271,6 +284,8 @@ def keyword_project(text_blocks: list[str]) -> dict[str, BehavioralDistribution]
     for keyword, contributions in _KEYWORD_MAP.items():
         if keyword in full_text:
             for dim, state, weight in contributions:
+                if dim not in weights:
+                    continue
                 weights[dim][state] = weights[dim].get(state, 0.0) + weight
 
     # Normalize to distributions
@@ -400,4 +415,119 @@ def import_from_text(
         specialization_level=3,
         base_importance=0.7,
         description=f"Imported from text ({format} format)",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Declared artifacts: the user's CLAUDE.md and active output style
+# ---------------------------------------------------------------------------
+
+# Output styles that ship with Claude Code and have no file to read.
+_BUILTIN_STYLES = frozenset({"default", "explanatory", "learning"})
+_FRONTMATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+
+
+def claude_home() -> Path:
+    configured = os.environ.get("CLAUDE_CONFIG_DIR")
+    return Path(configured).expanduser() if configured else Path.home() / ".claude"
+
+
+def _setting(path: Path, key: str) -> str | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    value = data.get(key) if isinstance(data, dict) else None
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _frontmatter(content: str) -> tuple[dict[str, str], str]:
+    """Simple ``key: value`` frontmatter fields and the body after them."""
+    match = _FRONTMATTER.match(content)
+    if match is None:
+        return {}, content
+    fields: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            fields[key.strip().lower()] = value.strip().strip("\"'")
+    return fields, content[match.end():]
+
+
+def active_output_style(
+    home: Path | None = None, project_dir: Path | None = None
+) -> Path | None:
+    """The markdown file of the output style Claude Code is set to use.
+
+    Settings resolve with project local over project over user, and the style
+    name matches a file's frontmatter ``name`` or its stem, project styles
+    first. Built-in styles and unresolvable names give None.
+    """
+    home = home or claude_home()
+    settings = [home / "settings.json"]
+    style_dirs = [home / "output-styles"]
+    if project_dir is not None:
+        dot = project_dir / ".claude"
+        settings[:0] = [dot / "settings.local.json", dot / "settings.json"]
+        style_dirs.insert(0, dot / "output-styles")
+    name = next((n for p in settings if (n := _setting(p, "outputStyle"))), None)
+    if name is None or name.strip().lower() in _BUILTIN_STYLES:
+        return None
+    wanted = name.strip().lower()
+    for directory in style_dirs:
+        for path in sorted(directory.glob("*.md")):
+            try:
+                fields, _ = _frontmatter(path.read_text(encoding="utf-8"))
+            except OSError:
+                continue
+            if wanted in (fields.get("name", "").lower(), path.stem.lower()):
+                return path
+    return None
+
+
+def declared_sources(
+    home: Path | None = None, project_dir: Path | None = None
+) -> list[Path]:
+    """The user's global CLAUDE.md and active output style, where they exist."""
+    home = home or claude_home()
+    sources = [home / "CLAUDE.md"] if (home / "CLAUDE.md").is_file() else []
+    style = active_output_style(home, project_dir)
+    if style is not None:
+        sources.append(style)
+    return sources
+
+
+def _declared_blocks(path: Path) -> list[str]:
+    content = path.read_text(encoding="utf-8")
+    fields, body = _frontmatter(content)
+    if fields:
+        # An output style: every section is about manner, and the frontmatter
+        # description is a one-line statement of it.
+        blocks = extract_text_blocks(body, "claude")
+        description = fields.get("description")
+        return [description, *blocks] if description else blocks
+    return extract_text_blocks(content, detect_format(content, path.name))
+
+
+def import_declared(
+    sources: list[Path],
+    name: str = "declared",
+    client: LLMClient | None = None,
+) -> BehavioralProfile:
+    """Project several declared artifacts together into one user-level profile.
+
+    The artifacts are read as one statement of preference, so an output style
+    and a CLAUDE.md that address different dimensions both land in the result.
+    """
+    blocks = [b for path in sources for b in _declared_blocks(path) if b.strip()]
+    if not blocks:
+        raise ValueError("No declared preferences to import")
+    return BehavioralProfile(
+        agent_id=name,
+        level="user",
+        distributions=_project(blocks, client),
+        parent_id="base",
+        specialization_level=3,
+        base_importance=0.7,
+        description="Imported from " + ", ".join(p.name for p in sources),
     )
