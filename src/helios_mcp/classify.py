@@ -329,6 +329,9 @@ def classify_risk(turn: AgentTurn) -> tuple[dict[str, float], float]:
 _HEADER_LINE = re.compile(r"^\s{0,3}#{1,6}\s+\S|^\s*\*\*[^*\n]{2,60}\*\*:?\s*$")
 _BULLET_LINE = re.compile(r"^\s*(?:[-*+•]|\d{1,2}[.)])\s+\S")
 _TABLE_LINE = re.compile(r"^\s*\|.*\|\s*$")
+# A paragraph that opens with a bold label, like "**Tests.** All pass".
+_BOLD_LEAD = re.compile(r"^\s*\*\*[^*\n]{2,80}\*\*\s*\S")
+_FENCE_OPEN = re.compile(r"^\s*```", re.MULTILINE)
 
 _FLATTERY = re.compile(
     r"\b(?:great (?:question|point|idea|catch|call|instinct)|"
@@ -436,9 +439,17 @@ def classify_structure(text: str) -> tuple[dict[str, float], float]:
     headers = sum(1 for ln in lines if _HEADER_LINE.match(ln))
     bullets = sum(1 for ln in lines if _BULLET_LINE.match(ln))
     tables = sum(1 for ln in lines if _TABLE_LINE.match(ln))
+    # Code blocks and bold lead-ins are light structure: they mark a response
+    # up without turning it into an outline.
+    light = len(_FENCE_OPEN.findall(text)) // 2 + sum(
+        1 for ln in lines if _BOLD_LEAD.match(ln)
+    )
     marked = headers + bullets + tables
     share = marked / len(lines)
-    if marked == 0:
+    if marked == 0 and light:
+        counts["light_structure"] = 1.0 + 0.25 * min(light, 4)
+        counts["prose"] = 0.5
+    elif marked == 0:
         counts["prose"] = 1.0 + 0.25 * min(len(lines), 4)
     elif headers >= 2 or tables >= 3 or share > 0.5:
         counts["heavy_structure"] = 1.5 + 0.5 * min(headers, 3)
@@ -453,13 +464,10 @@ def classify_structure(text: str) -> tuple[dict[str, float], float]:
 def classify_sycophancy(text: str) -> tuple[dict[str, float], float]:
     counts = {"candid": 0.0, "neutral": 0.0, "flattering": 0.0}
     body = prose(text)
-    sents = sentences(text)
-    if not sents:
-        return counts, 0.0
     counts["flattering"] = 1.5 * min(len(_FLATTERY.findall(body)), 3)
     counts["candid"] = 1.0 * min(len(_CANDID.findall(body)), 3)
-    # Absence of praise is weak evidence, like an unhedged declarative.
-    counts["neutral"] = 0.1 * min(len(sents), 10)
+    # A plain report with nothing to praise or dispute says nothing about this
+    # dimension, so the label is omitted rather than defaulted to neutral.
     return counts, _saturate(sum(counts.values()), 2.0)
 
 
@@ -471,6 +479,10 @@ def classify_narration(turn: AgentTurn) -> tuple[dict[str, float], float]:
     if not blocks:
         return counts, 0.0
     announce = sum(len(_ANNOUNCE.findall(b)) for b in blocks)
+    # "Fixing:" or "Writing the redirect:" before a tool call announces it.
+    announce += sum(
+        1 for b in blocks[:-1] if b.rstrip().endswith(":") and len(b.strip()) < 160
+    )
     recap = len(_RECAP.findall(blocks[-1]))
     closer = len(_CLOSER.findall(blocks[-1]))
     if announce + recap + closer == 0:
