@@ -5,6 +5,7 @@ from click.testing import CliRunner
 from fastmcp import Client
 
 from helios_mcp.cli import main
+from helios_mcp.security import SecurityError
 from helios_mcp.server import create_server
 from helios_mcp.service import HeliosService
 from helios_mcp.store import TurnObservation
@@ -96,6 +97,51 @@ def test_cli_ingest_of_missing_transcript_is_a_quiet_noop(tmp_path):
         "--transcript", str(tmp_path / "nope.jsonl"), "--helios-dir", str(tmp_path)])
     assert result.exit_code == 0
     assert result.output == ""
+
+
+def test_rendered_context_counters_each_models_own_tendencies(tmp_path):
+    service = HeliosService(tmp_path)
+    bullets = {"structure": {"heavy_structure": 1.0}}
+    declared = service.negotiator.declared("developer")["structure"]
+    turns = [TurnObservation(persona="developer", session_id="s", turn_id=f"a{i}",
+                             timestamp=float(i), source="heuristic", labels=bullets,
+                             model="model-a")
+             for i in range(40)]
+    turns += [TurnObservation(persona="developer", session_id="s", turn_id=f"b{i}",
+                              timestamp=float(i), source="heuristic",
+                              labels={"structure": declared}, model="model-b")
+              for i in range(60)]
+    service.record(turns, "developer")
+
+    # The fingerprint is diagnostics only: nothing here is endorsed evidence.
+    assert service.drift_report("developer")["proposal_id"] is None
+    rendered = (tmp_path / "rendered" / "developer.md").read_text()
+    assert "If you are model-a:" in rendered
+    assert "headers and bullet points" in rendered
+    assert "model-b" not in rendered
+    assert "If you are model-a:" in service.context("developer", "model-a")[
+        "behavioral_context"]
+    assert "model-a" not in service.context("developer", "model-b")[
+        "behavioral_context"]
+    printed = CliRunner().invoke(main, ["--helios-dir", str(tmp_path), "render",
+                                        "developer", "--model", "model-a"])
+    assert "Tendencies to counter" in printed.output
+
+
+def test_import_validates_the_persona_before_reading_the_source(tmp_path):
+    service = HeliosService(tmp_path)
+    with pytest.raises(SecurityError):
+        service.import_profile(tmp_path / "missing.md", "../escape")
+
+
+def test_cli_status_shows_the_observed_posterior_next_to_the_declared(tmp_path):
+    HeliosService(tmp_path).record(terse_turns(60), "developer")
+    result = CliRunner().invoke(main, ["--helios-dir", str(tmp_path), "status"])
+    assert result.exit_code == 0, result.output
+    line = next(ln for ln in result.output.splitlines() if DIM in ln)
+    assert "declared moderate" in line
+    assert "-> observed terse" in line
+    assert "strong" in line
 
 
 def test_cli_negotiate_accepts_pending_proposal(tmp_path):

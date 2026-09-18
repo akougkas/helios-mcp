@@ -95,10 +95,12 @@ def status_command(helios_dir: Path | None) -> None:
                    if report["proposal_id"] else "none")
         click.echo(f"\n{persona}: {report['turns']} turns, pending proposal: {pending}")
         for dim, r in report["endorsed"].items():
+            declared, observed = r["dominant_declared"], r["dominant_observed"]
+            tier = f", {r['tier']}" if r["tier"] else ""
             click.echo(
-                f"  {dim:<24} {r['dominant_declared']} "
-                f"({r['declared'][r['dominant_declared']]:.2f})  "
-                f"JS {r['divergence']:.4f}  credible {r['credibility']:.0%}"
+                f"  {dim:<24} declared {declared} {r['declared'][declared]:.2f} "
+                f"-> observed {observed} {r['posterior_mean'][observed]:.2f}  "
+                f"(JS {r['divergence']:.4f}, credible {r['credibility']:.0%}{tier})"
             )
 
 
@@ -169,10 +171,17 @@ def ingest_command(persona: str | None, session_id: str, transcript: Path,
 
 @main.command("render")
 @click.argument("persona", required=False)
+@click.option("--model", default=None,
+              help="Print the context for this model id instead of writing the file.")
 @helios_dir_option
-def render_command(persona: str | None, helios_dir: Path | None) -> None:
+def render_command(persona: str | None, model: str | None,
+                   helios_dir: Path | None) -> None:
     """Write rendered/<persona>.md, the context injected at SessionStart."""
-    click.echo(str(_service(helios_dir).render(persona)))
+    service = _service(helios_dir)
+    if model:
+        click.echo(service.render_text(persona, model), nl=False)
+    else:
+        click.echo(str(service.render(persona)))
 
 
 @main.group("persona")

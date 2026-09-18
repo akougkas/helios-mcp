@@ -144,11 +144,16 @@ async def create_server(helios_dir: Path | None = None) -> FastMCP:
     )
     async def get_behavioral_context(
         persona_name: str = Field(default="", description=_PERSONA_HELP),
+        model: str = Field(
+            default="",
+            description="Model id of the calling agent, e.g. claude-opus-5. When "
+            "given, the context counters that model's own observed tendencies; "
+            "otherwise it covers the most observed models"),
         ctx: Context | None = None,  # noqa: ARG001 - required by FastMCP tool signature
     ) -> GetBehavioralContextResult:
         try:
             return cast(GetBehavioralContextResult,
-                        _ok(service.context(persona_name or None)))
+                        _ok(service.context(persona_name or None, model or None)))
         except Exception as e:
             return cast(GetBehavioralContextResult,
                         _error("get_behavioral_context", e))
