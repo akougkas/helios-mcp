@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from helios_mcp.endorsement import hints_from_text, judge_text, judge_turn
+from helios_mcp.taxonomy import list_dimensions
 from helios_mcp.transcript import parse_records
 
 from .transcript_fixtures import TranscriptBuilder
@@ -111,3 +112,33 @@ def test_style_request_that_contradicts_the_turn_is_a_correction():
     assert (deleted.value, deleted.kind) == (-1.0, "corrected")
     assert deleted.correction_hint == {"interaction_agency": "asks_first", "risk_caution": "checks_before_acting"}
     assert understood.value == 0.0  # the short "Understood." already is brief
+
+
+_MANNER = ["structure", "sycophancy", "narration", "specificity", "pushback"]
+
+
+@pytest.mark.parametrize(
+    ("text", "dim", "state", "complaint"),
+    [
+        ("too many bullets, just talk to me", "structure", "prose", True),
+        ("please stop summarizing at the end", "narration", "silent_action", True),
+        ("don't flatter me", "sycophancy", "candid", True),
+        ("be more specific about where it breaks", "specificity", "concrete", False),
+        ("push back if you think I'm wrong", "pushback", "holds_position", False),
+    ],
+)
+def test_manner_style_requests_become_hints(monkeypatch, text, dim, state, complaint):
+    known = list_dimensions() + [d for d in _MANNER if d not in list_dimensions()]
+    monkeypatch.setattr("helios_mcp.endorsement.list_dimensions", lambda: known)
+    hints, is_complaint = hints_from_text(text)
+    assert hints.get(dim) == state
+    assert is_complaint is complaint
+
+
+def test_hints_for_undefined_dimensions_are_dropped(monkeypatch):
+    monkeypatch.setattr(
+        "helios_mcp.endorsement.list_dimensions", lambda: ["communication_register"]
+    )
+    assert hints_from_text("too many bullets, and too long") == (
+        {"communication_register": "terse"}, True,
+    )
