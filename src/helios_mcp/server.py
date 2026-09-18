@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
 from fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
@@ -357,13 +357,17 @@ are git-committed."""
             engine = NegotiationEngine()
 
             if decision.lower() == "reject":
-                # negotiation.py's reject_update is annotated `-> dict`; cast to
-                # the published tool return shape without changing its payload.
-                return cast(
-                    NegotiateUpdateResult,
-                    engine.reject_update(
-                        persona_name, reason or "user rejected", helios_dir
-                    ),
+                rejected = engine.reject_update(
+                    persona_name, reason or "user rejected", helios_dir
+                )
+                # Widened explicitly rather than cast: negotiation.py states its
+                # exact return shape, while this tool's published schema is
+                # total=False across every branch, so the keys are mapped by hand
+                # to keep both sides type-checked.
+                return NegotiateUpdateResult(
+                    status=rejected["status"],
+                    persona=rejected["persona"],
+                    reason=rejected["reason"],
                 )
 
             if decision.lower() == "accept":
@@ -379,13 +383,13 @@ are git-committed."""
                 proposal = engine.generate_summary(
                     persona_name, profile, observed_dists, drift_result
                 )
-                # negotiation.py's apply_update is annotated `-> dict`; cast to
-                # the published tool return shape without changing its payload.
-                return cast(
-                    NegotiateUpdateResult,
-                    engine.apply_update(
-                        persona_name, proposal, helios_dir, accepted_dimensions
-                    ),
+                applied = engine.apply_update(
+                    persona_name, proposal, helios_dir, accepted_dimensions
+                )
+                return NegotiateUpdateResult(
+                    status=applied["status"],
+                    updated_dimensions=applied["updated_dimensions"],
+                    commit_message=applied["commit_message"],
                 )
 
             return {

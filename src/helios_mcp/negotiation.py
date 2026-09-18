@@ -14,7 +14,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 from .distribution import BehavioralDistribution
 from .drift import DriftDetector, DriftResult
@@ -46,6 +46,31 @@ class NegotiationProposal:
     proposed_distributions: dict[str, dict[str, float]]
     drift_result: DriftResult
     proposed_at: str
+
+
+# ---------------------------------------------------------------------------
+# Result TypedDicts
+#
+# apply_update and reject_update each return exactly one key set on every
+# call — neither has an error/short-circuit branch that returns a different
+# shape, so both are modeled as total (all-required) TypedDicts.
+# ---------------------------------------------------------------------------
+
+
+class ApplyUpdateResult(TypedDict):
+    """Return shape of NegotiationEngine.apply_update."""
+
+    status: str
+    updated_dimensions: list[str]
+    commit_message: str
+
+
+class RejectUpdateResult(TypedDict):
+    """Return shape of NegotiationEngine.reject_update."""
+
+    status: str
+    persona: str
+    reason: str
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +223,7 @@ class NegotiationEngine:
         proposal: NegotiationProposal,
         helios_dir: Path,
         accepted_dimensions: list[str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> ApplyUpdateResult:
         """Apply an accepted negotiation proposal to the persona's profile.
 
         Args:
@@ -260,7 +285,7 @@ class NegotiationEngine:
         persona_name: str,
         reason: str,
         helios_dir: Path,  # noqa: ARG002 - symmetry with apply_update
-    ) -> dict[str, str]:
+    ) -> RejectUpdateResult:
         """Reject a negotiation proposal and log the rejection.
 
         Args:

@@ -12,7 +12,7 @@ Not a RAG system, not a preference store, not a static personality file.
 
 ```bash
 uv sync                                    # install deps
-uv run pytest tests/ -q                    # all tests (253)
+uv run pytest tests/ -q                    # all tests (698)
 uv run pytest tests/test_distribution.py   # single file
 uv run pytest -k "kl_divergence"           # by name
 uv run pytest --cov=src/helios_mcp         # coverage
@@ -61,11 +61,13 @@ Taxonomy is **not locked**. Research needed before hardening (see `.specs/helios
 ### Module Flow
 
 ```
-server.py (5 MCP tools)
+server.py (7 MCP tools)
 ├── hierarchy.py → profile.py → distribution.py → taxonomy.py
-├── observer.py → distribution.py, taxonomy.py
+├── observer.py → distribution.py, taxonomy.py, hook_events.py, hook_observer.py
 ├── drift.py → distribution.py
 ├── negotiation.py → drift.py, observer.py, profile.py
+├── importer.py → profile.py, distribution.py, taxonomy.py
+├── exporter.py → profile.py, distribution.py, taxonomy.py
 ├── renderer.py → profile.py, taxonomy.py
 └── security.py
 ```

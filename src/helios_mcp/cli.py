@@ -163,10 +163,7 @@ def negotiate_command(
     if observer.get_observation_count(persona) == 0 and persona != "default":
         observer.replay_raw_hooks("default")
         # Re-attribute to the requested persona
-        if "default" in observer._hook_observations:
-            observer._hook_observations[persona] = (
-                observer._hook_observations["default"]
-            )
+        observer.reattribute_hook_observations("default", persona)
 
     obs_count = observer.get_observation_count(persona)
     if obs_count == 0:
@@ -233,11 +230,11 @@ def negotiate_command(
         )
     elif action == "R":
         try:
-            outcome = engine.reject_update(persona, "user rejected", helios_dir)
+            rejection = engine.reject_update(persona, "user rejected", helios_dir)
         except Exception as exc:
             click.echo(f"Failed to reject update for '{persona}': {exc}", err=True)
             raise SystemExit(1) from exc
-        click.echo(f"Changes rejected: {outcome.get('reason', 'user rejected')}")
+        click.echo(f"Changes rejected: {rejection.get('reason', 'user rejected')}")
     else:
         click.echo("No action taken.")
 

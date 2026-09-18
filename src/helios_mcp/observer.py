@@ -622,6 +622,35 @@ class BehavioralObserver:
 
         return self.observe_hooks(persona_name, events)
 
+    def reattribute_hook_observations(
+        self, source_persona: str, target_persona: str
+    ) -> bool:
+        """Re-attribute in-memory hook observations from one persona to another.
+
+        The fast-path hook handler (the `helios-mcp hook` CLI command) writes
+        raw events under the "default" persona whenever it cannot resolve
+        which persona is currently active. Callers that need those events
+        counted against a specific persona — e.g. `negotiate` falling back to
+        "default" observations when the requested persona has none of its
+        own — call this method instead of reaching into the private
+        `_hook_observations` dict directly.
+
+        Args:
+            source_persona: Persona whose in-memory hook observations should
+                be re-attributed (typically "default").
+            target_persona: Persona to re-attribute the observations to.
+
+        Returns:
+            True if observations were found under source_persona and
+            re-attributed, False if there was nothing to move.
+        """
+        if source_persona in self._hook_observations:
+            self._hook_observations[target_persona] = self._hook_observations[
+                source_persona
+            ]
+            return True
+        return False
+
     def get_observation_count(self, persona_name: str) -> int:
         """Return the total number of observations (text + hook) for a persona."""
         if persona_name not in self._observations:
