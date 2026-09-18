@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 from .distribution import BehavioralDistribution
 from .llm import LLMClient, build_taxonomy_description, projection_schema
@@ -39,20 +40,15 @@ _SYSTEM_PROMPT = (
     "- Base your estimates on the text provided, not assumptions\n"
     "- If the text is ambiguous for a dimension, use a spread distribution "
     "(closer to uniform)\n"
+    "- Project the preferences the text states, not how the text itself is "
+    "written: a rules file written as bullets does not ask for bullets\n"
+    "- Each distribution says how often the agent should behave each way. A "
+    "behavior the text allows only in narrow cases (\"ask only at real design "
+    "forks\") is a minority state; the default the text implies for everything "
+    "else is the majority\n"
     "\n"
-    "Respond with ONLY a JSON object in this exact format:\n"
-    "{{\n"
-    '  "epistemic_style": {{"confident": 0.0, "hedging": 0.0, '
-    '"admits_ignorance": 0.0, "speculating": 0.0}},\n'
-    '  "interaction_agency": {{"asks_first": 0.0, "assumes_and_acts": 0.0, '
-    '"offers_options": 0.0, "decides_unilaterally": 0.0, '
-    '"defers_to_user": 0.0}},\n'
-    '  "communication_register": {{"terse": 0.0, "moderate": 0.0, '
-    '"thorough": 0.0, "technical_dense": 0.0, "plain_accessible": 0.0}},\n'
-    '  "risk_caution": {{"acts_immediately": 0.0, '
-    '"checks_before_acting": 0.0, "warns_frequently": 0.0, '
-    '"refuses_ambiguity": 0.0}}\n'
-    "}}\n"
+    "Respond with ONLY a JSON object mapping every dimension name to an object "
+    "of state probabilities.\n"
     "\n"
     "No explanation. No markdown. Just the JSON object."
 )
@@ -178,13 +174,14 @@ def validate_and_normalize(
 # Main projection function
 # ---------------------------------------------------------------------------
 
-def project_with_llm(
-    text_blocks: list[str], client: LLMClient
+# One projection call is noisy: the same file can swing a state by 0.4 between
+# calls. The mean of a few independent calls is what gets stored.
+PROJECTION_SAMPLES = 3
+
+
+def _project_once(
+    system: str, user: str, client: LLMClient
 ) -> dict[str, BehavioralDistribution] | None:
-    """Project text blocks through the model, or None if the call failed."""
-    if not any(block.strip() for block in text_blocks):
-        return None
-    system, user = build_projection_prompt(text_blocks)
     data = client.complete_json(system, user, projection_schema())
     if data is None:
         return None
@@ -193,3 +190,27 @@ def project_with_llm(
     except ValueError:
         return None
     return validate_and_normalize(raw)
+
+
+def project_with_llm(
+    text_blocks: list[str], client: LLMClient, samples: int = PROJECTION_SAMPLES
+) -> dict[str, BehavioralDistribution] | None:
+    """Mean of ``samples`` model projections, or None if every call failed."""
+    if not any(block.strip() for block in text_blocks):
+        return None
+    system, user = build_projection_prompt(text_blocks)
+    with ThreadPoolExecutor(max_workers=max(samples, 1)) as pool:
+        runs = [
+            r for r in pool.map(
+                lambda _: _project_once(system, user, client), range(max(samples, 1))
+            ) if r is not None
+        ]
+    if not runs:
+        return None
+    return {
+        dim: BehavioralDistribution(dim, {
+            state: sum(run[dim][state] for run in runs) / len(runs)
+            for state in list_states(dim)
+        })
+        for dim in runs[0]
+    }
