@@ -56,7 +56,10 @@ def _quantiles(values: list[float]) -> dict[str, float]:
     if not values:
         return {}
     values = sorted(values)
-    pick = lambda q: values[min(int(q * len(values)), len(values) - 1)]  # noqa: E731
+
+    def pick(q: float) -> float:
+        return values[min(int(q * len(values)), len(values) - 1)]
+
     return {
         "p10": round(pick(0.1), 4),
         "p50": round(pick(0.5), 4),
