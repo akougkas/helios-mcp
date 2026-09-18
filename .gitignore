@@ -49,3 +49,5 @@ scratch/
 SESSION_PROMPT.md
 ai-docs/
 .claude/
+.sprint/
+.specs/
