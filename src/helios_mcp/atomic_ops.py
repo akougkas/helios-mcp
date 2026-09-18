@@ -1,10 +1,13 @@
 """Durable writes: atomic file replacement and git commits of profile history."""
 
+import fcntl
 import logging
 import os
 import subprocess
 import tempfile
-from collections.abc import Iterable
+import threading
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +41,38 @@ def atomic_write_yaml(path: Path, data: dict[str, Any]) -> None:
             data, default_flow_style=False, sort_keys=False, allow_unicode=True
         ),
     )
+
+
+_held = threading.local()
+
+
+@contextmanager
+def helios_lock(helios_dir: Path) -> Iterator[None]:
+    """Serialize profile writes and their commits under ``helios_dir``.
+
+    A user accept, an auto-accept from another session's hook and an import
+    each read, edit and commit the same files. The lock is an flock, so it
+    holds across processes and threads, and it is reentrant within a thread
+    so a locked caller can call ``git_commit``, which takes it too.
+    """
+    key = str(Path(helios_dir).resolve())
+    depth: dict[str, int] = _held.__dict__.setdefault("depth", {})
+    if depth.get(key):
+        depth[key] += 1
+        try:
+            yield
+        finally:
+            depth[key] -= 1
+        return
+    Path(key).mkdir(parents=True, exist_ok=True)
+    with open(Path(key) / "helios.lock", "a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        depth[key] = 1
+        try:
+            yield
+        finally:
+            depth[key] = 0
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 _GIT_IDENTITY = {
@@ -80,6 +115,11 @@ def git_commit(repo: Path, paths: Iterable[Path], message: str) -> str | None:
     changed, or the commit failed. Profile writes must not fail because
     history could not be recorded, so failures are logged, not raised.
     """
+    with helios_lock(repo):
+        return _git_commit(repo, paths, message)
+
+
+def _git_commit(repo: Path, paths: Iterable[Path], message: str) -> str | None:
     try:
         if not (repo / ".git").exists():
             repo.mkdir(parents=True, exist_ok=True)
@@ -91,9 +131,11 @@ def git_commit(repo: Path, paths: Iterable[Path], message: str) -> str | None:
             paths = [*paths, gitignore]
         rel = [str(Path(p).resolve().relative_to(repo.resolve())) for p in paths]
         _git(repo, "add", "--", *rel)
-        if _git(repo, "diff", "--cached", "--quiet").returncode == 0:
+        if _git(repo, "diff", "--cached", "--quiet", "--", *rel).returncode == 0:
             return None
-        result = _git(repo, "commit", "-q", "-m", message)
+        # Only the given paths, so a file someone else staged never lands
+        # under this message.
+        result = _git(repo, "commit", "-q", "-m", message, "--", *rel)
         if result.returncode != 0:
             logger.warning("git commit in %s failed: %s", repo, result.stderr.strip())
             return None

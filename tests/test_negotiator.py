@@ -1,6 +1,8 @@
 """End-to-end invariants of the observe, drift, negotiate, commit cycle."""
 
 import subprocess
+import threading
+import time
 
 import pytest
 
@@ -145,3 +147,51 @@ def test_session_override_is_not_the_negotiation_baseline(helios):
         distributions={DIM: BehavioralDistribution.point_mass(DIM, "terse")},
     ).save(helios / "temporary" / "developer.yaml")
     assert neg.declared("developer") == before
+
+
+def test_racing_accepts_keep_both_dimensions_and_commit_only_their_files(
+        helios, monkeypatch):
+    from helios_mcp.profile import BehavioralProfile
+    from helios_mcp.store import ProposedChange
+    from helios_mcp.taxonomy import list_states
+
+    def change(dim, state):
+        n = len(list_states(dim))
+        target = {s: 0.9 if s == state else 0.1 / (n - 1) for s in list_states(dim)}
+        return ProposedChange(declared=target, target=target, divergence=0.1,
+                              credibility=1.0)
+
+    neg = Negotiator(helios)
+    user = neg.proposals.create_decided("developer", {DIM: change(DIM, "terse")},
+                                        10, "accepted")
+    auto = neg.proposals.create_decided(
+        "developer", {"structure": change("structure", "prose")}, 10,
+        "auto_accepted")
+    neg._apply("developer", user, [DIM])
+    # Someone else's staged file must not ride along in a profile commit.
+    (helios / "notes.txt").write_text("x")
+    subprocess.run(["git", "-C", str(helios), "add", "notes.txt"], check=True)
+
+    load = BehavioralProfile.load
+
+    def slow_load(path, *args, **kwargs):
+        profile = load(path, *args, **kwargs)
+        time.sleep(0.2)  # widen the read-modify-write window
+        return profile
+
+    monkeypatch.setattr(BehavioralProfile, "load", staticmethod(slow_load))
+    threads = [threading.Thread(target=neg._apply, args=("developer", p, dims))
+               for p, dims in ((user, [DIM]), (auto, ["structure"]))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    monkeypatch.setattr(BehavioralProfile, "load", load)
+
+    resolved = neg.declared("developer")
+    assert resolved[DIM]["terse"] == pytest.approx(0.9, abs=0.01)
+    assert resolved["structure"]["prose"] == pytest.approx(0.9, abs=0.01)
+    committed = subprocess.run(
+        ["git", "-C", str(helios), "log", "--name-only", "--format="],
+        capture_output=True, text=True, check=True).stdout.split()
+    assert "notes.txt" not in committed

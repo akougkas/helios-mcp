@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .atomic_ops import git_commit
+from .atomic_ops import git_commit, helios_lock
 from .distribution import BehavioralDistribution
 from .drift import (
     DEFAULT_CONFIG,
@@ -115,6 +115,13 @@ class Negotiator:
     def evaluate(self, persona: str, auto_accept: bool = True,
                  now: float | None = None) -> Evaluation:
         """Assess drift, apply auto-accepts, and reconcile the pending proposal."""
+        # Under the lock, an auto-accept is decided on the evidence and profile
+        # it is written over, and cannot interleave with a user's decision.
+        with helios_lock(self.helios_dir):
+            return self._evaluate(persona, auto_accept, now)
+
+    def _evaluate(self, persona: str, auto_accept: bool,
+                  now: float | None) -> Evaluation:
         now = time.time() if now is None else now
         endorsed, fingerprint, evidence = self.assess(persona)
 
@@ -148,20 +155,25 @@ class Negotiator:
 
     def accept(self, persona: str, proposal_id: str,
                dimensions: list[str] | None = None) -> Decision:
-        decided = self.proposals.decide(persona, proposal_id, "accepted", dimensions)
-        path, sha = self._apply(persona, decided, list(decided.decided_dimensions))
+        with helios_lock(self.helios_dir):
+            decided = self.proposals.decide(persona, proposal_id, "accepted",
+                                            dimensions)
+            path, sha = self._apply(persona, decided,
+                                    list(decided.decided_dimensions))
         return Decision(decided, sha, path)
 
     def reject(self, persona: str, proposal_id: str, reason: str = "",
                dimensions: list[str] | None = None) -> Decision:
-        decided = self.proposals.decide(persona, proposal_id, "rejected", dimensions,
-                                        reason=reason or "rejected by user")
-        sha = git_commit(
-            self.helios_dir, [self.proposals.path(persona)],
-            f"{persona}: rejected {', '.join(decided.decided_dimensions)} "
-            f"(proposal {decided.id})"
-            + (f"\n\n{decided.reason}" if decided.reason else ""),
-        )
+        with helios_lock(self.helios_dir):
+            decided = self.proposals.decide(persona, proposal_id, "rejected",
+                                            dimensions,
+                                            reason=reason or "rejected by user")
+            sha = git_commit(
+                self.helios_dir, [self.proposals.path(persona)],
+                f"{persona}: rejected {', '.join(decided.decided_dimensions)} "
+                f"(proposal {decided.id})"
+                + (f"\n\n{decided.reason}" if decided.reason else ""),
+            )
         return Decision(decided, sha)
 
     # ------------------------------------------------------------------
@@ -192,6 +204,11 @@ class Negotiator:
     def _apply(self, persona: str, proposal: Proposal,
                dimensions: list[str]) -> tuple[Path, str | None]:
         """Write targets to the user level and commit."""
+        with helios_lock(self.helios_dir):
+            return self._apply_locked(persona, proposal, dimensions)
+
+    def _apply_locked(self, persona: str, proposal: Proposal,
+                      dimensions: list[str]) -> tuple[Path, str | None]:
         path = persona_path(self.helios_dir / "personas", persona, "_user.yaml")
         if path.exists():
             user = BehavioralProfile.load(path)
