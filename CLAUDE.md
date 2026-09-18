@@ -76,16 +76,19 @@ server.py (7 MCP tools)
 
 ### Key Thresholds
 
-All live in `drift.DriftConfig`. Drift runs on the `endorsed` posterior only.
+All live in `drift.DriftConfig`. Drift runs on the `endorsed` posterior only. With model labeling on, endorsed counts only turns that have an llm label; heuristic-only turns feed the fingerprint. With `HELIOS_LLM=0`, heuristic labels are authoritative.
 
 - Posterior per dimension: `Dirichlet(s * declared + counts)`, prior strength s = 25 turns
+- Evidence per turn: soft label * confidence ** 0.5
 - Drift score: JS divergence (nats, at most ln 2) between posterior mean and declared
 - Proposal: some dimension has P(JS(sample, declared) > 0.0125) >= 0.95 over 1000 seeded samples
 - Auto-accept (silent): P(JS < 0.0125) >= 0.9 and JS(mean, declared) >= 0.004
 - Standing preference (hint on an uncorrected turn): weight 1.0 toward the hinted state
+- Unhinted correction: 0.25 weight spread over the complement of the label
 - Rejection: 10 pseudo-counts toward the declared profile, 3-day cooldown per dimension
 - Probability floor on disk and in priors: 0.005
 - Simulated with hard labels on the default profiles, checking every turn: stationary FP < 1% over 200 turns (under 0.3% by turn 30); a 0.3-mass shift is detected at a median of 26 to 30 turns (80th percentile 38 to 44)
+- Founder corpus, 40 model-labeled sessions (375 turns): stationary FP 0 of 100 random session orders (it is 5% at s = 15 and 11% at s = 10, all within the first 10 sessions, because turns within a session are correlated); against the default developer profile, interaction_agency is proposed after session 5 and communication_register after session 11
 
 ## Design Constraints
 
