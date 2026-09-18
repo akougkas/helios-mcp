@@ -141,6 +141,25 @@ def test_model_label_after_an_accept_counts_from_its_own_row():
     assert ev.endorsed[DIM] == {"thorough": 1.0}
 
 
+def test_settled_rows_of_a_resumed_turn_replace_its_open_rows():
+    open_h = turn("t1~open", endorsement=None, label=TERSE)
+    settled_h = turn("t1", endorsement=-1.0, correction_hint={DIM: "terse"})
+    ev = estimate([open_h, settled_h], config=LINEAR)
+    assert ev.turns == 1
+    assert ev.endorsed[DIM] == {"terse": 1.0}
+
+    # With model labels, the open llm row outranks the settled heuristic row
+    # until the model relabels the answered turn, so labels never swap source.
+    open_l = turn("t1~open", "llm", endorsement=None, label=TERSE)
+    ev = estimate([open_h, open_l, settled_h], config=LINEAR, llm_labels=True)
+    assert ev.turns == 1 and ev.endorsed_turns == 1 and not ev.endorsed
+    settled_l = turn("t1", "llm", endorsement=-1.0, correction_hint={DIM: "terse"})
+    ev = estimate([open_h, open_l, settled_h, settled_l], config=LINEAR,
+                  llm_labels=True)
+    assert ev.turns == 1
+    assert ev.endorsed[DIM] == {"terse": 1.0}
+
+
 @pytest.mark.parametrize("llm", [False, True])
 def test_ledger_checkpoint_always_equals_a_full_estimate(tmp_path, monkeypatch, llm):
     store = ObservationStore(tmp_path)
@@ -155,6 +174,8 @@ def test_ledger_checkpoint_always_equals_a_full_estimate(tmp_path, monkeypatch, 
         [turn("t1", "llm", TERSE)],                # relabel of a counted turn
         [turn("t2", "mcp", model="m-b")],          # model backfill only
         [turn("t4", endorsement=0.5)],
+        [turn("t6~open", endorsement=None, label=TERSE)],   # session ended here
+        [turn("t6", endorsement=-1.0, correction_hint={DIM: "terse"})],  # resumed
     ]
     for i, batch in enumerate(steps):
         store.append(batch)
